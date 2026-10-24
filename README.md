@@ -67,15 +67,19 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Using it
 
-Build it exactly like Cosmoe (below). The haiku-* app templates
-([beos-app-platforms](https://github.com/idumych/beos-app-platforms)) build their AppImage
-against Hokku when `haiku-app.env` sets:
-
-    COSMOE_REPO="idumych/hokku"
-    COSMOE_TAG="hokku"
+Build it exactly like Cosmoe (below). The app templates in
+[beos-app-platforms](https://github.com/idumych/beos-app-platforms) build their AppImages
+(x86_64 and aarch64) against Hokku's `hokku` branch by default; an app's `haiku-app.env` can
+point `COSMOE_REPO` and `COSMOE_TAG` at another fork or tag. CI caches the build by the commit
+the branch points at, so a new Hokku commit is picked up on the next build.
 
 First used for [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader for Renku
 OS, Haiku, VitruvianOS (a BeOS-like OS based on Linux) and Linux.
+
+**Problems** found with Hokku are fixed here, as new commits on `hokku` listed above, with
+the smallest program that shows the bug used to test the fix. Please don't report them to
+upstream Cosmoe: it doesn't take AI-assisted work, and the bug may be one Hokku introduced
+or already fixed.
 
 ---
 
