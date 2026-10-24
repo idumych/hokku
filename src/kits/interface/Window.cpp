@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <functional>
 #include <unordered_map>
 #include <map>
 #include <vector>
@@ -2777,6 +2778,45 @@ FrameMoved(origin);
 					}
 
 					delete info;
+				}
+
+				// Invalidate() lists a view's children, with their update rects,
+				// from the frames they had when it was called. A layout pass can
+				// move them before this message runs: a child that moved into the
+				// invalid area was then not drawn at all, and one that moved within
+				// it only in part, leaving stale pixels in the backing surface (seen
+				// in a window that its window manager placed elsewhere when it was
+				// first shown). Add the children again from their current frames.
+				std::function<void(BView*, BRect)> addChildren
+					= [&](BView* parent, BRect rect) {
+					for (BView* child = parent->fFirstChild; child != NULL;
+							child = child->fNextSibling) {
+						if (child->IsHidden())
+							continue;
+						BRect frame = child->Frame();
+						if (!frame.Intersects(rect))
+							continue;
+						BRect childRect = rect & frame;
+						BRect childBounds = child->Bounds();
+						childRect.OffsetBy(childBounds.left - frame.left,
+							childBounds.top - frame.top);
+						int32 token = _get_object_token_(child);
+						auto found = tokenToIndex.find(token);
+						if (found == tokenToIndex.end()) {
+							tokenToIndex[token] = sortedInfos.size();
+							sortedInfos.push_back({token, childRect, order++});
+						} else {
+							CoalescedUpdate& existing = sortedInfos[found->second];
+							existing.updateRect = existing.updateRect | childRect;
+						}
+						addChildren(child, childRect);
+					}
+				};
+				const size_t invalidated = sortedInfos.size();
+				for (size_t i = 0; i < invalidated; i++) {
+					BView* view = _FindView(sortedInfos[i].token);
+					if (view != NULL && !view->IsHidden())
+						addChildren(view, sortedInfos[i].updateRect);
 				}
 
 				auto viewDepth = [this](int32 token) -> int32 {

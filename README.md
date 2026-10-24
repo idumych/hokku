@@ -41,6 +41,12 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 - **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
   creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
   (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
+- **Views moved by a layout are redrawn whole.** `Invalidate()` lists a view's children for
+  the update when it is called, but a layout pass could move them before the update ran: a
+  child that moved into the invalid area wasn't drawn, and one that moved within it only in
+  part. Windows that the window manager placed or sized differently from what they asked for
+  could show half-drawn buttons and remnants of earlier frames until resized. The update now
+  takes the children from their current frames.
 - **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
   last. A user translator now hides the system one of the same name instead of both loading.
   If no translator loads at all, the directories searched are printed to stderr.
