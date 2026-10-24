@@ -1,3 +1,53 @@
+# Kireji
+
+Kireji is a fork of [Cosmoe](https://github.com/haydentech/cosmoe), the BeOS/Haiku API as a
+C++ library for Linux (X11 and Wayland), macOS and Windows. A *kireji* is the "cutting word"
+in a haiku, the word where the poem turns.
+
+## Why this fork exists
+
+- **AI-generated fixes have a home here.** Kireji incorporates fixes written with AI
+  assistance. Each fix is reviewed and tested against real apps before it lands. Cosmoe
+  doesn't accept AI contributions, so these fixes are kept in this fork instead of being
+  proposed upstream.
+- **A library to build freestanding app ports against.** The focus is narrow: a stable
+  Haiku API that Renku OS and Haiku apps can be built against to run on Linux as
+  standalone, freestanding programs (for example AppImages), with behaviour that matches
+  Haiku as closely as possible.
+- **Started in the spirit of [Renku](https://github.com/RenkuOS/Source).** Renku OS is a
+  Haiku fork that welcomes machine-assisted work. Kireji brings that approach to the library
+  that carries Renku and Haiku apps to other systems.
+
+Kireji follows upstream Cosmoe and merges its changes regularly. The library names, headers
+and build (`meson`, `libbe.so` and friends) are unchanged, so anything that builds against
+Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
+
+## Changes from Cosmoe
+
+- **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` now get every
+  pointer motion, in whatever window they live, as they do on Haiku. Tooltip windows rely on
+  this to close when the mouse moves; before, tooltips stayed on screen for good.
+- **Font styles chosen like Haiku.** Styles lighter than Book get `B_LIGHT_FACE`, Black and
+  Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
+  a face the canonical one wins. Before, every weight below Bold counted as regular and the
+  first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
+
+## Using it
+
+Build it exactly like Cosmoe (below). The haiku-* app templates
+([beos-app-platforms](https://github.com/idumych/beos-app-platforms)) build their AppImage
+against Kireji when `haiku-app.env` sets:
+
+    COSMOE_REPO="idumych/kireji"
+    COSMOE_TAG="kireji"
+
+First used for [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader for Renku
+OS, Haiku, VitruvianOS and Linux.
+
+---
+
+*Upstream Cosmoe's README follows.*
+
 <p align="center">
      <img src="https://cosmoe.org/assets/img/cosmoe_desktop.png" alt="Cosmoe Logo" />
 </p>
