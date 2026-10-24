@@ -64,7 +64,7 @@ against Hokku when `haiku-app.env` sets:
     COSMOE_TAG="hokku"
 
 First used for [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader for Renku
-OS, Haiku, VitruvianOS and Linux.
+OS, Haiku, VitruvianOS (a BeOS-like OS based on Linux) and Linux.
 
 ---
 
