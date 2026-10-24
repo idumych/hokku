@@ -983,7 +983,7 @@ void view_button_handler(struct widget *widget,
 // a tooltip window, for one, uses this to close as soon as the mouse moves, and its tooltips
 // stayed on screen for good. Listeners are kept here, by view token, with their window.
 static pthread_mutex_t sPointerListenersLock = PTHREAD_MUTEX_INITIALIZER;
-static std::map<int32, BWindow*> sPointerListeners;
+static std::map<int32, std::pair<BView*, BWindow*> > sPointerListeners;
 
 
 // Called from BView with the view's window locked: (un)registers the view according to its
@@ -995,7 +995,7 @@ _kireji_update_pointer_listener(BView* view)
 	BWindow* window = view->Window();
 	pthread_mutex_lock(&sPointerListenersLock);
 	if (window != NULL && (view->EventMask() & B_POINTER_EVENTS) != 0)
-		sPointerListeners[token] = window;
+		sPointerListeners[token] = std::make_pair(view, window);
 	else
 		sPointerListeners.erase(token);
 	pthread_mutex_unlock(&sPointerListenersLock);
@@ -1018,25 +1018,24 @@ _kireji_remove_pointer_listener(BView* view)
 static void
 _kireji_forward_pointer_event(uint32 what, int32 skipToken, BPoint screenWhere, int32 buttons)
 {
-	std::vector<std::pair<int32, BWindow*> > listeners;
+	// Send under the lock: a view is unregistered (and only then freed) while holding it.
+	// The messenger names the view itself; BMessenger(NULL, window) would deliver to the
+	// window's preferred handler instead.
 	pthread_mutex_lock(&sPointerListenersLock);
-	for (std::map<int32, BWindow*>::const_iterator it = sPointerListeners.begin();
-			it != sPointerListeners.end(); ++it) {
-		if (it->first != skipToken)
-			listeners.push_back(*it);
-	}
-	pthread_mutex_unlock(&sPointerListenersLock);
-
-	for (size_t i = 0; i < listeners.size(); i++) {
-		BWindow* window = listeners[i].second;
+	for (std::map<int32, std::pair<BView*, BWindow*> >::const_iterator it
+			= sPointerListeners.begin(); it != sPointerListeners.end(); ++it) {
+		if (it->first == skipToken)
+			continue;
+		BView* view = it->second.first;
+		BWindow* window = it->second.second;
 		BMessage msg(what);
-		BMessage::Private(&msg).SetTarget(listeners[i].first);
 		msg.AddInt64("when", system_time());
 		msg.AddPoint("window_where", screenWhere - window->Frame().LeftTop());
 		msg.AddPoint("screen_where", screenWhere);
 		msg.AddInt32("buttons", buttons);
-		BMessenger(NULL, window).SendMessage(&msg);
+		BMessenger(view, window).SendMessage(&msg);
 	}
+	pthread_mutex_unlock(&sPointerListenersLock);
 }
 
 
