@@ -78,8 +78,14 @@ Build it exactly like Cosmoe (below). The app templates in
 point `COSMOE_REPO` and `COSMOE_TAG` at another fork or tag. CI caches the build by the commit
 the branch points at, so a new Hokku commit is picked up on the next build.
 
-First used for [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader for Renku
-OS, Haiku, VitruvianOS (a BeOS-like OS based on Linux) and Linux.
+Apps shipped on Linux with Hokku (each also runs on Renku OS, Haiku and VitruvianOS, a
+BeOS-like OS based on Linux):
+
+- [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader (the first).
+- [Folio](https://github.com/idumych/folio), a notebook with wiki links that follow renames.
+- [Gobe Productive](https://github.com/idumych/gobe-productive), the BeOS office suite
+  ported from the original (a preview of its word processor). It is the largest so far,
+  and found the Wayland crash listed above: an alert as an app's first window.
 
 **Problems** found with Hokku are fixed here, as new commits on `hokku` listed above, with
 the smallest program that shows the bug used to test the fix. Please don't report them to
