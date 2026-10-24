@@ -61,6 +61,20 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   surface pointing at the freed widget, and a resize already queued for the window then used
   it: the app crashed right after showing the window. The surface and the window now forget
   the widget, and the places that use it check for none.
+- **`B_OP_MIN` and `B_OP_MAX` compare brightness.** Like app_server, a pixel takes the
+  drawing's colour only where that is darker (MIN) or brighter (MAX) as a whole, judged by
+  brightness. Cairo's DARKEN and LIGHTEN, used before, compare each channel on its own, so a
+  gray wash over a red icon (how many BeOS apps grey out a disabled button) gave pink.
+- **Lines, rects and polygons sit on the pixels app_server uses.** Unless a view is
+  `B_SUBPIXEL_PRECISE`, coordinates are rounded down to whole pixels; an even pen size is
+  centred on the pixel edge, so a line of pen size 2 covers two whole rows instead of a
+  blurred three; lines thicker than 1 get the butt caps they ask for; and the points of a
+  filled polygon are pixel corners. Triangles, filled or not, go through pixel centers, as
+  in app_server.
+- **8-bit and 32-bit bitmaps are transparent where Haiku's are.** Outside `B_OP_COPY`,
+  `B_TRANSPARENT_MAGIC_CMAP8` pixels of a `B_CMAP8` bitmap and `B_TRANSPARENT_MAGIC_RGBA32`
+  pixels of a `B_RGB32` bitmap are left out, and `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha
+  bytes. Before, icons drawn with `B_OP_OVER` showed a white box where they should be clear.
 - **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
   last. A user translator now hides the system one of the same name instead of both loading.
   If no translator loads at all, the directories searched are printed to stderr.

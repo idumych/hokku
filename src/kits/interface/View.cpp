@@ -2960,7 +2960,8 @@ BView::DrawBitmapAsync(const BBitmap* bitmap, BRect bitmapRect /* source */, BRe
 	// Regular bitmap drawing path using Bits()
 	int height = bitmap->Bounds().IntegerHeight() + 1;
 	int width = bitmap->Bounds().IntegerWidth() + 1;
-	cairo_format_t format = color_space_to_cairo_format(bitmap->ColorSpace());
+	cairo_format_t format = bitmap_cairo_format(bitmap->ColorSpace(),
+		fState->drawing_mode, color_space_to_cairo_format(bitmap->ColorSpace()));
 	int stride = cairo_format_stride_for_width(format, width);
 	unsigned char* premultipliedBits = NULL;
 
@@ -2976,7 +2977,8 @@ BView::DrawBitmapAsync(const BBitmap* bitmap, BRect bitmapRect /* source */, BRe
 			format, bitmap->ColorSpace(), width, height, bitmap->BytesPerRow(),
 			stride,
 			(const uint8**)&sourceBits, (uint8**)&premultipliedBits,
-			fState->drawing_mode == B_OP_COPY)) {
+			fState->drawing_mode == B_OP_COPY,
+			fState->drawing_mode == B_OP_ALPHA)) {
 		return;
 	}
 
@@ -3240,7 +3242,8 @@ BView::DrawBitmapAsync(const BBitmap* bitmap, BPoint where)
 
 		int height = bitmap->Bounds().IntegerHeight() + 1;
 		int width = bitmap->Bounds().IntegerWidth() + 1;
-		cairo_format_t format = color_space_to_cairo_format(bitmap->ColorSpace());
+		cairo_format_t format = bitmap_cairo_format(bitmap->ColorSpace(),
+			fState->drawing_mode, color_space_to_cairo_format(bitmap->ColorSpace()));
 		int stride = cairo_format_stride_for_width(format, width);
 		unsigned char* premultipliedBits = NULL;
 		cairo_surface_t* imageSurface = NULL;
@@ -3273,7 +3276,8 @@ BView::DrawBitmapAsync(const BBitmap* bitmap, BPoint where)
 					format, bitmap->ColorSpace(), width, height,
 					bitmap->BytesPerRow(), stride,
 					(const uint8**)&sourceBits, (uint8**)&premultipliedBits,
-					fState->drawing_mode == B_OP_COPY)) {
+					fState->drawing_mode == B_OP_COPY,
+					fState->drawing_mode == B_OP_ALPHA)) {
 				return;
 			}
 
@@ -3702,6 +3706,33 @@ BView::StrokeEllipse(BPoint center, float xRadius, float yRadius,
 {
 	StrokeEllipse(BRect(center.x - xRadius, center.y - yRadius,
 		center.x + xRadius, center.y + yRadius), pattern);
+}
+
+
+// app_server rounds drawing coordinates down to whole pixels unless the view
+// is B_SUBPIXEL_PRECISE (Painter::_Align). Lines, rects, outlined polygons and
+// triangles (filled or not) then run through pixel centers, which is where the
+// context puts whole coordinates; the points of a filled polygon are pixel
+// corners there, half a pixel up and left of those.
+static inline bool
+aligns_to_pixels(const BView* view)
+{
+	return (view->Flags() & B_SUBPIXEL_PRECISE) == 0 && view->Scale() == 1.0f;
+}
+
+
+static inline BPoint
+center_point(bool align, BPoint point)
+{
+	return align ? BPoint(floorf(point.x), floorf(point.y)) : point;
+}
+
+
+static inline BPoint
+corner_point(bool align, BPoint point)
+{
+	point = center_point(align, point);
+	return BPoint(point.x - 0.5f, point.y - 0.5f);
 }
 
 
@@ -4277,11 +4308,15 @@ BView::StrokePolygon(const BPoint* pointArray, int32 numPoints, BRect bounds,
 
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
 	if (polygon.fCount > 0) {
-		cairo_move_to(cr, polygon.fPoints[0].x, polygon.fPoints[0].y);
+		bool align = aligns_to_pixels(this);
+		BPoint point = center_point(align, polygon.fPoints[0]);
+		cairo_move_to(cr, point.x, point.y);
 		for (uint32 i = 1; i < polygon.fCount; i++) {
-			cairo_line_to(cr, polygon.fPoints[i].x, polygon.fPoints[i].y);
+			point = center_point(align, polygon.fPoints[i]);
+			cairo_line_to(cr, point.x, point.y);
 		}
 		if (closed) {
 			cairo_close_path(cr);
@@ -4356,13 +4391,17 @@ BView::StrokePolygon(const BPoint* pointArray, int32 numPoints, BRect bounds,
 
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
 	if (polygon.fCount > 0) {
 		cr.AddGradient(gradient);
 
-		cairo_move_to(cr, polygon.fPoints[0].x, polygon.fPoints[0].y);
+		bool align = aligns_to_pixels(this);
+		BPoint point = center_point(align, polygon.fPoints[0]);
+		cairo_move_to(cr, point.x, point.y);
 		for (uint32 i = 1; i < polygon.fCount; i++) {
-			cairo_line_to(cr, polygon.fPoints[i].x, polygon.fPoints[i].y);
+			point = center_point(align, polygon.fPoints[i]);
+			cairo_line_to(cr, point.x, point.y);
 		}
 		cairo_close_path(cr);
 		cr.Stroke();
@@ -4396,9 +4435,12 @@ BView::FillPolygon(const BPolygon* polygon, ::pattern pattern)
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
 
 	if (polygon->fCount > 0) {
-		cairo_move_to(cr, polygon->fPoints[0].x, polygon->fPoints[0].y);
+		bool align = aligns_to_pixels(this);
+		BPoint point = corner_point(align, polygon->fPoints[0]);
+		cairo_move_to(cr, point.x, point.y);
 		for (uint32 i = 1; i < polygon->fCount; i++) {
-			cairo_line_to(cr, polygon->fPoints[i].x, polygon->fPoints[i].y);
+			point = corner_point(align, polygon->fPoints[i]);
+			cairo_line_to(cr, point.x, point.y);
 		}
 		cairo_close_path(cr);
 		cr.Fill();
@@ -4432,9 +4474,12 @@ BView::FillPolygon(const BPolygon* polygon, const BGradient& gradient)
 	if (polygon->fCount > 0) {
 		cr.AddGradient(gradient);
 
-		cairo_move_to(cr, polygon->fPoints[0].x, polygon->fPoints[0].y);
+		bool align = aligns_to_pixels(this);
+		BPoint point = corner_point(align, polygon->fPoints[0]);
+		cairo_move_to(cr, point.x, point.y);
 		for (uint32 i = 1; i < polygon->fCount; i++) {
-			cairo_line_to(cr, polygon->fPoints[i].x, polygon->fPoints[i].y);
+			point = corner_point(align, polygon->fPoints[i]);
+			cairo_line_to(cr, point.x, point.y);
 		}
 		cairo_close_path(cr);
 		cr.Fill();
@@ -4515,7 +4560,11 @@ BView::StrokeRect(BRect rect, ::pattern pattern)
 
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
+	bool align = aligns_to_pixels(this);
+	rect = BRect(center_point(align, rect.LeftTop()),
+		center_point(align, rect.RightBottom()));
 	cairo_rectangle(cr, rect.left, rect.top, rect.Width(), rect.Height());
 	cr.Stroke();
 #endif
@@ -4541,8 +4590,12 @@ BView::StrokeRect(BRect rect, const BGradient& gradient)
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds,
 		&windowViewRect, false, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
 	cr.AddGradient(gradient);
+	bool align = aligns_to_pixels(this);
+	rect = BRect(center_point(align, rect.LeftTop()),
+		center_point(align, rect.RightBottom()));
 	cairo_rectangle(cr, rect.left, rect.top, rect.Width(), rect.Height());
 	cr.Stroke();
 #endif
@@ -4576,6 +4629,9 @@ BView::FillRect(BRect rect, ::pattern pattern)
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
 
+	bool align = aligns_to_pixels(this);
+	rect = BRect(center_point(align, rect.LeftTop()),
+		center_point(align, rect.RightBottom()));
 	cairo_rectangle(cr, rect.left - 0.5, rect.top - 0.5, rect.Width() + 1, rect.Height() + 1);
 	cr.Fill();
 #endif
@@ -4608,6 +4664,9 @@ BView::FillRect(BRect rect, const BGradient& gradient)
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, false, _DisplayScaleFactor(fOwner), updateRect);
 
 	cr.AddGradient(gradient);
+	bool align = aligns_to_pixels(this);
+	rect = BRect(center_point(align, rect.LeftTop()),
+		center_point(align, rect.RightBottom()));
 	cairo_rectangle(cr, rect.left - 0.5, rect.top - 0.5, rect.Width() + 1, rect.Height() + 1);
 
 	cr.Fill();
@@ -4637,6 +4696,7 @@ BView::StrokeRoundRect(BRect rect, float xRadius, float yRadius,
 
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
 	double x = rect.left;
 	double y = rect.top;
@@ -4922,7 +4982,12 @@ BView::StrokeTriangle(BPoint point1, BPoint point2, BPoint point3, BRect bounds,
 
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
+	bool align = aligns_to_pixels(this);
+	point1 = center_point(align, point1);
+	point2 = center_point(align, point2);
+	point3 = center_point(align, point3);
 	cairo_move_to(cr, point1.x, point1.y);
 	cairo_line_to(cr, point2.x, point2.y);
 	cairo_line_to(cr, point3.x, point3.y);
@@ -4993,9 +5058,14 @@ BView::StrokeTriangle(BPoint point1, BPoint point2, BPoint point3, BRect bounds,
 
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, false, _DisplayScaleFactor(fOwner), updateRect);
+	cr.AlignForPenSize();
 
 	cr.AddGradient(gradient);
 
+	bool align = aligns_to_pixels(this);
+	point1 = center_point(align, point1);
+	point2 = center_point(align, point2);
+	point3 = center_point(align, point3);
 	cairo_move_to(cr, point1.x, point1.y);
 	cairo_line_to(cr, point2.x, point2.y);
 	cairo_line_to(cr, point3.x, point3.y);
@@ -5148,6 +5218,10 @@ BView::FillTriangle(BPoint point1, BPoint point2, BPoint point3,
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
 
+	bool align = aligns_to_pixels(this);
+	point1 = center_point(align, point1);
+	point2 = center_point(align, point2);
+	point3 = center_point(align, point3);
 	cairo_move_to(cr, point1.x, point1.y);
 	cairo_line_to(cr, point2.x, point2.y);
 	cairo_line_to(cr, point3.x, point3.y);
@@ -5180,6 +5254,10 @@ BView::FillTriangle(BPoint point1, BPoint point2, BPoint point3, BRect bounds,
 
 	cr.AddGradient(gradient);
 
+	bool align = aligns_to_pixels(this);
+	point1 = center_point(align, point1);
+	point2 = center_point(align, point2);
+	point3 = center_point(align, point3);
 	cairo_move_to(cr, point1.x, point1.y);
 	cairo_line_to(cr, point2.x, point2.y);
 	cairo_line_to(cr, point3.x, point3.y);
@@ -5217,13 +5295,17 @@ BView::StrokeLine(BPoint start, BPoint end, ::pattern pattern)
 	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
 
-	if (start == end) {
+	bool align = aligns_to_pixels(this);
+	BPoint from = center_point(align, start);
+	BPoint to = center_point(align, end);
+	if (from == to) {
 		// Workaround for Cairo's inability to draw a single pixel line
-		cairo_rectangle (cr, start.x - 0.5, start.y - 0.5, 1.0, 1.0);
+		cairo_rectangle (cr, from.x - 0.5, from.y - 0.5, 1.0, 1.0);
 		cr.Fill();
 	} else {
-		cairo_move_to(cr, start.x, start.y);
-		cairo_line_to(cr, end.x, end.y);
+		cr.AlignForPenSize();
+		cairo_move_to(cr, from.x, from.y);
+		cairo_line_to(cr, to.x, to.y);
 		cr.Stroke();
 	}
 #endif
@@ -5259,13 +5341,17 @@ BView::StrokeLine(BPoint start, BPoint end, const BGradient& gradient)
 	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, true, _DisplayScaleFactor(fOwner), updateRect);
 	cr.AddGradient(gradient);
 
-	if (start == end) {
+	bool align = aligns_to_pixels(this);
+	BPoint from = center_point(align, start);
+	BPoint to = center_point(align, end);
+	if (from == to) {
 		// Workaround for Cairo's inability to draw a single pixel line
-		cairo_rectangle (cr, start.x - 0.5, start.y - 0.5, 1.0, 1.0);
+		cairo_rectangle (cr, from.x - 0.5, from.y - 0.5, 1.0, 1.0);
 		cr.Fill();
 	} else {
-		cairo_move_to(cr, start.x, start.y);
-		cairo_line_to(cr, end.x, end.y);
+		cr.AlignForPenSize();
+		cairo_move_to(cr, from.x, from.y);
+		cairo_line_to(cr, to.x, to.y);
 		cr.Stroke();
 	}
 #endif

@@ -118,13 +118,27 @@ premultiply_rgba_row_sse2(const uint8* srcRow, uint8* dstRow, int32 width)
 #endif
 
 
+// app_server draws B_CMAP8 and B_RGB32 bitmaps with transparency in every
+// mode but B_OP_COPY: B_TRANSPARENT_MAGIC_CMAP8 and B_TRANSPARENT_MAGIC_RGBA32
+// pixels are left out, and B_OP_ALPHA takes a B_RGB32 bitmap's alpha bytes as
+// they are. Those need ARGB32 instead of RGB24.
+static inline cairo_format_t
+bitmap_cairo_format(color_space space, drawing_mode mode, cairo_format_t format)
+{
+	if ((space == B_CMAP8 || space == B_RGB32) && mode != B_OP_COPY)
+		return CAIRO_FORMAT_ARGB32;
+	return format;
+}
+
+
 // Cairo expects premultiplied ARGB32 data for transparency, but BBitmap with B_RGBA32 color space is non-premultiplied.
 
 static inline bool
 prepare_bitmap_bits_for_cairo_argb32(const uint8* sourceBits,
 	cairo_format_t format, color_space sourceColorSpace, int32 width,
 	int32 height, int32 sourceStride, int32 cairoStride, const uint8** outBits,
-	uint8** outOwnedPremultipliedBits, bool forceOpaque = false)
+	uint8** outOwnedPremultipliedBits, bool forceOpaque = false,
+	bool alphaMode = false)
 {
 	if (outBits == NULL || outOwnedPremultipliedBits == NULL)
 		return false;
@@ -154,6 +168,67 @@ prepare_bitmap_bits_for_cairo_argb32(const uint8* sourceBits,
 
 		*outBits = expandedBits;
 		*outOwnedPremultipliedBits = expandedBits;
+		return true;
+	}
+
+	if (format == CAIRO_FORMAT_ARGB32 && sourceColorSpace == B_CMAP8) {
+		// see bitmap_cairo_format(): the magic index is transparent
+		uint8* expandedBits = (uint8*)malloc(cairoStride * height);
+		if (expandedBits == NULL)
+			return false;
+
+		memset(expandedBits, 0, cairoStride * height);
+		status_t status = BPrivate::ConvertBits(sourceBits, expandedBits,
+			sourceStride * height, cairoStride * height, sourceStride, cairoStride,
+			B_CMAP8, B_RGB32, width, height);
+		if (status != B_OK) {
+			free(expandedBits);
+			return false;
+		}
+		for (int32 y = 0; y < height; y++) {
+			const uint8* srcRow = sourceBits + y * sourceStride;
+			uint32* dstRow = (uint32*)(expandedBits + y * cairoStride);
+			for (int32 x = 0; x < width; x++) {
+				if (srcRow[x] == B_TRANSPARENT_MAGIC_CMAP8)
+					dstRow[x] = 0;
+				else
+					dstRow[x] |= 0xff000000;
+			}
+		}
+
+		*outBits = expandedBits;
+		*outOwnedPremultipliedBits = expandedBits;
+		return true;
+	}
+
+	if (format == CAIRO_FORMAT_ARGB32 && sourceColorSpace == B_RGB32) {
+		// see bitmap_cairo_format()
+		if (sourceStride < width * 4 || cairoStride < width * 4)
+			return false;
+		uint8* convertedBits = (uint8*)malloc(cairoStride * height);
+		if (convertedBits == NULL)
+			return false;
+
+		memset(convertedBits, 0, cairoStride * height);
+		for (int32 y = 0; y < height; y++) {
+			const uint8* srcRow = sourceBits + y * sourceStride;
+			uint8* dstRow = convertedBits + y * cairoStride;
+			if (alphaMode) {
+				premultiply_rgba_row_scalar(srcRow, dstRow, width);
+				continue;
+			}
+			const uint32* srcPixels = (const uint32*)srcRow;
+			uint32* dstPixels = (uint32*)dstRow;
+			for (int32 x = 0; x < width; x++) {
+				if (srcPixels[x] == B_TRANSPARENT_MAGIC_RGBA32)
+					dstPixels[x] = 0;
+				else
+					dstPixels[x] = srcPixels[x] | 0xff000000;
+			}
+		}
+
+		*outBits = convertedBits;
+		*outOwnedPremultipliedBits = convertedBits;
 		return true;
 	}
 

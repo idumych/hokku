@@ -259,6 +259,16 @@ class CairoContext {
 		return cr;
 	}
 
+	// app_server moves stroke coordinates to pixel centers only for odd pen
+	// sizes: an even pen is centred on the pixel edge, so a line of pen size
+	// 2 covers two whole rows. The context is set up for pixel centers;
+	// call this before adding the path of a line, rect, polygon or triangle.
+	void AlignForPenSize()
+	{
+		if (penSize >= 2 && fmodf(penSize, 2.0f) == 0)
+			cairo_translate(cr, -0.5, -0.5);
+	}
+
 	// Helper method to perform fill operation respecting drawing mode
 	void Fill()
 	{
@@ -274,6 +284,8 @@ class CairoContext {
 			cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 			cairo_fill(cr);
 			cairo_restore(cr);
+		} else if (drawingMode == B_OP_MIN || drawingMode == B_OP_MAX) {
+			PaintByBrightness([&]() { cairo_fill(cr); });
 		} else {
 			cairo_fill(cr);
 		}
@@ -293,6 +305,8 @@ class CairoContext {
 			cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 			cairo_stroke(cr);
 			cairo_restore(cr);
+		} else if (drawingMode == B_OP_MIN || drawingMode == B_OP_MAX) {
+			PaintByBrightness([&]() { cairo_stroke(cr); });
 		} else {
 			cairo_stroke(cr);
 		}
@@ -313,9 +327,110 @@ class CairoContext {
 			cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 			pango_cairo_show_layout(cr, layout);
 			cairo_restore(cr);
+		} else if (drawingMode == B_OP_MIN || drawingMode == B_OP_MAX) {
+			PaintByBrightness([&]() { pango_cairo_show_layout(cr, layout); });
 		} else {
 			pango_cairo_show_layout(cr, layout);
 		}
+	}
+
+	// B_OP_MIN and B_OP_MAX as app_server does them: a pixel the drawing
+	// covers takes the source colour only where that is darker (MIN) or
+	// brighter (MAX) than the pixel, judged by brightness, blended by the
+	// coverage. Cairo's DARKEN and LIGHTEN compare each channel on its own,
+	// so a gray wash over red gave pink instead of leaving red or gray.
+	template<typename Draw>
+	void PaintByBrightness(Draw draw)
+	{
+		cairo_surface_t* target = cairo_get_target(cr);
+		if (cairo_surface_get_type(target) != CAIRO_SURFACE_TYPE_IMAGE
+			|| cairo_image_surface_get_format(target) != CAIRO_FORMAT_ARGB32) {
+			draw();
+			return;
+		}
+
+		// The drawing alone, clipped as it would be, with its coverage in alpha
+		cairo_push_group_with_content(cr, CAIRO_CONTENT_COLOR_ALPHA);
+		cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+		draw();
+		cairo_pattern_t* group = cairo_pop_group(cr);
+
+		cairo_surface_t* groupSurface = NULL;
+		if (cairo_pattern_get_surface(group, &groupSurface) != CAIRO_STATUS_SUCCESS
+			|| cairo_surface_get_type(groupSurface) != CAIRO_SURFACE_TYPE_IMAGE
+			|| cairo_image_surface_get_format(groupSurface) != CAIRO_FORMAT_ARGB32) {
+			cairo_save(cr);
+			cairo_set_source(cr, group);
+			cairo_paint(cr);
+			cairo_restore(cr);
+			cairo_pattern_destroy(group);
+			return;
+		}
+
+		cairo_surface_flush(groupSurface);
+		cairo_surface_flush(target);
+		double offsetX, offsetY;
+		cairo_surface_get_device_offset(groupSurface, &offsetX, &offsetY);
+		int left = -(int)lround(offsetX);
+		int top = -(int)lround(offsetY);
+		int width = cairo_image_surface_get_width(groupSurface);
+		int height = cairo_image_surface_get_height(groupSurface);
+		int targetWidth = cairo_image_surface_get_width(target);
+		int targetHeight = cairo_image_surface_get_height(target);
+		const uint8* groupData = cairo_image_surface_get_data(groupSurface);
+		uint8* targetData = cairo_image_surface_get_data(target);
+		int groupStride = cairo_image_surface_get_stride(groupSurface);
+		int targetStride = cairo_image_surface_get_stride(target);
+		bool max = drawingMode == B_OP_MAX;
+
+		for (int y = 0; y < height; y++) {
+			int targetY = top + y;
+			if (targetY < 0 || targetY >= targetHeight)
+				continue;
+			const uint32* source = (const uint32*)(groupData + y * groupStride);
+			uint32* dest = (uint32*)(targetData + targetY * targetStride);
+			for (int x = 0; x < width; x++) {
+				int targetX = left + x;
+				uint32 s = source[x];
+				uint32 cover = s >> 24;
+				if (cover == 0 || targetX < 0 || targetX >= targetWidth)
+					continue;
+				// both premultiplied: back to plain colours
+				uint32 red = (((s >> 16) & 0xff) * 255 + cover / 2) / cover;
+				uint32 green = (((s >> 8) & 0xff) * 255 + cover / 2) / cover;
+				uint32 blue = ((s & 0xff) * 255 + cover / 2) / cover;
+				uint32 d = dest[targetX];
+				uint32 destAlpha = d >> 24;
+				uint32 destRed = 0, destGreen = 0, destBlue = 0;
+				if (destAlpha != 0) {
+					destRed = (((d >> 16) & 0xff) * 255 + destAlpha / 2) / destAlpha;
+					destGreen = (((d >> 8) & 0xff) * 255 + destAlpha / 2) / destAlpha;
+					destBlue = ((d & 0xff) * 255 + destAlpha / 2) / destAlpha;
+				}
+				// app_server's brightness_for()
+				uint32 brightness = (308 * red + 600 * green + 116 * blue) / 1024;
+				uint32 destBrightness
+					= (308 * destRed + 600 * destGreen + 116 * destBlue) / 1024;
+				if (max ? brightness <= destBrightness : brightness >= destBrightness)
+					continue;
+				if (cover < 255) {
+					// app_server's BLEND()
+					red = (((int)red - (int)destRed) * (int)cover
+						+ (int)(destRed << 8)) >> 8;
+					green = (((int)green - (int)destGreen) * (int)cover
+						+ (int)(destGreen << 8)) >> 8;
+					blue = (((int)blue - (int)destBlue) * (int)cover
+						+ (int)(destBlue << 8)) >> 8;
+				}
+				uint32 alpha = destAlpha + ((255 - destAlpha) * cover + 127) / 255;
+				dest[targetX] = (alpha << 24)
+					| (((red * alpha + 127) / 255) << 16)
+					| (((green * alpha + 127) / 255) << 8)
+					| ((blue * alpha + 127) / 255);
+			}
+		}
+		cairo_surface_mark_dirty_rectangle(target, left, top, width, height);
+		cairo_pattern_destroy(group);
 	}
 
     ~CairoContext()
@@ -686,6 +801,7 @@ class CairoContext {
 			cairo_translate(cr, combinedOrigin.x, combinedOrigin.y);
 
 		cairo_set_line_width(cr, state->pen_size);
+		penSize = state->pen_size;
 
 		// Note: scroll offset is already applied via ConvertToWindow() in the
 		// viewFrame calculation (_ConvertToParent subtracts fBounds.left/top).
@@ -712,10 +828,12 @@ class CairoContext {
 	
 		switch(state->line_cap) {
 			case B_BUTT_CAP:
-				// SQUARE is intentional.  Cairo and Be seem to disagree on this.
-				// If we set Cairo to CAIRO_LINE_CAP_BUTT, all lines come out too short
-				// by a pixel on both ends.
-				cairo_set_line_cap(cr, CAIRO_LINE_CAP_SQUARE);
+				// SQUARE is intentional for pen size 1: app_server strokes those
+				// with square caps so a line includes its end pixels, and with
+				// CAIRO_LINE_CAP_BUTT they come out a pixel short at both ends.
+				// Thicker lines get butt caps there too.
+				cairo_set_line_cap(cr, state->pen_size > 1
+					? CAIRO_LINE_CAP_BUTT : CAIRO_LINE_CAP_SQUARE);
 				break;
 			case B_ROUND_CAP:
 				cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
@@ -745,6 +863,7 @@ class CairoContext {
 	cairo_pattern_t *cairoGradient = NULL;
 	cairo_pattern_t *cairoSourcePattern = NULL;
 	drawing_mode drawingMode = B_OP_COPY;
+	float penSize = 1;
 };
 
 
