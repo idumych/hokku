@@ -78,6 +78,10 @@
 #include <CairoHelpers.h>
 #include <BitmapCairoUtils.h>
 
+// Kireji: app-wide B_POINTER_EVENTS listeners (Window.cpp).
+void _kireji_update_pointer_listener(BView* view);
+void _kireji_remove_pointer_listener(BView* view);
+
 
 
 using std::nothrow;
@@ -885,6 +889,7 @@ BView::~BView()
 		debugger("Trying to delete a view that belongs to a window. "
 			"Call RemoveSelf first.");
 	}
+	_kireji_remove_pointer_listener(this);
 
 	// we also delete all our children
 
@@ -1993,6 +1998,9 @@ BView::SetEventMask(uint32 mask, uint32 options)
 	fEventOptions = options;
 
 	fState->archiving_flags |= B_VIEW_EVENT_MASK_BIT;
+
+	if (fOwner != NULL)
+		_kireji_update_pointer_listener(this);
 
 	return B_OK;
 }
@@ -7926,6 +7934,9 @@ BView::_Attach()
 
 	fAttached = true;
 
+	if (fOwner != NULL)
+		_kireji_update_pointer_listener(this);
+
 	// after giving the view a chance to do this itself,
 	// check for the B_PULSE_NEEDED flag and make sure the
 	// window set's up the pulse messaging
@@ -7993,6 +8004,7 @@ BView::_Detach()
 {
 	DetachedFromWindow();
 	fAttached = false;
+	_kireji_remove_pointer_listener(this);
 
 	for (BView* child = fFirstChild; child != NULL;
 			child = child->fNextSibling) {

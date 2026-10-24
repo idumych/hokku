@@ -249,6 +249,55 @@ find_style_id(const char* familyName, const char* styleName,
 }
 
 
+// How well a style name fits a requested face; lower is better. Among styles with the same
+// face flags, "Regular"/"Bold"/"Italic"/"Bold Italic" beat Medium, SemiBold and the like.
+static int
+style_name_penalty(const char* name, uint16 face)
+{
+	BString lower(name);
+	lower.ToLower();
+	bool bold = (face & B_BOLD_FACE) != 0, italic = (face & B_ITALIC_FACE) != 0;
+	const char* canonical[] = {"regular", "book", "normal", "roman"};
+	if (!bold && !italic) {
+		for (size_t i = 0; i < sizeof(canonical) / sizeof(canonical[0]); i++) {
+			if (lower == canonical[i])
+				return 0;
+		}
+	} else if (bold && !italic && lower == "bold") {
+		return 0;
+	} else if (!bold && italic && (lower == "italic" || lower == "oblique")) {
+		return 0;
+	} else if (bold && italic && (lower == "bold italic" || lower == "bold oblique")) {
+		return 0;
+	}
+	int penalty = 1;
+	const char* modifiers[] = {"thin", "light", "medium", "semi", "demi", "extra", "ultra",
+		"black", "heavy", "condensed", "narrow", "expanded", "wide", "display"};
+	for (size_t i = 0; i < sizeof(modifiers) / sizeof(modifiers[0]); i++) {
+		if (lower.FindFirst(modifiers[i]) >= 0)
+			penalty++;
+	}
+	return penalty;
+}
+
+
+// Distance between faces when there is no exact match: italic must agree first, then the
+// weight class, then the rest.
+static int
+face_distance(uint16 a, uint16 b)
+{
+	int distance = 0;
+	if ((a & B_ITALIC_FACE) != (b & B_ITALIC_FACE))
+		distance += 100;
+	const uint16 weights = B_BOLD_FACE | B_LIGHT_FACE | B_HEAVY_FACE;
+	if ((a & weights) != (b & weights))
+		distance += 10;
+	if ((a & B_CONDENSED_FACE) != (b & B_CONDENSED_FACE))
+		distance += 5;
+	return distance;
+}
+
+
 static status_t
 find_style_id_for_face(const char* familyName, uint16 requestedFace,
 	uint16* styleID, uint16* resolvedFace = NULL)
@@ -263,9 +312,12 @@ find_style_id_for_face(const char* familyName, uint16 requestedFace,
 	if (styleCount <= 0)
 		return B_NAME_NOT_FOUND;
 
-	uint16 fallbackStyleID = 0;
-	uint16 fallbackFace = B_REGULAR_FACE;
-	bool haveFallback = false;
+	// B_REGULAR_FACE is "no other flags": treat it as 0 when comparing.
+	uint16 wanted = requestedFace & ~B_REGULAR_FACE;
+	int bestScore = 1 << 30;
+	uint16 bestStyleID = 0;
+	uint16 bestFace = B_REGULAR_FACE;
+	bool haveBest = false;
 
 	for (int32 i = 0; i < styleCount; i++) {
 		font_style candidate;
@@ -274,25 +326,21 @@ find_style_id_for_face(const char* familyName, uint16 requestedFace,
 				!= B_OK) {
 			continue;
 		}
-
-		if (!haveFallback) {
-			fallbackStyleID = (uint16)i;
-			fallbackFace = candidateFace;
-			haveFallback = true;
+		int score = face_distance(candidateFace & ~B_REGULAR_FACE, wanted) * 100
+			+ style_name_penalty(candidate, requestedFace);
+		if (!haveBest || score < bestScore) {
+			bestScore = score;
+			bestStyleID = (uint16)i;
+			bestFace = candidateFace;
+			haveBest = true;
 		}
-
-		if (candidateFace != requestedFace)
-			continue;
-
-		*styleID = (uint16)i;
-		if (resolvedFace != NULL)
-			*resolvedFace = candidateFace;
-		return B_OK;
 	}
 
-	if (!haveFallback)
+	if (!haveBest)
 		return B_NAME_NOT_FOUND;
 
+	uint16 fallbackStyleID = bestStyleID;
+	uint16 fallbackFace = bestFace;
 	*styleID = fallbackStyleID;
 	if (resolvedFace != NULL)
 		*resolvedFace = fallbackFace;
@@ -474,12 +522,21 @@ FontList::_Update()
 				continue;
 			}
 			
-			// Check weight for bold
+			// Face flags the way Haiku's app_server derives them from a style: Thin to Light
+			// are B_LIGHT_FACE, Black/Heavy B_HEAVY_FACE, SemiBold/Bold B_BOLD_FACE, and
+			// Book/Regular/Medium B_REGULAR_FACE. (Kireji: Cosmoe made everything below Bold
+			// "regular", so B_REGULAR_FACE could resolve to Thin.)
 			PangoWeight weight = pango_font_description_get_weight(desc);
-			if (weight >= PANGO_WEIGHT_BOLD)
+			if (weight < 350)
+				style->face = B_LIGHT_FACE;
+			else if (weight < 550)
+				style->face = B_REGULAR_FACE;
+			else if (weight < 750)
 				style->face = B_BOLD_FACE;
 			else
-				style->face = B_REGULAR_FACE;
+				style->face = B_HEAVY_FACE;
+			if (pango_font_description_get_stretch(desc) < PANGO_STRETCH_NORMAL)
+				style->face |= B_CONDENSED_FACE;
 			
 			// Check style for italic
 			PangoStyle pangoStyle = pango_font_description_get_style(desc);

@@ -22,6 +22,7 @@
 #include <stdlib.h>
 
 #include <unordered_map>
+#include <map>
 #include <vector>
 #include <algorithm>
 
@@ -974,6 +975,71 @@ void view_button_handler(struct widget *widget,
 }
 
 
+// Kireji: app-wide B_POINTER_EVENTS listeners.
+//
+// On Haiku the app_server sends every pointer event to the views that asked for all of them
+// with SetEventMask(B_POINTER_EVENTS), in whatever window they live. Cosmoe has no server and
+// only delivered events to the window under the pointer, so such views never heard anything:
+// a tooltip window, for one, uses this to close as soon as the mouse moves, and its tooltips
+// stayed on screen for good. Listeners are kept here, by view token, with their window.
+static pthread_mutex_t sPointerListenersLock = PTHREAD_MUTEX_INITIALIZER;
+static std::map<int32, BWindow*> sPointerListeners;
+
+
+// Called from BView with the view's window locked: (un)registers the view according to its
+// event mask and whether it is attached.
+void
+_kireji_update_pointer_listener(BView* view)
+{
+	int32 token = _get_object_token_(view);
+	BWindow* window = view->Window();
+	pthread_mutex_lock(&sPointerListenersLock);
+	if (window != NULL && (view->EventMask() & B_POINTER_EVENTS) != 0)
+		sPointerListeners[token] = window;
+	else
+		sPointerListeners.erase(token);
+	pthread_mutex_unlock(&sPointerListenersLock);
+}
+
+
+void
+_kireji_remove_pointer_listener(BView* view)
+{
+	int32 token = _get_object_token_(view);
+	pthread_mutex_lock(&sPointerListenersLock);
+	sPointerListeners.erase(token);
+	pthread_mutex_unlock(&sPointerListenersLock);
+}
+
+
+// Sends a copy of a pointer event to every listener except the view that already got it.
+// The message is built like the backend's own, so BWindow::_SanitizeMessage adds the view
+// coordinates and a B_OUTSIDE_VIEW (or B_EXITED_VIEW) transit, as on Haiku.
+static void
+_kireji_forward_pointer_event(uint32 what, int32 skipToken, BPoint screenWhere, int32 buttons)
+{
+	std::vector<std::pair<int32, BWindow*> > listeners;
+	pthread_mutex_lock(&sPointerListenersLock);
+	for (std::map<int32, BWindow*>::const_iterator it = sPointerListeners.begin();
+			it != sPointerListeners.end(); ++it) {
+		if (it->first != skipToken)
+			listeners.push_back(*it);
+	}
+	pthread_mutex_unlock(&sPointerListenersLock);
+
+	for (size_t i = 0; i < listeners.size(); i++) {
+		BWindow* window = listeners[i].second;
+		BMessage msg(what);
+		BMessage::Private(&msg).SetTarget(listeners[i].first);
+		msg.AddInt64("when", system_time());
+		msg.AddPoint("window_where", screenWhere - window->Frame().LeftTop());
+		msg.AddPoint("screen_where", screenWhere);
+		msg.AddInt32("buttons", buttons);
+		BMessenger(NULL, window).SendMessage(&msg);
+	}
+}
+
+
 int view_pointer_motion_handler(struct widget *widget,
 	struct input *input, uint32_t time,
 	float x, float y, void *data)
@@ -1064,6 +1130,9 @@ int view_pointer_motion_handler(struct widget *widget,
 		// Send the message directly to preserve B_PREFERRED_TOKEN target
 		BMessenger messenger(NULL, window);
 		messenger.SendMessage(&msg);
+
+		_kireji_forward_pointer_event(B_MOUSE_MOVED, _get_object_token_(view),
+			BPoint(x + window->fFrame.left, y + window->fFrame.top), sCurrentButtons);
 	}
 
 	// If not, do we have an app cursor?
