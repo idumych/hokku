@@ -52,6 +52,11 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   own redraw for the resize could run first, with the old surface. The window then kept
   showing its earlier content (a status line that had changed) until something else drew,
   such as the mouse moving over it. The window now asks for a redraw when the surface changes.
+- **Wayland: no crash when a frameless window's view is replaced.** Destroying a window's
+  root widget (a frameless window's top view, such as an alert's) left the window's main
+  surface pointing at the freed widget, and a resize already queued for the window then used
+  it: the app crashed right after showing the window. The surface and the window now forget
+  the widget, and the places that use it check for none.
 - **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
   last. A user translator now hides the system one of the same name instead of both loading.
   If no translator loads at all, the directories searched are printed to stderr.

@@ -2259,8 +2259,8 @@ surface_flush(struct surface *surface)
 		surface->input_region = NULL;
 	}
 
-	int viewport_dest_width = widget->viewport_dest_width;
-	int viewport_dest_height = widget->viewport_dest_height;
+	int viewport_dest_width = widget ? widget->viewport_dest_width : -1;
+	int viewport_dest_height = widget ? widget->viewport_dest_height : -1;
 
 	if (surface->scale_percent != 100 && surface->window->display->viewporter &&
 		viewport_dest_width == -1 && viewport_dest_height == -1) {
@@ -2657,6 +2657,8 @@ window_find_widget(struct window *window, int32_t x, int32_t y)
 	struct widget *widget;
 
 	wl_list_for_each(surface, &window->subsurface_list, link) {
+		if (!surface->widget)
+			continue;
 		widget = widget_find_widget(surface->widget, x, y);
 		if (widget)
 			return widget;
@@ -2750,9 +2752,18 @@ widget_destroy(struct widget *widget)
 	struct input *input;
 	struct tablet_tool *tool;
 
-	/* Destroy the sub-surface along with the root widget */
-	if (surface->widget == widget && surface->subsurface)
-		surface_destroy(widget->surface);
+	/* Destroy the sub-surface along with the root widget. A main
+	 * surface outlives its root widget (a frameless window's topview is
+	 * one), so forget the widget there: a resize or redraw already queued
+	 * for the window would otherwise use it after it is freed. */
+	if (surface->widget == widget) {
+		if (surface->subsurface)
+			surface_destroy(widget->surface);
+		else
+			surface->widget = NULL;
+	}
+	if (widget->window->topview_widget == widget)
+		widget->window->topview_widget = NULL;
 
 	if (widget->tooltip)
 		widget_destroy_tooltip(widget);
@@ -3185,6 +3196,8 @@ window_get_surface(struct window *window)
 {
 	cairo_surface_t *cairo_surface;
 
+	if (!window->main_surface->widget)
+		return NULL;
 	cairo_surface = widget_get_cairo_surface(window->main_surface->widget);
 
 	return cairo_surface_reference(cairo_surface);
@@ -8981,7 +8994,9 @@ tablet_tool_handle_proximity_in(void *data,
 	tool->current_tablet = tablet;
 	tool->enter_serial = serial;
 
-	tablet_tool_set_cursor_image(tool, window->main_surface->widget->default_tablet_cursor);
+	if (window->main_surface->widget)
+		tablet_tool_set_cursor_image(tool,
+			window->main_surface->widget->default_tablet_cursor);
 }
 
 static void
