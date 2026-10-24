@@ -881,9 +881,18 @@ if is_linux
         configuration: cosmoe_desktop_conf,
     )
 
+    # Display managers only look in /usr/share/wayland-sessions, so system
+    # prefixes install there. Any other prefix keeps the file inside it, so
+    # that a non-root install doesn't fail halfway through.
+    install_prefix = get_option('prefix')
+    if install_prefix == '/usr' or install_prefix == '/usr/local'
+        wayland_sessions_dir = '/usr/share/wayland-sessions'
+    else
+        wayland_sessions_dir = get_option('datadir') / 'wayland-sessions'
+    endif
     install_data(
         cosmoe_desktop_entry,
-        install_dir: '/usr/share/wayland-sessions',
+        install_dir: wayland_sessions_dir,
     )
 
     install_data(
@@ -963,10 +972,12 @@ configure_file(input : 'config.h.meson',
     configuration : config_h)
 
 # Clean up stale libbe.so from /usr/local/lib if installing to a different directory
-# This prevents the dynamic linker from finding an outdated library
+# This prevents the dynamic linker from finding an outdated library.
+# Staged (DESTDIR) installs are for packaging and must not touch the host.
 if dir_lib != '/usr/local/lib'
-    meson.add_install_script('sh', '-c', 
-        'if [ -f /usr/local/lib/libbe.so ]; then ' +
+    meson.add_install_script('sh', '-c',
+        'if [ "$MESON_INSTALL_DESTDIR_PREFIX" = "$MESON_INSTALL_PREFIX" ] ' +
+        '&& [ -f /usr/local/lib/libbe.so ]; then ' +
         'echo "Removing stale libbe.so from /usr/local/lib (now installing to ' + dir_lib + ')"; ' +
         'rm -f /usr/local/lib/libbe.so /usr/local/lib/libbe.so.*; ' +
         'fi')

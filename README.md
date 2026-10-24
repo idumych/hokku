@@ -49,6 +49,10 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
 - **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
   node). File panel titles and Open With show the leaf name. In app code, use
   `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
+- **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
+  `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
+  finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
+  `/usr/local/lib`.
 
 ## Using it
 
