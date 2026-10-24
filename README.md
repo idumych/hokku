@@ -47,6 +47,11 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   part. Windows that the window manager placed or sized differently from what they asked for
   could show half-drawn buttons and remnants of earlier frames until resized. The update now
   takes the children from their current frames.
+- **A resize can't leave a window's last drawing off screen.** Resizing recreates a window's
+  backing surface, dirty all over, without asking the backend to copy it; on X11 the backend's
+  own redraw for the resize could run first, with the old surface. The window then kept
+  showing its earlier content (a status line that had changed) until something else drew,
+  such as the mouse moving over it. The window now asks for a redraw when the surface changes.
 - **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
   last. A user translator now hides the system one of the same name instead of both loading.
   If no translator loads at all, the directories searched are printed to stderr.

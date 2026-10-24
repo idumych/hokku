@@ -4443,6 +4443,13 @@ BWindow::_BackingSurfaceWillChange()
 void
 BWindow::_BackingSurfaceDidChange()
 {
+	// The new surface keeps the old pixels and is dirty all over, but nothing asked the
+	// backend to copy it. The backend's own redraw for the same resize (an X11
+	// ConfigureNotify) can run before this, with the old surface, and empty the dirty
+	// region; the window then showed its earlier content until something else drew
+	// (an app's status line stayed "Installing..." until the mouse moved).
+	if (fBackingSurfaceValid)
+		_RequestTrackingRedraw();
 }
 
 
