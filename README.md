@@ -76,6 +76,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   blurred three; lines thicker than 1 get the butt caps they ask for; and the points of a
   filled polygon are pixel corners. Triangles, filled or not, go through pixel centers, as
   in app_server.
+- **Patterns leave their low color out in `B_OP_OVER`.** A pattern's transparent pixels were
+  stored with their color but no alpha, which Cairo (premultiplied) adds to what's
+  underneath: a stipple filled over text painted the low color (often the 0x777477 of
+  `B_TRANSPARENT_32_BIT`) between its dots. The pattern's pixels are now premultiplied.
 - **8-bit and 32-bit bitmaps are transparent where Haiku's are.** Outside `B_OP_COPY`,
   `B_TRANSPARENT_MAGIC_CMAP8` pixels of a `B_CMAP8` bitmap and `B_TRANSPARENT_MAGIC_RGBA32`
   pixels of a `B_RGB32` bitmap are left out, and `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha

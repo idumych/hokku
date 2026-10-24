@@ -503,13 +503,16 @@ class CairoContext {
 							bool transparent = eraseMode ? !bitIsOne
 								: (!useHigh && lowColorTransparent);
 							
-							// Cairo ARGB32 format on little-endian stores as BGRA in memory
+							// Cairo ARGB32 format on little-endian stores as BGRA in
+							// memory, premultiplied: a transparent pixel is all 0, or
+							// OVER adds its color to what's underneath
 							unsigned char* pixel = data + y * stride + x * 4;
-							pixel[0] = color.blue;   // B
-							pixel[1] = color.green;  // G
-							pixel[2] = color.red;    // R
-							pixel[3] = transparent ? 0
-								: (forceOpaque ? 255 : color.alpha);  // A
+							unsigned alpha = transparent ? 0
+								: (forceOpaque ? 255 : color.alpha);
+							pixel[0] = (unsigned char)((color.blue * alpha + 127) / 255);
+							pixel[1] = (unsigned char)((color.green * alpha + 127) / 255);
+							pixel[2] = (unsigned char)((color.red * alpha + 127) / 255);
+							pixel[3] = (unsigned char)alpha;
 						}
 					}
 					
