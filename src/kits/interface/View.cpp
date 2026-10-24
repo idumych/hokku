@@ -6057,21 +6057,29 @@ BView::InvertRect(BRect rect)
 
 #if DRAW
 	BRect windowViewRect(ConvertToWindow(fBounds.OffsetToCopy(B_ORIGIN)));
-	if (fOwner->fBackingSurface == NULL)
-		return;
-
-	BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
-	CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, false, _DisplayScaleFactor(fOwner), updateRect);
-
-	cairo_rectangle(cr, rect.left - 0.5, rect.top - 0.5, rect.Width() + 1, rect.Height() + 1);
-	cairo_set_operator(cr, CAIRO_OPERATOR_DIFFERENCE);
-	cairo_set_source_rgb (cr, 1., 1., 1.);
-	// Do not use CairoContext::Fill(): it changes B_OP_COPY to OVER, which
-	// would paint a white caret instead of applying the DIFFERENCE operator.
-	cairo_fill(cr);
-	
 	BRect windowRect = ConvertToWindow(rect);
+
+	// The text caret blinks from Pulse(), outside any update, so nothing else
+	// holds this lock: without it the backend thread can copy the surface to
+	// the screen halfway through the inversion and leave a stale caret.
 	pthread_mutex_lock(&fOwner->fBackingSurfaceLock);
+	if (fOwner->fBackingSurface == NULL) {
+		pthread_mutex_unlock(&fOwner->fBackingSurfaceLock);
+		return;
+	}
+
+	{
+		BRect* updateRect = fCurrentUpdateRect.IsValid() ? &fCurrentUpdateRect : NULL;
+		CairoContext cr(fOwner->fBackingSurface, fState, &fLocalClipping, &fBounds, &windowViewRect, false, _DisplayScaleFactor(fOwner), updateRect);
+
+		cairo_rectangle(cr, rect.left - 0.5, rect.top - 0.5, rect.Width() + 1, rect.Height() + 1);
+		cairo_set_operator(cr, CAIRO_OPERATOR_DIFFERENCE);
+		cairo_set_source_rgb (cr, 1., 1., 1.);
+		// Do not use CairoContext::Fill(): it changes B_OP_COPY to OVER, which
+		// would paint a white caret instead of applying the DIFFERENCE operator.
+		cairo_fill(cr);
+	}
+
 	fOwner->fBackingSurfaceDirtyRegion.Include(windowRect);
 	pthread_mutex_unlock(&fOwner->fBackingSurfaceLock);
 	

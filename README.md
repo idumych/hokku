@@ -52,6 +52,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   own redraw for the resize could run first, with the old surface. The window then kept
   showing its earlier content (a status line that had changed) until something else drew,
   such as the mouse moving over it. The window now asks for a redraw when the surface changes.
+- **The text caret blinks under the backing-surface lock.** `InvertRect()`, which the caret
+  uses from `Pulse()` outside any update, drew into the window's backing surface without the
+  lock the backend holds while copying it to the screen, so a copy could catch the inversion
+  halfway. It now holds the lock while it draws and marks the area dirty.
 - **Wayland: no crash when a frameless window's view is replaced.** Destroying a window's
   root widget (a frameless window's top view, such as an alert's) left the window's main
   surface pointing at the freed widget, and a resize already queued for the window then used
