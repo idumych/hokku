@@ -31,6 +31,11 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
   Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
   a face the canonical one wins. Before, every weight below Bold counted as regular and the
   first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
+- **`watch_node()` works.** It finds a path for the node (from an existing watch, or a node
+  or directory the app has open, as a `BEntry` or `BNode` does) and watches that. Node
+  monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
+  `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
+  fields. `name` is still a full path (see below).
 
 ## Using it
 

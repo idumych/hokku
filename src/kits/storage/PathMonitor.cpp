@@ -1965,16 +1965,16 @@ PathHandler::_NotifyEntryCreatedOrRemoved(const entry_ref& entryRef,
 
 	BMessage message(B_PATH_MONITOR);
 	message.AddInt32("opcode", opcode);
-	message.AddDevice("device", entryRef.device);
-	message.AddInode("directory", entryRef.directory);
-	message.AddDevice("node device", nodeRef.device);
+	message.AddInt32("device", (int32)entryRef.device);
+	message.AddInt64("directory", (int64)entryRef.directory);
+	message.AddInt32("node device", (int32)nodeRef.device);
 		// This field is not in a usual node monitoring message, since the node
 		// the created/removed entry refers to always belongs to the same FS as
 		// the directory, as another FS cannot yet/no longer be mounted there.
 		// In our case, however, this can very well be the case, e.g. when the
 		// the notification is triggered in response to a directory tree having
 		// been moved into/out of our path.
-	message.AddInode("node", nodeRef.node);
+	message.AddInt64("node", (int64)nodeRef.node);
 	message.AddString("name",
 		path != NULL && path[0] != '\0' ? path : entryRef.name);
 
@@ -2004,11 +2004,11 @@ PathHandler::_NotifyEntryMoved(const entry_ref& fromEntryRef,
 	BString resolvedPath = path != NULL && path[0] != '\0'
 		? BString(path) : _NotificationEntryPath(toEntryRef);
 	message.AddInt32("opcode", B_ENTRY_MOVED);
-	message.AddDevice("device", fromEntryRef.device);
-	message.AddInode("from directory", fromEntryRef.directory);
-	message.AddInode("to directory", toEntryRef.directory);
-	message.AddDevice("node device", nodeRef.device);
-	message.AddInode("node", nodeRef.node);
+	message.AddInt32("device", (int32)fromEntryRef.device);
+	message.AddInt64("from directory", (int64)fromEntryRef.directory);
+	message.AddInt64("to directory", (int64)toEntryRef.directory);
+	message.AddInt32("node device", (int32)nodeRef.device);
+	message.AddInt64("node", (int64)nodeRef.node);
 	message.AddString("from name",
 		!resolvedFromPath.IsEmpty() ? resolvedFromPath.String() : fromEntryRef.name);
 	message.AddString("name",

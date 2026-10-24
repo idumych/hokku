@@ -2457,6 +2457,59 @@ void BMessage::_ReservedMessage3() {}
 // #pragma mark - Macro definitions for data access methods
 
 
+/*!	Kireji: dev_t and ino_t are 64-bit on the host, and Cosmoe has stored
+	node monitor and Tracker fields such as "device" and "node" as
+	B_DEVICE_TYPE / B_INODE_TYPE. Haiku stores them as int32 / int64, and
+	Haiku code reads them with FindInt32() / FindInt64(). So that both kinds
+	of code work with both kinds of message, the integer finders accept any
+	of these four types and convert the value.
+*/
+static status_t
+find_compatible_integer(const BMessage* message, const char* name,
+	type_code wanted, int32 index, void* result, size_t resultSize)
+{
+	if (wanted != B_INT32_TYPE && wanted != B_INT64_TYPE
+		&& wanted != B_DEVICE_TYPE && wanted != B_INODE_TYPE) {
+		return B_BAD_TYPE;
+	}
+
+	type_code type;
+	if (message->GetInfo(name, &type) != B_OK)
+		return B_BAD_TYPE;
+	if (type != B_INT32_TYPE && type != B_INT64_TYPE
+		&& type != B_DEVICE_TYPE && type != B_INODE_TYPE) {
+		return B_BAD_TYPE;
+	}
+
+	const void* data;
+	ssize_t size;
+	status_t error = message->FindData(name, type, index, &data, &size);
+	if (error != B_OK)
+		return error;
+
+	int64 value;
+	if (size == sizeof(int32) && wanted == B_DEVICE_TYPE)
+		value = *(const uint32*)data;
+			// dev_t is unsigned, so don't sign-extend into it
+	else if (size == sizeof(int32))
+		value = *(const int32*)data;
+	else if (size == sizeof(int64))
+		value = *(const int64*)data;
+	else
+		return B_BAD_TYPE;
+
+	if (resultSize == sizeof(int32)) {
+		int32 value32 = (int32)value;
+		memcpy(result, &value32, sizeof(value32));
+	} else if (resultSize == sizeof(int64))
+		memcpy(result, &value, sizeof(value));
+	else
+		return B_BAD_TYPE;
+
+	return B_OK;
+}
+
+
 /* Relay functions from here on (Add... -> AddData, Find... -> FindData) */
 
 #define DEFINE_FUNCTIONS(type, typeName, typeCode)							\
@@ -2486,6 +2539,10 @@ BMessage::Find##typeName(const char* name, int32 index, type* p) const		\
 																			\
 	if (error == B_OK)														\
 		memcpy((void *)p, ptr, sizeof(type));								\
+	else if (error == B_BAD_TYPE) {											\
+		error = find_compatible_integer(this, name, typeCode, index, p,	\
+			sizeof(type));													\
+	}																		\
 																			\
 	return error;															\
 }																			\

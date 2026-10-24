@@ -27,6 +27,7 @@
 #include <libgen.h>
 #include <limits.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -331,9 +332,9 @@ send_entry_created(const node_monitor_target& target,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_ENTRY_CREATED);
-	message.AddDevice("device", child.device);
-	message.AddInode("directory", watch.node);
-	message.AddInode("node", child.node);
+	message.AddInt32("device", (int32)child.device);
+	message.AddInt64("directory", (int64)watch.node);
+	message.AddInt64("node", (int64)child.node);
 	message.AddString("name", child_path(watch.path, name).c_str());
 	send_node_monitor_message(target, message);
 }
@@ -349,9 +350,9 @@ send_entry_removed(const node_monitor_target& target,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_ENTRY_REMOVED);
-	message.AddDevice("device", child.device);
-	message.AddInode("directory", watch.node);
-	message.AddInode("node", child.node);
+	message.AddInt32("device", (int32)child.device);
+	message.AddInt64("directory", (int64)watch.node);
+	message.AddInt64("node", (int64)child.node);
 	message.AddString("name", child_path(watch.path, name).c_str());
 	send_node_monitor_message(target, message);
 }
@@ -367,11 +368,11 @@ send_entry_moved(const node_monitor_target& target,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_ENTRY_MOVED);
-	message.AddDevice("device", from.device);
-	message.AddInode("from directory", from.directory);
-	message.AddInode("to directory", toWatch.node);
-	message.AddDevice("node device", child.device);
-	message.AddInode("node", child.node);
+	message.AddInt32("device", (int32)from.device);
+	message.AddInt64("from directory", (int64)from.directory);
+	message.AddInt64("to directory", (int64)toWatch.node);
+	message.AddInt32("node device", (int32)child.device);
+	message.AddInt64("node", (int64)child.node);
 	message.AddString("from name", from.path.c_str());
 	message.AddString("name", child_path(toWatch.path, toName).c_str());
 	send_node_monitor_message(target, message);
@@ -387,9 +388,9 @@ send_self_removed(const node_monitor_target& target, dev_t device,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_ENTRY_REMOVED);
-	message.AddDevice("device", device);
-	message.AddInode("directory", parentNode);
-	message.AddInode("node", node);
+	message.AddInt32("device", (int32)device);
+	message.AddInt64("directory", (int64)parentNode);
+	message.AddInt64("node", (int64)node);
 	message.AddString("name", path);
 	send_node_monitor_message(target, message);
 }
@@ -413,11 +414,11 @@ send_self_moved(const node_monitor_target& target,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_ENTRY_MOVED);
-	message.AddDevice("device", toWatch.device);
-	message.AddInode("from directory", from.parentNode);
-	message.AddInode("to directory", toWatch.parentNode);
-	message.AddDevice("node device", toWatch.device);
-	message.AddInode("node", toWatch.node);
+	message.AddInt32("device", (int32)toWatch.device);
+	message.AddInt64("from directory", (int64)from.parentNode);
+	message.AddInt64("to directory", (int64)toWatch.parentNode);
+	message.AddInt32("node device", (int32)toWatch.device);
+	message.AddInt64("node", (int64)toWatch.node);
 	message.AddString("from name", from.path.c_str());
 	message.AddString("name", toWatch.path.c_str());
 	send_node_monitor_message(target, message);
@@ -433,8 +434,8 @@ send_stat_changed_for_node(const node_monitor_target& target, dev_t device,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_STAT_CHANGED);
-	message.AddDevice("device", device);
-	message.AddInode("node", node);
+	message.AddInt32("device", (int32)device);
+	message.AddInt64("node", (int64)node);
 	message.AddInt32("fields", (int32)fields);
 	send_node_monitor_message(target, message);
 }
@@ -457,8 +458,8 @@ send_attr_changed_for_node(const node_monitor_target& target, dev_t device,
 
 	BMessage message(B_NODE_MONITOR);
 	message.AddInt32("opcode", B_ATTR_CHANGED);
-	message.AddDevice("device", device);
-	message.AddInode("node", node);
+	message.AddInt32("device", (int32)device);
+	message.AddInt64("node", (int64)node);
 	send_node_monitor_message(target, message);
 }
 
@@ -927,6 +928,104 @@ refresh_inotify_watch(node_monitor_watch& watch)
 	return B_OK;
 }
 
+
+static bool
+path_has_node(const char* path, const node_ref& ref)
+{
+	struct stat st;
+	return lstat(path, &st) == 0 && st.st_dev == (dev_t)ref.device
+		&& st.st_ino == (ino_t)ref.node;
+}
+
+
+/*!	Linux can't turn an inode back into a path, so look for the node where a
+	Haiku app that has a node_ref almost always has it open: an existing
+	watch, a BNode/BDirectory file descriptor, the parent directory a BEntry
+	keeps open, or the current directory.
+	Must be called with sNodeMonitorLock held.
+*/
+static bool
+find_path_for_node(const node_ref& ref, std::string& path)
+{
+	for (const auto& entry : sNodeMonitorWatchesByPath) {
+		const node_monitor_watch* watch = entry.second;
+		if (watch->device == (dev_t)ref.device && watch->node == (ino_t)ref.node
+			&& path_has_node(watch->path.c_str(), ref)) {
+			path = watch->path;
+			return true;
+		}
+	}
+
+	std::vector<std::string> directories;
+	char linkPath[PATH_MAX];
+
+	if (getcwd(linkPath, sizeof(linkPath)) != NULL)
+		directories.push_back(linkPath);
+
+	DIR* fds = opendir("/proc/self/fd");
+	if (fds != NULL) {
+		while (struct dirent* entry = readdir(fds)) {
+			if (entry->d_name[0] == '.')
+				continue;
+
+			std::string fdPath = std::string("/proc/self/fd/") + entry->d_name;
+			ssize_t length = readlink(fdPath.c_str(), linkPath,
+				sizeof(linkPath) - 1);
+			if (length <= 0)
+				continue;
+			linkPath[length] = '\0';
+			if (linkPath[0] != '/')
+				continue;
+				// a socket, pipe, anon inode...
+
+			directories.push_back(linkPath);
+		}
+		closedir(fds);
+	}
+
+	for (const std::string& candidate : directories) {
+		if (path_has_node(candidate.c_str(), ref)) {
+			path = candidate;
+			return true;
+		}
+	}
+
+	// A BEntry keeps its parent directory open, not the entry itself.
+	for (const std::string& candidate : directories) {
+		struct stat st;
+		if (stat(candidate.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)
+			|| st.st_dev != (dev_t)ref.device) {
+			continue;
+		}
+
+		DIR* dir = opendir(candidate.c_str());
+		if (dir == NULL)
+			continue;
+
+		bool found = false;
+		while (struct dirent* entry = readdir(dir)) {
+			if (entry->d_ino != (ino_t)ref.node
+				|| strcmp(entry->d_name, ".") == 0
+				|| strcmp(entry->d_name, "..") == 0) {
+				continue;
+			}
+
+			std::string childPath = child_path(candidate, entry->d_name);
+			if (path_has_node(childPath.c_str(), ref)) {
+				path = childPath;
+				found = true;
+				break;
+			}
+		}
+		closedir(dir);
+
+		if (found)
+			return true;
+	}
+
+	return false;
+}
+
 #endif	// __linux__
 
 
@@ -1150,7 +1249,41 @@ watch_node(const node_ref* node, uint32 flags, BMessenger target)
 status_t
 watch_node(const node_ref* node, uint32 flags, const BHandler* handler, const BLooper* looper)
 {
+	// Kireji: the monitor watches paths, so find a path for the node and
+	// watch that. As with watch_path(), the watch only follows a rename
+	// when B_WATCH_NAME is set and the node stays in the same directory.
+	if (flags == B_WATCH_MOUNT || (node == NULL && flags != B_STOP_WATCHING))
+		return B_NOT_SUPPORTED;
+	if (node == NULL)
+		return B_BAD_VALUE;
+
+#ifndef __linux__
+	(void)handler;
+	(void)looper;
 	return B_NOT_SUPPORTED;
+#else
+	std::string path;
+	pthread_mutex_lock(&sNodeMonitorLock);
+	bool found = find_path_for_node(*node, path);
+	pthread_mutex_unlock(&sNodeMonitorLock);
+
+	if (!found) {
+		if (flags == B_STOP_WATCHING)
+			return B_BAD_VALUE;
+
+		static bool sWarned = false;
+		if (!sWarned) {
+			sWarned = true;
+			fprintf(stderr, "watch_node(): can't find a path for node %"
+				B_PRIdINO " on device %" B_PRIdDEV "; open a BNode or BEntry "
+				"for it first, or use watch_path()\n", node->node,
+				node->device);
+		}
+		return B_ENTRY_NOT_FOUND;
+	}
+
+	return watch_path(path.c_str(), flags & ~B_WATCH_MOUNT, handler, looper);
+#endif
 }
 
 status_t
