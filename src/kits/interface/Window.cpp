@@ -983,7 +983,7 @@ void view_button_handler(struct widget *widget,
 // a tooltip window, for one, uses this to close as soon as the mouse moves, and its tooltips
 // stayed on screen for good. Listeners are kept here, by view token, with their window.
 static pthread_mutex_t sPointerListenersLock = PTHREAD_MUTEX_INITIALIZER;
-static std::map<int32, std::pair<BView*, BWindow*> > sPointerListeners;
+static std::map<int32, BMessenger> sPointerListeners;
 
 
 // Called from BView with the view's window locked: (un)registers the view according to its
@@ -995,7 +995,7 @@ _kireji_update_pointer_listener(BView* view)
 	BWindow* window = view->Window();
 	pthread_mutex_lock(&sPointerListenersLock);
 	if (window != NULL && (view->EventMask() & B_POINTER_EVENTS) != 0)
-		sPointerListeners[token] = std::make_pair(view, window);
+		sPointerListeners[token] = BMessenger(view, window);
 	else
 		sPointerListeners.erase(token);
 	pthread_mutex_unlock(&sPointerListenersLock);
@@ -1018,24 +1018,27 @@ _kireji_remove_pointer_listener(BView* view)
 static void
 _kireji_forward_pointer_event(uint32 what, int32 skipToken, BPoint screenWhere, int32 buttons)
 {
-	// Send under the lock: a view is unregistered (and only then freed) while holding it.
-	// The messenger names the view itself; BMessenger(NULL, window) would deliver to the
-	// window's preferred handler instead.
+	// Copy the messengers and send without holding the lock: a window whose port is full
+	// may itself be waiting for the lock (to register a view) and must be able to get it.
+	// Messengers name the view itself (BMessenger(NULL, window) would reach the window's
+	// preferred handler) and stay harmless if the view is gone. The receiving window works
+	// out its own coordinates from screen_where (BWindow::_SanitizeMessage).
+	std::vector<BMessenger> targets;
 	pthread_mutex_lock(&sPointerListenersLock);
-	for (std::map<int32, std::pair<BView*, BWindow*> >::const_iterator it
-			= sPointerListeners.begin(); it != sPointerListeners.end(); ++it) {
-		if (it->first == skipToken)
-			continue;
-		BView* view = it->second.first;
-		BWindow* window = it->second.second;
-		BMessage msg(what);
-		msg.AddInt64("when", system_time());
-		msg.AddPoint("window_where", screenWhere - window->Frame().LeftTop());
-		msg.AddPoint("screen_where", screenWhere);
-		msg.AddInt32("buttons", buttons);
-		BMessenger(view, window).SendMessage(&msg);
+	for (std::map<int32, BMessenger>::const_iterator it = sPointerListeners.begin();
+			it != sPointerListeners.end(); ++it) {
+		if (it->first != skipToken)
+			targets.push_back(it->second);
 	}
 	pthread_mutex_unlock(&sPointerListenersLock);
+
+	for (size_t i = 0; i < targets.size(); i++) {
+		BMessage msg(what);
+		msg.AddInt64("when", system_time());
+		msg.AddPoint("screen_where", screenWhere);
+		msg.AddInt32("buttons", buttons);
+		targets[i].SendMessage(&msg, (BHandler*)NULL, 0);
+	}
 }
 
 
@@ -5491,8 +5494,15 @@ BWindow::_SanitizeMessage(BMessage* message, BHandler* target, bool usePreferred
 			}
 
 			BPoint where;
-			if (message->FindPoint("window_where", &where) != B_OK)
-				break;
+			if (message->FindPoint("window_where", &where) != B_OK) {
+				// Kireji: pointer events forwarded to B_POINTER_EVENTS listeners carry only
+				// screen_where; convert it here, in this window's own thread.
+				BPoint screenWhere;
+				if (message->FindPoint("screen_where", &screenWhere) != B_OK)
+					break;
+				where = screenWhere - Frame().LeftTop();
+				message->AddPoint("window_where", where);
+			}
 
 			BView* view = dynamic_cast<BView*>(target);
 
