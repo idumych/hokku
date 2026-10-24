@@ -38,6 +38,9 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
   monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
   `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
   fields. `name` is still a full path (see below).
+- **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
+  creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
+  (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
 - **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
   last. A user translator now hides the system one of the same name instead of both loading.
   If no translator loads at all, the directories searched are printed to stderr.

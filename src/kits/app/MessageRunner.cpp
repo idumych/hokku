@@ -62,51 +62,59 @@ int32 nextToken = 1;
 BList messageRunners;
 BLocker messageRunnersLock("message runners");
 
+// Takes the runner out of the list, so that nothing else can find it.
+static RunnerData*
+remove_runner(int32 token)
+{
+	RunnerData* found = NULL;
+
+	messageRunnersLock.Lock();
+	for (int32 i = 0; i < messageRunners.CountItems(); i++) {
+		RunnerData* runner = (RunnerData*)messageRunners.ItemAt(i);
+		if (runner->token == token) {
+			messageRunners.RemoveItem(i);
+			found = runner;
+			break;
+		}
+	}
+	messageRunnersLock.Unlock();
+
+	return found;
+}
+
+
+static void
+free_runner(RunnerData* runner)
+{
+	pthread_mutex_destroy(&runner->mutex);
+	pthread_cond_destroy(&runner->condition);
+	delete runner->message;
+	free(runner);
+}
+
+
 void destroy_runner(int32 token)
 {
-	if (token >= 0) {
-		messageRunnersLock.Lock();
+	if (token < 0)
+		return;
 
-		for (int32 i = 0; i < messageRunners.CountItems(); i++) {
-			RunnerData* runner = (RunnerData*)messageRunners.ItemAt(i);
-			if (runner->token == token) {
-			messageRunners.RemoveItem(i);
-
-			BMessage* message = runner->message;
-
-			if (!runner->detach) {
-				// Signal thread to stop gracefully
-				pthread_mutex_lock(&runner->mutex);
-				runner->shouldStop = true;
-				pthread_cond_signal(&runner->condition);
-				
-				// Wait for any in-progress SendMessage to complete
-				// The thread increments refCount before SendMessage and decrements after
-				while (runner->refCount > 0) {
-					pthread_mutex_unlock(&runner->mutex);
-					sched_yield();  // Give the thread time to finish
-					pthread_mutex_lock(&runner->mutex);
-				}
-				pthread_mutex_unlock(&runner->mutex);
-				
-				// Now wait for thread to exit completely
-				pthread_join(runner->thread, NULL);
-				
-				pthread_mutex_destroy(&runner->mutex);
-				pthread_cond_destroy(&runner->condition);
-				free(runner);
-			}
-			
-			// Delete the message after the thread has exited
-			if (message != NULL)
-				delete message;
-			
-			break;
-			}
-		}
-	
-		messageRunnersLock.Unlock();
+	// Kireji: don't hold messageRunnersLock while joining the thread. A thread
+	// that has only just started may need it, and a BMessageRunner deleted
+	// right after it was created (BTextView's, on a very short click) then
+	// deadlocked its window for good.
+	RunnerData* runner = remove_runner(token);
+	if (runner == NULL || runner->detach) {
+		// a detached runner's thread cleans up after itself
+		return;
 	}
+
+	pthread_mutex_lock(&runner->mutex);
+	runner->shouldStop = true;
+	pthread_cond_signal(&runner->condition);
+	pthread_mutex_unlock(&runner->mutex);
+
+	pthread_join(runner->thread, NULL);
+	free_runner(runner);
 }
 
 
@@ -433,32 +441,7 @@ BMessageRunner::_InitData(BMessenger target, const BMessage* message,
 
 void* MessageRunnerLoop(void *data)
 {
-	int32 runnerToken = *(int32 *)data;
-	free(data);  // Take ownership and free the heap-allocated token
-	RunnerData* runner = NULL;
-
-	messageRunnersLock.Lock();
-
-	// Use the token to find our runner
-	for (int32 i = 0; i < messageRunners.CountItems(); i++) {
-		runner = (RunnerData*)messageRunners.ItemAt(i);
-
-		if (runner == NULL)
-			continue;
-
-		if (runner->token == runnerToken) {
-			break;
-		}
-	}
-
-	messageRunnersLock.Unlock();
-
-	// Bad token?  We never found the desired runner
-	if (runner == NULL) {
-		printf("----- message runner loop: could not find runner for token %d\n",
-			runnerToken);
-		return NULL;
-	}
+	RunnerData* runner = (RunnerData*)data;
 
 	// Main message sending loop
 	for (;;) {
@@ -551,14 +534,7 @@ void* MessageRunnerLoop(void *data)
 		
 		// Check if we've finished all messages
 		if (remainingCount == 0) {
-			bool shouldFree = (runner->detach && runner->refCount == 0);
 			pthread_mutex_unlock(&runner->mutex);
-			
-			if (shouldFree) {
-				// Don't delete message here - destroy_runner will do it
-				free(runner);
-				runner = NULL;
-			}
 			break;
 		}
 		
@@ -578,8 +554,9 @@ void* MessageRunnerLoop(void *data)
 	}
 
 	// If we are detached, we must clean up after ourselves
-	if (runner && runner->detach) {
-		destroy_runner(runnerToken);
+	if (runner->detach) {
+		remove_runner(runner->token);
+		free_runner(runner);
 	}
 
 	return NULL;
@@ -633,36 +610,25 @@ BMessageRunner::_RegisterRunner(BMessenger target, const BMessage* message,
 	pthread_mutex_init(&runner->mutex, NULL);
 	pthread_cond_init(&runner->condition, NULL);
 
-	// Allocate token on heap to pass safely to thread
-	int32* tokenPtr = (int32*)malloc(sizeof(int32));
-	if (tokenPtr == NULL) {
-		pthread_mutex_destroy(&runner->mutex);
-		pthread_cond_destroy(&runner->condition);
-		delete runner->message;
-		free(runner);
-		return B_NO_MEMORY;
-	}
-
 	messageRunnersLock.Lock();
 	runner->token = nextToken++;
-	*tokenPtr = runner->token;
+	int32 token = runner->token;
 	messageRunners.AddItem(runner);
-	messageRunnersLock.Unlock();
 
-	if (pthread_create(&runner->thread, NULL, MessageRunnerLoop, tokenPtr) == 0) {
-		return runner->token;
+	// The list lock is held until the thread exists, so that a concurrent
+	// destroy_runner() can't join a thread that hasn't been created. The
+	// thread itself never takes the lock until it is done.
+	if (pthread_create(&runner->thread, NULL, MessageRunnerLoop, runner) != 0) {
+		messageRunners.RemoveItem(runner);
+		messageRunnersLock.Unlock();
+		free_runner(runner);
+		return B_ERROR;
 	}
-
-	// pthread_create failed - clean up properly
-	free(tokenPtr);
-	messageRunnersLock.Lock();
-	messageRunners.RemoveItem(runner);
+	if (detach)
+		pthread_detach(runner->thread);
 	messageRunnersLock.Unlock();
-	pthread_mutex_destroy(&runner->mutex);
-	pthread_cond_destroy(&runner->condition);
-	delete runner->message;
-	free(runner);
-	return B_ERROR;
+
+	return token;
 }
 
 
