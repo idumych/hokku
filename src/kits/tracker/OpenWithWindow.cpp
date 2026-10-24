@@ -131,7 +131,7 @@ OpenWithContainerWindow::OpenWithContainerWindow(BMessage* entriesToOpen,
 		entry_ref ref;
 		fEntriesToOpen->FindRef("refs", &ref);
 		BString buffer(B_TRANSLATE("Open %name with:"));
-		buffer.ReplaceFirst("%name", ref.name);
+		buffer.ReplaceFirst("%name", BPath(&ref).Leaf());
 
 		SetTitle(buffer.String());
 	} else {

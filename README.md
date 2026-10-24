@@ -46,6 +46,9 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
   If no translator loads at all, the directories searched are printed to stderr.
   `BDirectory::GetNextRef()` reports errors and fills in the parent directory's device and
   node, like `BEntry::GetRef()`.
+- **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
+  node). File panel titles and Open With show the leaf name. In app code, use
+  `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
 
 ## Using it
 

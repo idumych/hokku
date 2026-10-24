@@ -35,6 +35,10 @@ struct entry_ref {
 			dev_t				device;
 			ino_t				directory;
 			char*				name;
+				// Cosmoe: the entry's absolute path, not just its leaf
+				// name as on Haiku, since Linux can't find a directory from
+				// its node. For a name to show, use BPath(&ref).Leaf() or
+				// BEntry::GetName(), which work on Haiku as well.
 };
 
 

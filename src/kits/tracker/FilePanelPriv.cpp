@@ -836,7 +836,8 @@ TFilePanel::Init(const BMessage*)
 	app_info info;
 	BString title;
 	if (be_app->GetAppInfo(&info) == B_OK) {
-		title = info.ref.name;
+		// Cosmoe's ref names are full paths
+		title = BPath(&info.ref).Leaf();
 		title << ": ";
 	}
 	title << fButtonText;	// Open or Save
@@ -1255,7 +1256,7 @@ TFilePanel::MessageReceived(BMessage* message)
 						// set the 'name' fld to the current ref's
 						// name notify the panel that the default
 						// button should be enabled
-						SetSaveText(ref.name);
+						SetSaveText(BPath(&ref).Leaf());
 						SelectionChanged();
 
 						HandleSaveButton();
