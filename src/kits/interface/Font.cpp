@@ -878,9 +878,14 @@ BFont::SetFamilyAndFace(const font_family family, uint16 face)
 	if (status != B_OK)
 		return status;
 
+	// Underscore, strikeout and outline are drawn, not separate styles:
+	// keep them in the face, as Haiku does.
+	const uint16 decorations = B_UNDERSCORE_FACE | B_STRIKEOUT_FACE
+		| B_OUTLINED_FACE;
+
 	fFamilyID = familyID;
 	fStyleID = styleID;
-	fFace = resolvedFace;
+	fFace = (resolvedFace & ~decorations) | (face & decorations);
 
 	fHeight.ascent = kUninitializedAscent;
 	fExtraFlags = kUninitializedExtraFlags;

@@ -3492,6 +3492,25 @@ BView::DrawString(const char* string, int32 length, escapement_delta* delta)
 }
 
 
+// B_UNDERSCORE_FACE and B_STRIKEOUT_FACE are drawn decorations, not font
+// styles, so they become layout attributes.
+static void
+set_layout_decorations(PangoLayout* layout, uint16 face)
+{
+	if ((face & (B_UNDERSCORE_FACE | B_STRIKEOUT_FACE)) == 0)
+		return;
+
+	PangoAttrList* attributes = pango_attr_list_new();
+	if ((face & B_UNDERSCORE_FACE) != 0)
+		pango_attr_list_insert(attributes,
+			pango_attr_underline_new(PANGO_UNDERLINE_SINGLE));
+	if ((face & B_STRIKEOUT_FACE) != 0)
+		pango_attr_list_insert(attributes, pango_attr_strikethrough_new(TRUE));
+	pango_layout_set_attributes(layout, attributes);
+	pango_attr_list_unref(attributes);
+}
+
+
 void
 BView::DrawString(const char* string, int32 length, BPoint location,
 	escapement_delta* delta)
@@ -3526,6 +3545,7 @@ BView::DrawString(const char* string, int32 length, BPoint location,
 	PangoFontDescription *desc = (PangoFontDescription*)fState->font.GetPangoFontDescription();
 	pango_layout_set_font_description(layout, desc);
 	pango_font_description_free(desc);
+	set_layout_decorations(layout, fState->font.Face());
 
 	if (fState->font.Flags() & B_DISABLE_ANTIALIASING) {
 		cairo_font_options_t *options = cairo_font_options_create();
@@ -3621,6 +3641,7 @@ BView::DrawString(const char* string, int32 length, const BPoint* locations,
 
 	pango_layout_set_font_description(layout, desc);
 	pango_font_description_free(desc);
+	set_layout_decorations(layout, fState->font.Face());
 
 	if (fState->font.Flags() & B_DISABLE_ANTIALIASING) {
 		cairo_font_options_t *options = cairo_font_options_create();

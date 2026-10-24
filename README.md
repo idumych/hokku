@@ -31,6 +31,8 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
   Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
   a face the canonical one wins. Before, every weight below Bold counted as regular and the
   first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
+- **Underline and strikeout are drawn.** `B_UNDERSCORE_FACE` and `B_STRIKEOUT_FACE` stay in
+  the font's face and are drawn by `DrawString()`, so `BTextView` runs show them.
 - **`watch_node()` works.** It finds a path for the node (from an existing watch, or a node
   or directory the app has open, as a `BEntry` or `BNode` does) and watches that. Node
   monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
