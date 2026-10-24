@@ -975,7 +975,7 @@ void view_button_handler(struct widget *widget,
 }
 
 
-// Kireji: app-wide B_POINTER_EVENTS listeners.
+// Hokku: app-wide B_POINTER_EVENTS listeners.
 //
 // On Haiku the app_server sends every pointer event to the views that asked for all of them
 // with SetEventMask(B_POINTER_EVENTS), in whatever window they live. Cosmoe has no server and
@@ -989,7 +989,7 @@ static std::map<int32, BMessenger> sPointerListeners;
 // Called from BView with the view's window locked: (un)registers the view according to its
 // event mask and whether it is attached.
 void
-_kireji_update_pointer_listener(BView* view)
+_hokku_update_pointer_listener(BView* view)
 {
 	int32 token = _get_object_token_(view);
 	BWindow* window = view->Window();
@@ -1003,7 +1003,7 @@ _kireji_update_pointer_listener(BView* view)
 
 
 void
-_kireji_remove_pointer_listener(BView* view)
+_hokku_remove_pointer_listener(BView* view)
 {
 	int32 token = _get_object_token_(view);
 	pthread_mutex_lock(&sPointerListenersLock);
@@ -1016,7 +1016,7 @@ _kireji_remove_pointer_listener(BView* view)
 // The message is built like the backend's own, so BWindow::_SanitizeMessage adds the view
 // coordinates and a B_OUTSIDE_VIEW (or B_EXITED_VIEW) transit, as on Haiku.
 static void
-_kireji_forward_pointer_event(uint32 what, int32 skipToken, BPoint screenWhere, int32 buttons)
+_hokku_forward_pointer_event(uint32 what, int32 skipToken, BPoint screenWhere, int32 buttons)
 {
 	// Copy the messengers and send without holding the lock: a window whose port is full
 	// may itself be waiting for the lock (to register a view) and must be able to get it.
@@ -1133,7 +1133,7 @@ int view_pointer_motion_handler(struct widget *widget,
 		BMessenger messenger(NULL, window);
 		messenger.SendMessage(&msg);
 
-		_kireji_forward_pointer_event(B_MOUSE_MOVED, _get_object_token_(view),
+		_hokku_forward_pointer_event(B_MOUSE_MOVED, _get_object_token_(view),
 			BPoint(x + window->fFrame.left, y + window->fFrame.top), sCurrentButtons);
 	}
 
@@ -5495,7 +5495,7 @@ BWindow::_SanitizeMessage(BMessage* message, BHandler* target, bool usePreferred
 
 			BPoint where;
 			if (message->FindPoint("window_where", &where) != B_OK) {
-				// Kireji: pointer events forwarded to B_POINTER_EVENTS listeners carry only
+				// Hokku: pointer events forwarded to B_POINTER_EVENTS listeners carry only
 				// screen_where; convert it here, in this window's own thread.
 				BPoint screenWhere;
 				if (message->FindPoint("screen_where", &screenWhere) != B_OK)

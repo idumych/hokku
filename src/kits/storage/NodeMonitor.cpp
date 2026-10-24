@@ -1249,7 +1249,7 @@ watch_node(const node_ref* node, uint32 flags, BMessenger target)
 status_t
 watch_node(const node_ref* node, uint32 flags, const BHandler* handler, const BLooper* looper)
 {
-	// Kireji: the monitor watches paths, so find a path for the node and
+	// Hokku: the monitor watches paths, so find a path for the node and
 	// watch that. As with watch_path(), the watch only follows a rename
 	// when B_WATCH_NAME is set and the node stays in the same directory.
 	if (flags == B_WATCH_MOUNT || (node == NULL && flags != B_STOP_WATCHING))

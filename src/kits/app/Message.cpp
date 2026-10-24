@@ -2457,7 +2457,7 @@ void BMessage::_ReservedMessage3() {}
 // #pragma mark - Macro definitions for data access methods
 
 
-/*!	Kireji: dev_t and ino_t are 64-bit on the host, and Cosmoe has stored
+/*!	Hokku: dev_t and ino_t are 64-bit on the host, and Cosmoe has stored
 	node monitor and Tracker fields such as "device" and "node" as
 	B_DEVICE_TYPE / B_INODE_TYPE. Haiku stores them as int32 / int64, and
 	Haiku code reads them with FindInt32() / FindInt64(). So that both kinds

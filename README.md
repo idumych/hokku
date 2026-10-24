@@ -1,12 +1,12 @@
-# Kireji
+# Hokku
 
-Kireji is a fork of [Cosmoe](https://github.com/haydentech/cosmoe), the BeOS/Haiku API as a
-C++ library for Linux (X11 and Wayland), macOS and Windows. A *kireji* is the "cutting word"
-in a haiku, the word where the poem turns.
+Hokku is a fork of [Cosmoe](https://github.com/haydentech/cosmoe), the BeOS/Haiku API as a
+C++ library for Linux (X11 and Wayland), macOS and Windows. A *hokku* is the opening verse
+of a linked poem, the verse the haiku grew out of.
 
 ## Why this fork exists
 
-- **AI-generated fixes have a home here.** Kireji incorporates fixes written with AI
+- **AI-generated fixes have a home here.** Hokku incorporates fixes written with AI
   assistance. Each fix is reviewed and tested against real apps before it lands. Cosmoe
   doesn't accept AI contributions, so these fixes are kept in this fork instead of being
   proposed upstream.
@@ -15,12 +15,12 @@ in a haiku, the word where the poem turns.
   standalone, freestanding programs (for example AppImages), with behaviour that matches
   Haiku as closely as possible.
 - **Started in the spirit of [Renku](https://github.com/RenkuOS/Source).** Renku OS is a
-  Haiku fork that welcomes machine-assisted work. Kireji brings that approach to the library
+  Haiku fork that welcomes machine-assisted work. Hokku brings that approach to the library
   that carries Renku and Haiku apps to other systems.
 
-Kireji follows upstream Cosmoe and merges its changes regularly. The library names, headers
+Hokku follows upstream Cosmoe and merges its changes regularly. The library names, headers
 and build (`meson`, `libbe.so` and friends) are unchanged, so anything that builds against
-Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
+Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
@@ -58,10 +58,10 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
 
 Build it exactly like Cosmoe (below). The haiku-* app templates
 ([beos-app-platforms](https://github.com/idumych/beos-app-platforms)) build their AppImage
-against Kireji when `haiku-app.env` sets:
+against Hokku when `haiku-app.env` sets:
 
-    COSMOE_REPO="idumych/kireji"
-    COSMOE_TAG="kireji"
+    COSMOE_REPO="idumych/hokku"
+    COSMOE_TAG="hokku"
 
 First used for [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader for Renku
 OS, Haiku, VitruvianOS and Linux.

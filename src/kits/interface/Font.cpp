@@ -524,7 +524,7 @@ FontList::_Update()
 			
 			// Face flags the way Haiku's app_server derives them from a style: Thin to Light
 			// are B_LIGHT_FACE, Black/Heavy B_HEAVY_FACE, SemiBold/Bold B_BOLD_FACE, and
-			// Book/Regular/Medium B_REGULAR_FACE. (Kireji: Cosmoe made everything below Bold
+			// Book/Regular/Medium B_REGULAR_FACE. (Hokku: Cosmoe made everything below Bold
 			// "regular", so B_REGULAR_FACE could resolve to Thin.)
 			PangoWeight weight = pango_font_description_get_weight(desc);
 			if (weight < 350)

@@ -98,7 +98,7 @@ void destroy_runner(int32 token)
 	if (token < 0)
 		return;
 
-	// Kireji: don't hold messageRunnersLock while joining the thread. A thread
+	// Hokku: don't hold messageRunnersLock while joining the thread. A thread
 	// that has only just started may need it, and a BMessageRunner deleted
 	// right after it was created (BTextView's, on a very short click) then
 	// deadlocked its window for good.

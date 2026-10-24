@@ -360,7 +360,7 @@ BTranslatorRoster::Private::AddDefaultPaths()
 		}
 	}
 
-	// Kireji: an app without translators can't open any image, and nothing
+	// Hokku: an app without translators can't open any image, and nothing
 	// else says why. Say where we looked.
 	if (added == 0) {
 		fprintf(stderr, "BTranslatorRoster: no translators found in:%s\n"
