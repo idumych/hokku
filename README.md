@@ -61,6 +61,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   surface pointing at the freed widget, and a resize already queued for the window then used
   it: the app crashed right after showing the window. The surface and the window now forget
   the widget, and the places that use it check for none.
+- **Leaving a window is a `B_EXITED_VIEW`.** When the pointer leaves a window (X11
+  `LeaveNotify`, Wayland pointer leave), the view that was under it gets a `B_MOUSE_MOVED`
+  with `B_EXITED_VIEW`, as on Haiku, and no idle event follows. Before it heard nothing, so a
+  tooltip shown for it stayed on screen after the pointer had moved to another window.
 - **`B_OP_MIN` and `B_OP_MAX` compare brightness.** Like app_server, a pixel takes the
   drawing's colour only where that is darker (MIN) or brighter (MAX) as a whole, judged by
   brightness. Cairo's DARKEN and LIGHTEN, used before, compare each channel on its own, so a

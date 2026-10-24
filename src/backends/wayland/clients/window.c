@@ -4160,8 +4160,21 @@ pointer_handle_leave(void *data, struct wl_pointer *pointer,
 		     uint32_t serial, struct wl_surface *surface)
 {
 	struct input *input = data;
+	struct widget *widget = input->focus_widget;
 
 	input->display->serial = serial;
+
+	/* The view that was under the pointer gets no more motion, so it would
+	 * never hear that the pointer has gone (on Haiku it gets B_EXITED_VIEW,
+	 * which closes its tooltip): report a motion outside the window. And no
+	 * idle event (which opens tooltips) for a pointer that has left. */
+	if (input->idle_timer_running) {
+		toytimer_disarm(&input->idle_timer);
+		input->idle_timer_running = false;
+	}
+	if (widget && !input->grab && widget->motion_handler)
+		widget->motion_handler(widget, input, 0, -1, -1, widget->user_data);
+
 	input_remove_pointer_focus(input);
 }
 

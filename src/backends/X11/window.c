@@ -1686,6 +1686,29 @@ window_handle_button_release(struct window *window, XButtonEvent *event)
 			       widget->user_data);
 }
 
+/* The pointer left the window. X11 sends no motion events outside it, so the
+ * view that was under the pointer would never hear that it has gone (on Haiku
+ * it gets B_EXITED_VIEW, which closes its tooltip). Report a motion to where
+ * the pointer left, outside the window, and don't fire the idle timer for it. */
+static void
+window_handle_leave_notify(struct window *window, XCrossingEvent *event)
+{
+	struct widget *widget = window->widget;
+	struct display *display = window->display;
+
+	if (window->is_popup || event->mode != NotifyNormal
+		|| event->detail == NotifyInferior)
+		return;
+
+	if (display->last_motion_window == window)
+		display->idle_fired = true;
+
+	if (!widget || !widget->motion_handler)
+		return;
+	widget->motion_handler(widget, (struct input*)widget, event->time,
+		(float)event->x, (float)event->y, widget->user_data);
+}
+
 static void
 window_handle_motion_notify(struct window *window, XMotionEvent *event)
 {
@@ -2180,6 +2203,9 @@ display_run(struct display *display)
 			case MotionNotify:
 				window_handle_motion_notify(window, &event.xmotion);
 				break;
+			case LeaveNotify:
+				window_handle_leave_notify(window, &event.xcrossing);
+				break;
 			case ClientMessage:
 				window_handle_client_message(window, &event.xclient);
 				break;
@@ -2374,7 +2400,7 @@ window_create(struct display *display, uint32_t look, uint32_t flags)
 	XSelectInput(display->xdisplay, window->xwindow,
 		     ExposureMask | KeyPressMask | KeyReleaseMask |
 		     ButtonPressMask | ButtonReleaseMask |
-		     PointerMotionMask | StructureNotifyMask |
+		     PointerMotionMask | LeaveWindowMask | StructureNotifyMask |
 		     FocusChangeMask);
 	
 	/* Set WM_DELETE_WINDOW protocol */

@@ -1110,13 +1110,20 @@ int view_pointer_motion_handler(struct widget *widget,
 		}
 	}
 
+	// A motion outside the window (the backend's report of where the pointer
+	// left it) has no view under the mouse: the last one gets B_EXITED_VIEW.
+	bool outside = sCurrentButtons == 0
+		&& (x < 0 || y < 0 || x >= window->fFrame.Width() + 1
+			|| y >= window->fFrame.Height() + 1);
+
 	if (view) {
 		BMessage::Private messagePrivate(&msg);
 		messagePrivate.SetTarget(B_PREFERRED_TOKEN);
 		msg.AddInt64("when", system_time());
 		msg.AddPoint("window_where", BPoint(x, y));
 		msg.AddInt32("buttons", sCurrentButtons);
-		msg.AddInt32("_view_token", _get_object_token_(view));
+		if (!outside)
+			msg.AddInt32("_view_token", _get_object_token_(view));
 
 		bool hasDragMessage = false;
 		BMessage dragMessage;
