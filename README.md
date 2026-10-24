@@ -38,6 +38,11 @@ Cosmoe builds against Kireji. Licence: MIT, as upstream (see License.md).
   monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
   `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
   fields. `name` is still a full path (see below).
+- **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
+  last. A user translator now hides the system one of the same name instead of both loading.
+  If no translator loads at all, the directories searched are printed to stderr.
+  `BDirectory::GetNextRef()` reports errors and fills in the parent directory's device and
+  node, like `BEntry::GetRef()`.
 
 ## Using it
 

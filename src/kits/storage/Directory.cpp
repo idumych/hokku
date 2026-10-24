@@ -429,8 +429,11 @@ BDirectory::GetNextRef(entry_ref* ref)
 		return B_FILE_ERROR;
 
 	// Cosmoe needs the full path in the entry_ref
-	char dirPath[B_FILE_NAME_LENGTH];
-	BPrivate::Storage::dir_to_path(fDirFd, dirPath, B_FILE_NAME_LENGTH);
+	char dirPath[B_PATH_NAME_LENGTH];
+	status_t error = BPrivate::Storage::dir_to_path(fDirFd, dirPath,
+		sizeof(dirPath));
+	if (error != B_OK)
+		return error;
 
 	BPrivate::Storage::LongDirEntry longEntry;
 	struct dirent* entry = longEntry.dirent();
@@ -443,11 +446,16 @@ BDirectory::GetNextRef(entry_ref* ref)
 			|| !strcmp(entry->d_name, ".."));
 	}
 
-	strlcat(dirPath, "/", B_FILE_NAME_LENGTH);
-	strlcat(dirPath, entry->d_name, B_FILE_NAME_LENGTH);
+	if (strcmp(dirPath, "/") != 0)
+		strlcat(dirPath, "/", sizeof(dirPath));
+	strlcat(dirPath, entry->d_name, sizeof(dirPath));
 
-	ref->device = 0;
-	ref->directory = entry->d_ino;
+	// As on Haiku, the ref names its parent directory's node.
+	struct stat st;
+	if (fstat(fDirFd, &st) != 0)
+		return errno;
+	ref->device = st.st_dev;
+	ref->directory = st.st_ino;
 	return ref->set_name(dirPath);
 }
 

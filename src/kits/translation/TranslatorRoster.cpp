@@ -333,6 +333,10 @@ BTranslatorRoster::Private::AddDefaultPaths()
 		B_SYSTEM_ADDONS_DIRECTORY,
 	};
 
+	BString searched;
+	BString lastPath;
+	int32 added = 0;
+
 	for (uint32 i = fSafeMode ? 4 : 0; i < sizeof(paths) / sizeof(paths[0]);
 			i++) {
 		BPath path;
@@ -344,8 +348,24 @@ BTranslatorRoster::Private::AddDefaultPaths()
 			mkdir(path.Path(), 0755);
 #endif
 				// make sure the directory exists before we add it
-			AddPath(path.Path());
+			int32 count = 0;
+			status = AddPath(path.Path(), &count);
+			added += count;
+			if (lastPath != path.Path()) {
+				searched << "\n  " << path.Path();
+				if (status != B_OK)
+					searched << " (" << strerror(status) << ")";
+			}
+			lastPath = path.Path();
 		}
+	}
+
+	// Kireji: an app without translators can't open any image, and nothing
+	// else says why. Say where we looked.
+	if (added == 0) {
+		fprintf(stderr, "BTranslatorRoster: no translators found in:%s\n"
+			"Set TRANSLATORS to a colon-separated list of directories to "
+			"choose them.\n", searched.String());
 	}
 }
 
@@ -371,7 +391,7 @@ BTranslatorRoster::Private::AddPaths(const char* paths)
 		BString path;
 
 		if (end != NULL) {
-			path.SetTo(paths, end - 1 - paths);
+			path.SetTo(paths, end - paths);
 			paths = end + 1;
 		} else {
 			path.SetTo(paths);
@@ -381,7 +401,7 @@ BTranslatorRoster::Private::AddPaths(const char* paths)
 		// Keep the last error that occured, and return it
 		// but don't overwrite it, if the last path was
 		// added successfully.
-		int32 count;
+		int32 count = 0;
 		status_t error = AddPath(path.String(), &count);
 		if (error != B_NO_ERROR)
 			status = error;
@@ -554,7 +574,11 @@ BTranslatorRoster::Private::CreateTranslators(const entry_ref& ref,
 
 	BPrivate::QuarantineTranslatorImage quarantine(*this);
 
-	const translator_item* item = _FindTranslator(ref.name);
+	// Cosmoe's entry_ref names are full paths: compare the leaf, so that a
+	// user translator hides the system one with the same name.
+	const char* leaf = strrchr(ref.name, '/');
+	const translator_item* item = _FindTranslator(leaf != NULL ? leaf + 1
+		: ref.name);
 	if (item != NULL) {
 		// check if the known translator has a higher priority
 		if (_CompareTranslatorDirectoryPriority(item->ref, ref) <= 0) {
@@ -967,7 +991,10 @@ BTranslatorRoster::Private::_FindTranslator(const char* name) const
 
 	while (iterator != fTranslators.end()) {
 		const translator_item& item = iterator->second;
-		if (item.ref.name != NULL && !strcmp(item.ref.name, name))
+		const char* itemName = item.ref.name;
+		if (itemName != NULL && strrchr(itemName, '/') != NULL)
+			itemName = strrchr(itemName, '/') + 1;
+		if (itemName != NULL && !strcmp(itemName, name))
 			return &item;
 
 		iterator++;

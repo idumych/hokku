@@ -902,14 +902,18 @@ BPrivate::Storage::dir_to_path(int dir, char *result, size_t size)
 	size_t bufsize = sizeof(path) - 1;
 
 	snprintf(path, bufsize, "/proc/self/fd/%d", dir);
-	ssize_t bytes = readlink(path, result, size);
+	if (size < 2)
+		return B_BAD_VALUE;
 
-	if (bytes > 0) {
-		result[bytes] = '\0';
-		return B_OK;
-	}
+	ssize_t bytes = readlink(path, result, size - 1);
+	if (bytes <= 0)
+		return B_ERROR;
+	if ((size_t)bytes >= size - 1)
+		return B_NAME_TOO_LONG;
+			// readlink() truncates silently
 
-	return B_ERROR;
+	result[bytes] = '\0';
+	return B_OK;
 #endif
 }
 
