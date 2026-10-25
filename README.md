@@ -24,6 +24,19 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **`BGLView` for OpenGL.** Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header
+  `<opengl/GLView.h>`, the same API as Haiku's): `LockGL()`, `UnlockGL()`, `SwapBuffers()`
+  and `GetGLProcAddress()`, from any thread, as on Haiku. It renders with EGL (Mesa's
+  surfaceless platform when there is one, otherwise the default display, so NVIDIA's driver
+  works too) into an off-screen buffer the size of the view; `SwapBuffers()` copies the frame
+  into a bitmap that the view draws, on X11 and Wayland alike. It's built when EGL and
+  `GL/gl.h` are found (Debian/Ubuntu: `libegl-dev libgl-dev`). `CopyPixelsIn()`/`Out()`,
+  overlays and `BGLScreen` aren't there yet. VLC Reborn's OpenGL video output uses it.
+- **Wayland: menus are placed by the compositor.** Wayland doesn't tell an app where its
+  windows are, and `BScreen` there covers one output, so `BMenu` moved pop-ups by a wrong
+  amount trying to keep them on screen: with two monitors, a `BMenuField`'s pop-up on one of
+  them opened far off to the side and was never seen. Menus now leave that to the
+  compositor, which may flip, slide and resize them, horizontally as well as vertically.
 - **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` now get every
   pointer motion, in whatever window they live, as they do on Haiku. Tooltip windows rely on
   this to close when the mouse moves; before, tooltips stayed on screen for good.
@@ -113,6 +126,9 @@ BeOS-like OS based on Linux):
 - [Gobe Productive](https://github.com/idumych/gobe-productive), the BeOS office suite
   ported from the original (a preview of its word processor). It is the largest so far,
   and found the Wayland crash listed above: an alert as an app's first window.
+- [VLC Reborn](https://github.com/idumych/vlc-reborn), VLC media player with its BeOS
+  interface back. It brought `BGLView` (for its OpenGL video output) and found the Wayland
+  menu placement bug.
 
 **Problems** found with Hokku are fixed here, as new commits on `hokku` listed above, with
 the smallest program that shows the bug used to test the fix. Please don't report them to
