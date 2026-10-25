@@ -45,6 +45,7 @@
 #include <AutoDeleter.h>
 #include <binary_compatibility/Interface.h>
 #include <BMCPrivate.h>
+#include <CosmoeBackendAPI.h>
 #include <MenuPrivate.h>
 #include <MenuWindow.h>
 #include <private/interface/NativeMenuPrivate.h>
@@ -2967,6 +2968,20 @@ BMenu::_CalcFrame(BPoint where, bool* scrollOn)
 
 	// Reset frame shifted state since this menu is being redrawn
 	fExtraMenuData->frameShiftedLeft = false;
+
+	// Wayland doesn't tell a client where its windows are, and BScreen covers
+	// one output only, so fitting the menu into the screen here would move it
+	// by a wrong amount (a menu field's pop-up on a second monitor ended up
+	// off to the side, unseen). The popup's xdg_positioner lets the
+	// compositor flip, slide and resize it onto the screen instead.
+	const char* backendName = cosmoe_backend_get_current_name();
+	if (backendName != NULL && strcmp(backendName, "Wayland") == 0) {
+		if (dynamic_cast<_BMCMenuBar_*>(superMenu) != NULL)
+			frame.OffsetBy(-8.0f, 0.0f);
+		if (scrollOn != NULL)
+			*scrollOn = false;
+		return frame;
+	}
 
 	// TODO: Horrible hack:
 	// When added to a BMenuField, a BPopUpMenu is the child of

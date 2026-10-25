@@ -7629,12 +7629,14 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	}
 	/* Wayland does not expose a toplevel's global position, so the Interface
 	 * Kit cannot reliably clip menus in screen coordinates. Let the compositor
-	 * flip or slide the popup into the available vertical space and constrain
-	 * its height when necessary. */
+	 * flip or slide the popup onto the screen and constrain its height when
+	 * necessary. */
 	xdg_positioner_set_constraint_adjustment(positioner,
 		XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y
 		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y
-		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_RESIZE_Y);
+		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_RESIZE_Y
+		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X
+		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_X);
 
 	/* Create xdg_popup (like window_show_menu does) */
 	window->xdg_popup = xdg_surface_get_popup(window->xdg_surface,
