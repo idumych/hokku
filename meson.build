@@ -173,6 +173,7 @@ public_inc_entries = [
 	# We'll append them to the list when wayland_enabled is true
 	'headers/os/add-ons/registrar',
 	'headers/os',
+	'headers/os/opengl',
 	'headers/os/be_apps/Tracker',
 	'headers/os/interface',
 	'headers/os/support',
@@ -624,6 +625,9 @@ subdir('src/kits/tracker')
 
 # Build network libraries with real libbe
 subdir('src/kits/network')
+
+# BGLView (libopengl) with real libbe
+subdir('src/kits/opengl')
 
 # Build bin tools with real libbe (they were skipped in src/bin to avoid bootstrap)
 
