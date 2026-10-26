@@ -80,6 +80,19 @@ cosmoe_display_get_screen_dimensions(cosmoe_display_t display, cosmoe_rectangle*
 }
 
 
+status_t
+cosmoe_display_read_screen(cosmoe_display_t display, int32_t x, int32_t y,
+	int32_t width, int32_t height, void* bits, int32_t bytesPerRow)
+{
+	CosmoeBackend* backend = GetBackend();
+	if (backend == NULL || display == NULL)
+		return B_BAD_VALUE;
+
+	return backend->DisplayReadScreen((backend_display_t)display, x, y, width,
+		height, bits, bytesPerRow);
+}
+
+
 void
 cosmoe_display_set_port(cosmoe_display_t display, int32_t sender_port_id, int32_t receiver_port_id)
 {

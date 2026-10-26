@@ -214,6 +214,22 @@ public:
 		return B_UNSUPPORTED;
 	}
 
+	// Copy part of the screen into B_RGB32 pixels (BScreen::ReadBitmap()).
+	// Wayland doesn't let a client read the screen, so most backends can't.
+	virtual status_t DisplayReadScreen(backend_display_t display, int32_t x,
+		int32_t y, int32_t width, int32_t height, void* bits,
+		int32_t bytesPerRow)
+	{
+		(void)display;
+		(void)x;
+		(void)y;
+		(void)width;
+		(void)height;
+		(void)bits;
+		(void)bytesPerRow;
+		return B_UNSUPPORTED;
+	}
+
 	// Window management
 	virtual backend_window_t WindowLookupByToken(backend_display_t display, int32_t token) = 0;
 	virtual backend_window_t WindowCreate(backend_display_t display,

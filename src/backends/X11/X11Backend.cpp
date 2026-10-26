@@ -263,6 +263,14 @@ public:
 		return display_close_window((struct display*)display, windowID);
 	}
 
+	virtual status_t DisplayReadScreen(backend_display_t display, int32_t x,
+		int32_t y, int32_t width, int32_t height, void* bits,
+		int32_t bytesPerRow)
+	{
+		return display_read_screen((struct display*)display, x, y, width,
+			height, bits, bytesPerRow);
+	}
+
 	virtual status_t SetKeymap(const char* layout, const char* variant,
 		const char* options, const char* model)
 	{

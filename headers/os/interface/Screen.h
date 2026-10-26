@@ -36,6 +36,13 @@ public:
 
 			const color_map*	ColorMap();
 
+			status_t			GetBitmap(BBitmap** _bitmap,
+									bool drawCursor = true,
+									BRect* frame = NULL);
+			status_t			ReadBitmap(BBitmap* bitmap,
+									bool drawCursor = true,
+									BRect* frame = NULL);
+
 			rgb_color			DesktopColor();
 			rgb_color			DesktopColor(uint32 workspace);
 			void				SetDesktopColor(rgb_color color,

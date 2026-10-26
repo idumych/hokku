@@ -126,6 +126,8 @@ void cosmoe_display_trigger_redraw(cosmoe_display_t display,
 								   cosmoe_widget_t widget,
 								   const cosmoe_rectangle* damage);
 void cosmoe_display_get_screen_dimensions(cosmoe_display_t display, cosmoe_rectangle* allocation);
+status_t cosmoe_display_read_screen(cosmoe_display_t display, int32_t x,
+	int32_t y, int32_t width, int32_t height, void* bits, int32_t bytesPerRow);
 void cosmoe_display_set_port(cosmoe_display_t display, int32_t sender_port_id, int32_t receiver_port_id);
 
 // Cursor management

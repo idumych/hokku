@@ -24,6 +24,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
+  screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
+  return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
+  of one past it.
 - **Node monitor code compiles unchanged.** Haiku code reads `msg->FindInt64("node", &ref.node)`
   and `FindInt32("device", &ref.device)`; on Linux `ino_t` and `dev_t` are `unsigned long`, so
   that didn't compile. `BMessage` now has those overloads. `BDirectory(const node_ref*)` and

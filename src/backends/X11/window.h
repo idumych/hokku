@@ -315,6 +315,10 @@ display_minimize_window(struct display *display, int32_t window_id,
 status_t
 display_close_window(struct display *display, int32_t window_id);
 
+status_t
+display_read_screen(struct display *display, int32_t x, int32_t y,
+	int32_t width, int32_t height, void *bits, int32_t bytes_per_row);
+
 /* Get clipboard content. Returns allocated string that caller must free(), or NULL if empty/unavailable */
 char *
 display_get_clipboard_text(struct display *display, size_t *length);

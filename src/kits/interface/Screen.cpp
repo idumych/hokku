@@ -10,7 +10,10 @@
 
 #include <Screen.h>
 
+#include <new>
+
 #include <Application.h>
+#include <Bitmap.h>
 #include <Window.h>
 
 //#include <PrivateScreen.h>
@@ -78,7 +81,68 @@ BScreen::Frame()
 	struct rectangle allocation;
 	cosmoe_display_get_screen_dimensions(be_app->Display(), &allocation);
 
-	return BRect(allocation.x, allocation.y, allocation.x + allocation.width, allocation.y + allocation.height);
+	// Like Haiku: the last pixel, not one past it
+	return BRect(allocation.x, allocation.y,
+		allocation.x + allocation.width - 1,
+		allocation.y + allocation.height - 1);
+}
+
+
+/*!	\brief Allocates a B_RGB32 bitmap and copies the screen (or \a frame
+		of it) into it. The caller owns the bitmap.
+	Hokku: X11 only; Wayland doesn't let a client read the screen and
+	returns \c B_UNSUPPORTED. The cursor is never drawn.
+*/
+status_t
+BScreen::GetBitmap(BBitmap** _bitmap, bool drawCursor, BRect* frame)
+{
+	if (_bitmap == NULL)
+		return B_BAD_VALUE;
+
+	BRect rect = frame != NULL ? *frame : Frame();
+	BBitmap* bitmap = new(std::nothrow) BBitmap(rect, B_RGB32);
+	if (bitmap == NULL)
+		return B_NO_MEMORY;
+
+	status_t status = bitmap->InitCheck();
+	if (status == B_OK)
+		status = ReadBitmap(bitmap, drawCursor, &rect);
+	if (status != B_OK) {
+		delete bitmap;
+		return status;
+	}
+
+	*_bitmap = bitmap;
+	return B_OK;
+}
+
+
+/*!	\brief Copies the screen (or \a frame of it) into a B_RGB32 \a bitmap
+		of the same size.
+*/
+status_t
+BScreen::ReadBitmap(BBitmap* bitmap, bool drawCursor, BRect* frame)
+{
+	(void)drawCursor;
+	if (bitmap == NULL || be_app == NULL)
+		return B_BAD_VALUE;
+	if (bitmap->ColorSpace() != B_RGB32 && bitmap->ColorSpace() != B_RGBA32)
+		return B_BAD_VALUE;
+
+	BRect rect = frame != NULL ? *frame : Frame();
+	rect = rect & Frame();
+	if (!rect.IsValid())
+		return B_BAD_VALUE;
+
+	int32 width = rect.IntegerWidth() + 1;
+	int32 height = rect.IntegerHeight() + 1;
+	if (width > bitmap->Bounds().IntegerWidth() + 1
+		|| height > bitmap->Bounds().IntegerHeight() + 1) {
+		return B_BAD_VALUE;
+	}
+
+	return cosmoe_display_read_screen(be_app->Display(), (int32)rect.left,
+		(int32)rect.top, width, height, bitmap->Bits(), bitmap->BytesPerRow());
 }
 
 

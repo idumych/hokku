@@ -3860,6 +3860,78 @@ display_minimize_window(struct display *display, int32_t window_id,
 }
 
 
+/* One colour channel of an X pixel, scaled to 8 bits */
+static uint32_t
+scale_mask(unsigned long pixel, unsigned long mask)
+{
+	unsigned long value;
+	int bits = 0;
+
+	if (mask == 0)
+		return 0;
+	while ((mask & 1) == 0) {
+		mask >>= 1;
+		pixel >>= 1;
+	}
+	value = pixel & mask;
+	while ((mask >> bits) != 0)
+		bits++;
+	if (bits >= 8)
+		return (uint32_t)(value >> (bits - 8));
+	return (uint32_t)((value * 255) / mask);
+}
+
+status_t
+display_read_screen(struct display *display, int32_t x, int32_t y,
+	int32_t width, int32_t height, void *bits, int32_t bytes_per_row)
+{
+	Display *xdisplay;
+	XImage *image;
+	int32_t row, column;
+
+	if (display == NULL || bits == NULL || width <= 0 || height <= 0
+		|| bytes_per_row < width * 4)
+		return B_BAD_VALUE;
+
+	/* A connection of our own: the display's belongs to the event thread */
+	xdisplay = XOpenDisplay(DisplayString(display->xdisplay));
+	if (xdisplay == NULL)
+		return B_ERROR;
+
+	image = XGetImage(xdisplay, RootWindow(xdisplay, display->screen), x, y,
+		width, height, AllPlanes, ZPixmap);
+	if (image == NULL) {
+		XCloseDisplay(xdisplay);
+		return B_ERROR;
+	}
+
+	for (row = 0; row < height; row++) {
+		uint32_t *out = (uint32_t *)((uint8_t *)bits + row * bytes_per_row);
+
+		if (image->bits_per_pixel == 32 && image->red_mask == 0xff0000
+			&& image->green_mask == 0xff00 && image->blue_mask == 0xff
+			&& image->byte_order == LSBFirst) {
+			/* B_RGB32 is the same layout: B, G, R, alpha */
+			const uint32_t *in = (const uint32_t *)(image->data
+				+ row * image->bytes_per_line);
+			for (column = 0; column < width; column++)
+				out[column] = in[column] | 0xff000000;
+		} else {
+			for (column = 0; column < width; column++) {
+				unsigned long pixel = XGetPixel(image, column, row);
+				uint32_t red = scale_mask(pixel, image->red_mask);
+				uint32_t green = scale_mask(pixel, image->green_mask);
+				uint32_t blue = scale_mask(pixel, image->blue_mask);
+				out[column] = 0xff000000 | (red << 16) | (green << 8) | blue;
+			}
+		}
+	}
+
+	XDestroyImage(image);
+	XCloseDisplay(xdisplay);
+	return B_OK;
+}
+
 status_t
 display_close_window(struct display *display, int32_t window_id)
 {
