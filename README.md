@@ -24,6 +24,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **`debugger()` and the `<Debug.h>` helpers say something.** `debug_printf()` formatted its
+  text and threw it away, so `debugger()` calls (a locked-looper violation, say) were silent;
+  they now go to standard error. `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and
+  `_setDebugFlag()`, which Haiku declares and old Be code calls directly, exist now.
 - **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
   screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
   return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead

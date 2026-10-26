@@ -23,6 +23,80 @@ debugger(const char *message)
 }
 
 
+bool
+_debugFlag(void)
+{
+	return _rtDebugFlag;
+}
+
+
+bool
+_setDebugFlag(bool flag)
+{
+	bool previous = _rtDebugFlag;
+	_rtDebugFlag = flag;
+	return previous;
+}
+
+
+int
+_debugPrintf(const char *format, ...)
+{
+	int count;
+	va_list list;
+
+	if (!_rtDebugFlag)
+		return 0;
+
+	va_start(list, format);
+	count = vfprintf(stdout, format, list);
+	fflush(stdout);
+	va_end(list);
+	return count;
+}
+
+
+int
+_sPrintf(const char *format, ...)
+{
+	int count;
+	va_list list;
+
+	if (!_rtDebugFlag)
+		return 0;
+
+	va_start(list, format);
+	count = debug_vprintf(format, list);
+	va_end(list);
+	return count;
+}
+
+
+int
+_xdebugPrintf(const char *format, ...)
+{
+	int count;
+	va_list list;
+
+	va_start(list, format);
+	count = vfprintf(stdout, format, list);
+	fflush(stdout);
+	va_end(list);
+	return count;
+}
+
+
+int
+_debuggerAssert(const char *file, int line, const char *message)
+{
+	char buffer[1024];
+	snprintf(buffer, sizeof(buffer), "Assert failed: File: %s, Line: %d. %s",
+		file, line, message);
+	debugger(buffer);
+	return 0;
+}
+
+
 
 // TODO: Remove. Temporary debug helper.
 // (accidently these are more or less the same as _sPrintf())
@@ -44,9 +118,7 @@ debug_printf(const char *format, ...)
 int
 debug_vprintf(const char *format, va_list args)
 {
-	char buffer[1024];
-	int count = vsnprintf(buffer, sizeof(buffer), format, args);
-
-	return count;
+	// Haiku writes these to the syslog; standard error is Linux's equivalent
+	return vfprintf(stderr, format, args);
 }
 

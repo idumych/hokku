@@ -14,6 +14,28 @@
 #include <stdlib.h>
 
 
+/* Private, as in Haiku: old Be code calls these directly */
+#ifdef __cplusplus
+extern "C" {
+#endif
+	extern bool _rtDebugFlag;
+
+	bool _debugFlag(void);
+	bool _setDebugFlag(bool);
+
+#if __GNUC__
+	int _debugPrintf(const char *, ...) _PRINTFLIKE(1, 2);
+	int _sPrintf(const char *, ...) _PRINTFLIKE(1, 2);
+#else
+	int _debugPrintf(const char *, ...);
+	int _sPrintf(const char *, ...);
+#endif
+	int _xdebugPrintf(const char *, ...);
+	int _debuggerAssert(const char *, int, const char *);
+#ifdef __cplusplus
+}
+#endif
+
 
 	#define SET_DEBUG_ENABLED(FLAG)			(void)0
 	#define	IS_DEBUG_ENABLED()				(void)0
