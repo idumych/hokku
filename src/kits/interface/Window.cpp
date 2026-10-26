@@ -752,6 +752,18 @@ _PointerCoordsNeedScaleDivide()
 	return true;
 }
 
+// Hokku: the backend calls the pointer handlers below on its display thread,
+// where the window isn't locked. Finding the view under the pointer walks the
+// view tree, which needs the lock (the window thread may be changing the tree;
+// unlocked, every BView::Bounds() call hit debugger("Looper must be locked")).
+// Waiting for the lock could deadlock against the window thread (a modal
+// BAlert::Go(), say), so the handlers only take it when it's free. Otherwise
+// the message carries kFindViewField and the window thread finds the view
+// itself, in _DetermineTarget().
+static const char* const kFindViewField = "_hokku_find_view";
+static const char* const kSetMouseDownViewField = "_hokku_set_mouse_down_view";
+
+
 void view_mouse_idle_handler(struct widget *widget,
 	struct input *input, uint32_t time,
 	int32_t x, int32_t y, void *data)
@@ -793,26 +805,31 @@ void view_mouse_idle_handler(struct widget *widget,
 		y /= scale;
 	}
 
-	// Backend callbacks run on the display thread. Avoid the public
-	// FindView() here, since it takes the window lock and can deadlock against
-	// UI-thread modal loops (for example BAlert::Go()).
-	subView = window->_FindView(window->fTopView, BPoint(x, y));
-	if (subView) {
-		view = subView;
+	// Never wait for the lock here (see kFindViewField)
+	int32 viewToken = B_NULL_TOKEN;
+	if (window->LockWithTimeout(0) == B_OK) {
+		subView = window->_FindView(window->fTopView, BPoint(x, y));
+		if (subView) {
+			view = subView;
+		}
+		viewToken = _get_object_token_(view);
+		window->Unlock();
 	}
 
-	if (view && view->Window()) {
-		BMessage* msg = new BMessage(B_MOUSE_IDLE);
-		BMessage::Private messagePrivate(msg);
-		messagePrivate.SetTarget(B_PREFERRED_TOKEN);
-		msg->AddInt64("when", system_time());
-		msg->AddPoint("window_where", BPoint(x, y));
-		msg->AddInt32("_view_token", _get_object_token_(view));
-		
-		// Send the message directly to preserve B_PREFERRED_TOKEN target
-		BMessenger messenger(NULL, view->Window());
-		messenger.SendMessage(msg);
-	}
+	BMessage* msg = new BMessage(B_MOUSE_IDLE);
+	BMessage::Private messagePrivate(msg);
+	messagePrivate.SetTarget(B_PREFERRED_TOKEN);
+	msg->AddInt64("when", system_time());
+	msg->AddPoint("window_where", BPoint(x, y));
+	if (viewToken != B_NULL_TOKEN)
+		msg->AddInt32("_view_token", viewToken);
+	else
+		msg->AddBool(kFindViewField, true);
+
+	// Send the message directly to preserve B_PREFERRED_TOKEN target
+	BMessenger messenger(NULL, window);
+	messenger.SendMessage(msg);
+	delete msg;
 }
 
 void view_button_handler(struct widget *widget,
@@ -881,13 +898,16 @@ void view_button_handler(struct widget *widget,
 
 	BMessage* msg = new BMessage((state == WL_POINTER_BUTTON_STATE_PRESSED) ? B_MOUSE_DOWN : B_MOUSE_UP);
 
-	subView = window->_FindView(window->fTopView, BPoint(x, y));
-	if (subView) {
-		view = subView;
+	// Never wait for the lock here (see kFindViewField)
+	bool locked = window->LockWithTimeout(0) == B_OK;
+	if (locked) {
+		subView = window->_FindView(window->fTopView, BPoint(x, y));
+		if (subView) {
+			view = subView;
+		}
+		dispatchViewToken = _get_object_token_(view);
 	}
-	dispatchViewToken = _get_object_token_(view);
-
-	BView* pointerView = view;
+	int32 pointerViewToken = dispatchViewToken;
 
 	int32 buttons = 0;
 	if (button == BTN_LEFT)
@@ -903,14 +923,14 @@ void view_button_handler(struct widget *widget,
 	else
 		sCurrentButtons &= ~buttons;
 
+	bool setMouseDownView = false;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
-		if (!hadButtonsDown)
-			window->fMouseDownViewToken = _get_object_token_(pointerView);
+		if (!hadButtonsDown) {
+			window->fMouseDownViewToken = pointerViewToken;
+			setMouseDownView = pointerViewToken == B_NULL_TOKEN;
+		}
 	} else if (window->fMouseDownViewToken != B_NULL_TOKEN) {
 		dispatchViewToken = window->fMouseDownViewToken;
-		BView* downView = window->_FindView(window->fMouseDownViewToken);
-		if (downView != NULL)
-			view = downView;
 
 		if (sCurrentButtons == 0)
 			window->fMouseDownViewToken = B_NULL_TOKEN;
@@ -929,7 +949,8 @@ void view_button_handler(struct widget *widget,
 		pthread_mutex_unlock(&window->fBackingSurfaceLock);
 
 		if (hasDropMessage) {
-			dropTarget = window->_FindView(window->fTopView, BPoint(x, y));
+			if (locked)
+				dropTarget = window->_FindView(window->fTopView, BPoint(x, y));
 			if (dropTarget == NULL)
 				dropTarget = window->fTopView;
 		}
@@ -947,14 +968,20 @@ void view_button_handler(struct widget *widget,
 	msg->AddInt32("modifiers", modifiers());
 	msg->AddPoint("window_where", BPoint(x, y));
 	msg->AddInt32("clicks", clicks);
-	if (dispatchViewToken <= B_NULL_TOKEN)
-		dispatchViewToken = _get_object_token_(view);
-	msg->AddInt32("_view_token", dispatchViewToken);
-	if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
-		msg->AddInt32("_token", dispatchViewToken);
-		msg->AddBool("_feed_focus", true);
+	if (locked)
+		window->Unlock();
+	if (dispatchViewToken > B_NULL_TOKEN) {
+		msg->AddInt32("_view_token", dispatchViewToken);
+		if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
+			msg->AddInt32("_token", dispatchViewToken);
+			msg->AddBool("_feed_focus", true);
+		}
+	} else {
+		msg->AddBool(kFindViewField, true);
+		if (setMouseDownView)
+			msg->AddBool(kSetMouseDownViewField, true);
 	}
-	
+
 	// Send the message directly to preserve B_PREFERRED_TOKEN target
 	BMessenger messenger(NULL, window);
 	messenger.SendMessage(msg);
@@ -1092,23 +1119,33 @@ int view_pointer_motion_handler(struct widget *widget,
 
 	BMessage msg(B_MOUSE_MOVED);
 
-	// Backend callbacks run on the display thread. Avoid lock-taking
-	// FindView() to prevent cross-thread lock inversion/deadlock.
-	subView = window->_FindView(window->fTopView, BPoint(x, y));
-	if (subView) {
-		view = subView;
-		cursor = subView->CursorID();
-	}
-
-	// While dragging with a button held, keep routing mouse moved events
-	// to the original mouse-down target view.
-	if (sCurrentButtons != 0 && window->fMouseDownViewToken != B_NULL_TOKEN) {
-		BView* downView = window->_FindView(window->fMouseDownViewToken);
-		if (downView != NULL) {
-			view = downView;
-			cursor = downView->CursorID();
+	// Never wait for the lock here (see kFindViewField). Without it, keep
+	// the cursor the pointer had in this window last time.
+	static BWindow* sLastCursorWindow = NULL;
+	static int32 sLastCursor = -1;
+	int32 viewToken = B_NULL_TOKEN;
+	if (window->LockWithTimeout(0) == B_OK) {
+		subView = window->_FindView(window->fTopView, BPoint(x, y));
+		if (subView) {
+			view = subView;
+			cursor = subView->CursorID();
 		}
-	}
+
+		// While dragging with a button held, keep routing mouse moved events
+		// to the original mouse-down target view.
+		if (sCurrentButtons != 0 && window->fMouseDownViewToken != B_NULL_TOKEN) {
+			BView* downView = window->_FindView(window->fMouseDownViewToken);
+			if (downView != NULL) {
+				view = downView;
+				cursor = downView->CursorID();
+			}
+		}
+		viewToken = _get_object_token_(view);
+		window->Unlock();
+		sLastCursorWindow = window;
+		sLastCursor = cursor;
+	} else if (sLastCursorWindow == window)
+		cursor = sLastCursor;
 
 	// A motion outside the window (the backend's report of where the pointer
 	// left it) has no view under the mouse: the last one gets B_EXITED_VIEW.
@@ -1122,8 +1159,12 @@ int view_pointer_motion_handler(struct widget *widget,
 		msg.AddInt64("when", system_time());
 		msg.AddPoint("window_where", BPoint(x, y));
 		msg.AddInt32("buttons", sCurrentButtons);
-		if (!outside)
-			msg.AddInt32("_view_token", _get_object_token_(view));
+		if (!outside) {
+			if (viewToken != B_NULL_TOKEN)
+				msg.AddInt32("_view_token", viewToken);
+			else
+				msg.AddBool(kFindViewField, true);
+		}
 
 		bool hasDragMessage = false;
 		BMessage dragMessage;
@@ -1141,7 +1182,7 @@ int view_pointer_motion_handler(struct widget *widget,
 		BMessenger messenger(NULL, window);
 		messenger.SendMessage(&msg);
 
-		_hokku_forward_pointer_event(B_MOUSE_MOVED, _get_object_token_(view),
+		_hokku_forward_pointer_event(B_MOUSE_MOVED, viewToken,
 			BPoint(x + window->fFrame.left, y + window->fFrame.top), sCurrentButtons);
 	}
 
@@ -1162,7 +1203,9 @@ int view_pointer_motion_handler(struct widget *widget,
 void send_mouse_wheel(BWindow* window, BView* view, BPoint windowWhere,
 	float deltaX, float deltaY)
 {
-	if (!view->IsHidden() && window != NULL && !window->UpdatesDisabled()) {
+	// view is NULL when the window was busy: it finds the view itself
+	if (window != NULL && (view == NULL || !view->IsHidden())
+		&& !window->UpdatesDisabled()) {
 		BMessage msg(B_MOUSE_WHEEL_CHANGED);
 		BMessage::Private messagePrivate(&msg);
 		messagePrivate.SetTarget(B_PREFERRED_TOKEN);
@@ -1170,7 +1213,10 @@ void send_mouse_wheel(BWindow* window, BView* view, BPoint windowWhere,
 		msg.AddPoint("window_where", windowWhere);
 		msg.AddInt32("buttons", sCurrentButtons);
 		msg.AddInt32("modifiers", modifiers());
-		msg.AddInt32("_view_token", _get_object_token_(view));
+		if (view != NULL)
+			msg.AddInt32("_view_token", _get_object_token_(view));
+		else
+			msg.AddBool(kFindViewField, true);
 		msg.AddFloat("be:wheel_delta_x", deltaX);
 		msg.AddFloat("be:wheel_delta_y", deltaY);
 
@@ -1221,15 +1267,22 @@ void view_axis_handler(struct widget *widget, struct input *input, uint32_t time
 			y /= scale;
 		}
 
-		BView* foundView = window->_FindView(window->fTopView, BPoint(x, y));
-		if (foundView) {
+		// Never wait for the lock here (see kFindViewField)
+		bool locked = window->LockWithTimeout(0) == B_OK;
+		if (locked) {
+			BView* foundView = window->_FindView(window->fTopView, BPoint(x, y));
+			if (foundView) {
 				subView = foundView;
+			}
 		}
 
 		float deltaX = (axis == WL_POINTER_AXIS_HORIZONTAL_SCROLL) ? cosmoe_fixed_to_double(value) : 0.0f;
 		float deltaY = (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) ? cosmoe_fixed_to_double(value) : 0.0f;
 
-		send_mouse_wheel(window, subView, BPoint(x, y), deltaX, deltaY);
+		send_mouse_wheel(window, locked ? subView : NULL, BPoint(x, y), deltaX,
+			deltaY);
+		if (locked)
+			window->Unlock();
 	}
 }
 
@@ -5364,6 +5417,28 @@ BWindow::_DetermineTarget(BMessage* message, BHandler* target)
 				BView* view = _FindView(token);
 				if (view != NULL)
 					return view;
+			}
+
+			// Hokku: the backend couldn't lock us to find the view under the
+			// pointer (see kFindViewField); we're locked now, so find it here
+			BPoint where;
+			if (message->GetBool(kFindViewField, false)
+				&& message->FindPoint("window_where", &where) == B_OK) {
+				BView* view = _FindView(fTopView, where);
+				if (view == NULL)
+					view = fTopView;
+				token = _get_object_token_(view);
+				message->RemoveName(kFindViewField);
+				message->AddInt32("_view_token", token);
+				if (message->what == B_MOUSE_UP) {
+					message->AddInt32("_token", token);
+					message->AddBool("_feed_focus", true);
+				}
+				if (message->GetBool(kSetMouseDownViewField, false)) {
+					message->RemoveName(kSetMouseDownViewField);
+					fMouseDownViewToken = token;
+				}
+				return view;
 			}
 
 			// if there is no valid token in the message, we try our

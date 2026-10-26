@@ -24,6 +24,12 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **Pointer events don't walk an unlocked window.** The display thread looked up the view
+  under the pointer (for every motion, click, wheel and idle event) without the window's
+  lock, racing the window thread and calling `debugger("Looper must be locked")` on every
+  `BView::Bounds()`. It now takes the lock only if it is free; when the window is busy, the
+  window thread finds the view itself before dispatching. Waiting for the lock is still
+  avoided, so a modal `BAlert::Go()` can't deadlock against the display thread.
 - **`BRoster::Launch()` opens files, folders and URLs with the desktop.** Only Cosmoe apps
   could be launched, so "open file", "show in folder" and clicked links did nothing. When no
   Cosmoe app handles the document, URL (`application/x-vnd.Be.URL.*`, `text/x-email`) or the
@@ -31,8 +37,9 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   an AppImage's AppRun set for the bundle.
 - **`debugger()` and the `<Debug.h>` helpers say something.** `debug_printf()` formatted its
   text and threw it away, so `debugger()` calls (a locked-looper violation, say) were silent;
-  they now go to standard error. `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and
-  `_setDebugFlag()`, which Haiku declares and old Be code calls directly, exist now.
+  they now go to standard error, followed by a backtrace (Haiku would stop the app in its
+  debugger there). `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and `_setDebugFlag()`,
+  which Haiku declares and old Be code calls directly, exist now.
 - **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
   screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
   return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
