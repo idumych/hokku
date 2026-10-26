@@ -125,8 +125,7 @@ To bundle Hokku with one app, configure it without the apps
 (`meson setup builddir -Denable_apps=false`, or `meson configure builddir -Denable_apps=false`
 on an existing build directory).
 
-Apps shipped on Linux with Hokku (each also runs on Renku OS, Haiku and VitruvianOS, a
-BeOS-like OS based on Linux):
+Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku):
 
 - [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader (the first).
 - [Folio](https://github.com/idumych/folio), a notebook with wiki links that follow renames.
