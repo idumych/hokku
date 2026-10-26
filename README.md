@@ -164,7 +164,7 @@ To bundle Hokku with one app, configure it without the apps
 (`meson setup builddir -Denable_apps=false`, or `meson configure builddir -Denable_apps=false`
 on an existing build directory).
 
-Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku):
+Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare as HiShare):
 
 - [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader (the first).
 - [Folio](https://github.com/idumych/folio), a notebook with wiki links that follow renames.
@@ -174,6 +174,12 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku):
 - [VLC Reborn](https://github.com/idumych/vlc-reborn), VLC media player with its BeOS
   interface back. It brought `BGLView` (for its OpenGL video output) and found the Wayland
   menu placement bug.
+- [LinShare](https://github.com/idumych/linshare), atomozero's
+  [HiShare](https://github.com/atomozero/HiShare) (the modernized BeShare file-sharing and
+  chat client) for Linux. A network app with old Be code in it, it brought `BNetworkRoute`,
+  screen capture, `BDirectory(node_ref)`, `Launch()` through `xdg-open` and the `<Debug.h>`
+  helpers, and found the shell injection in notifications and the unlocked view lookups on
+  the display thread (once `debugger()` printed).
 
 **Problems** found with Hokku are fixed here, as new commits on `hokku` listed above, with
 the smallest program that shows the bug used to test the fix. Please don't report them to
