@@ -10,6 +10,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __GLIBC__
+#	include <execinfo.h>
+#endif
 
 
 
@@ -20,6 +23,16 @@ void
 debugger(const char *message)
 {
 	debug_printf("%" B_PRId32 ": DEBUGGER: %s\n", find_thread(NULL), message);
+
+#ifdef __GLIBC__
+	// Haiku stops the team in the debugger here; the closest Linux has
+	// without stopping the app is where it was called from.
+	{
+		void *frames[32];
+		int count = backtrace(frames, 32);
+		backtrace_symbols_fd(frames + 1, count - 1, 2);
+	}
+#endif
 }
 
 
