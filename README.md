@@ -24,6 +24,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **Quiet logs.** `system_beep()` wrote a terminal bell and `beep event "..." requested.` to
+  standard output for every event, and the resource reader printed `read_exactly: ...` and
+  `InitContainer: Caught Exception` when a file had no resources (a settings file opened
+  write-only, say), which Haiku handles silently. Both are gone.
 - **Notifications without a shell.** `BNotification::Send()` ran `system("notify-send \"<title>\"
   \"<content>\"")`, so a title or content with quotes or `$(...)` (a chat line, a file name
   from the network) ran commands, and the window waited for `notify-send`. Both are now

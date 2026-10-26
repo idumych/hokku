@@ -92,12 +92,9 @@ read_exactly(BPositionIO& file, off_t position, void* buffer, size_t size,
 	const char* errorMessage = NULL)
 {
 	ssize_t read = file.ReadAt(position, buffer, size);
-	if (read < 0) {
-		printf("read_exactly: ReadAt failed with error %ld\n", read);
+	if (read < 0)
 		throw Exception(read, errorMessage);
-	} else if ((size_t)read != size) {
-		printf("read_exactly: Read %ld bytes but expected %lu bytes at position %lld\n", 
-			read, size, (long long)position);
+	else if ((size_t)read != size) {
 		if (errorMessage) {
 			throw Exception("%s Read too few bytes (%ld/%lu).", errorMessage,
 							read, size);
@@ -312,17 +309,13 @@ ResourceFile::InitContainer(ResourcesContainer& container)
 			_ReadInfoTable(parseInfo);
 			container.SetModified(false);
 		} catch (Exception& exception) {
-			printf("InitContainer: Caught Exception: %s (error=%d)\n", 
-				exception.Description(), exception.Error());
 			if (exception.Error() != B_OK)
 				error = exception.Error();
 			else
 				error = B_ERROR;
-		} catch (std::exception& e) {
-			printf("InitContainer: Caught std::exception: %s\n", e.what());
+		} catch (std::exception&) {
 			error = B_ERROR;
 		} catch (...) {
-			printf("InitContainer: Caught unknown exception\n");
 			error = B_ERROR;
 		}
 		delete[] parseInfo.info_table;

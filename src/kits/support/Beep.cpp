@@ -7,16 +7,15 @@
 
 #include <Beep.h>
 
-#include <stdio.h>
 
 
 status_t
 system_beep(const char* eventName)
 {
-	char BEEP[]={7,'\0'};
-	printf("%s", BEEP);
-	printf("beep event \"%s\" requested.\n", eventName);
-	// ToDo: ask media server to beep around
+	// Hokku: no sound for beep events yet. This used to write a BEL and
+	// "beep event ... requested." to standard output for every event, which
+	// a GUI app's log doesn't want.
+	(void)eventName;
 	return B_ERROR;
 }
 
@@ -31,6 +30,8 @@ beep()
 status_t
 add_system_beep_event(const char* name, uint32 flags)
 {
+	(void)name;
+	(void)flags;
 	// ToDo: ask media server to add beep event
 	return B_ERROR;
 }
