@@ -5,12 +5,34 @@
 
 #include <NetworkRoute.h>
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <net/if.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-//#include <sys/sockio.h>
+
+#include <algorithm>
+#include <new>
+#include <vector>
 
 #include <AutoDeleter.h>
+
+
+// Linux's sockaddr has no sa_len: the length follows from the family.
+static size_t
+address_length(const sockaddr& address)
+{
+	switch (address.sa_family) {
+		case AF_INET:
+			return sizeof(sockaddr_in);
+		case AF_INET6:
+			return sizeof(sockaddr_in6);
+		default:
+			return sizeof(sockaddr);
+	}
+}
 
 
 BNetworkRoute::BNetworkRoute()
@@ -232,7 +254,7 @@ BNetworkRoute::GetDefaultGateway(int family, const char* interfaceName,
 	if (defaultGateway == NULL)
 		return B_ENTRY_NOT_FOUND;
 
-	memcpy(&gateway, defaultGateway, defaultGateway->sa_len);
+	memcpy(&gateway, defaultGateway, address_length(*defaultGateway));
 	return B_OK;
 }
 
@@ -252,73 +274,195 @@ BNetworkRoute::GetRoutes(int family, const char* interfaceName,
 }
 
 
+namespace {
+
+struct LinuxRoute {
+	char		interface[IF_NAMESIZE];
+	sockaddr_storage destination;
+	sockaddr_storage mask;
+	sockaddr_storage gateway;
+	bool		hasGateway;
+	uint32		flags;
+	uint32		mtu;
+	uint32		metric;
+};
+
+
+void
+set_ipv4(sockaddr_storage& storage, uint32 address)
+{
+	memset(&storage, 0, sizeof(storage));
+	sockaddr_in& in = (sockaddr_in&)storage;
+	in.sin_family = AF_INET;
+	in.sin_addr.s_addr = address;
+		// /proc/net/route prints the address as it is stored
+}
+
+
+bool
+parse_ipv6(const char* hex, sockaddr_storage& storage)
+{
+	memset(&storage, 0, sizeof(storage));
+	sockaddr_in6& in6 = (sockaddr_in6&)storage;
+	in6.sin6_family = AF_INET6;
+	for (int i = 0; i < 16; i++) {
+		unsigned int byte;
+		if (sscanf(hex + 2 * i, "%2x", &byte) != 1)
+			return false;
+		in6.sin6_addr.s6_addr[i] = (uint8)byte;
+	}
+	return true;
+}
+
+
+void
+set_ipv6_mask(sockaddr_storage& storage, unsigned int prefixLength)
+{
+	memset(&storage, 0, sizeof(storage));
+	sockaddr_in6& in6 = (sockaddr_in6&)storage;
+	in6.sin6_family = AF_INET6;
+	for (unsigned int i = 0; i < 16 && prefixLength > 0; i++) {
+		unsigned int bits = std::min(prefixLength, 8u);
+		in6.sin6_addr.s6_addr[i] = (uint8)(0xff << (8 - bits));
+		prefixLength -= bits;
+	}
+}
+
+
+// IPv4 routes from /proc/net/route:
+// Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT
+void
+read_ipv4_routes(std::vector<LinuxRoute>& routes)
+{
+	FILE* file = fopen("/proc/net/route", "r");
+	if (file == NULL)
+		return;
+
+	char line[256];
+	if (fgets(line, sizeof(line), file) != NULL) {
+		while (fgets(line, sizeof(line), file) != NULL) {
+			char interface[IF_NAMESIZE + 1];
+			unsigned int destination, gateway, flags, refCount, use, metric,
+				mask, mtu;
+			if (sscanf(line, "%16s %x %x %x %u %u %u %x %u", interface,
+					&destination, &gateway, &flags, &refCount, &use, &metric,
+					&mask, &mtu) != 9) {
+				continue;
+			}
+
+			LinuxRoute route;
+			memset(&route, 0, sizeof(route));
+			strlcpy(route.interface, interface, sizeof(route.interface));
+			set_ipv4(route.destination, destination);
+			set_ipv4(route.mask, mask);
+			set_ipv4(route.gateway, gateway);
+			route.hasGateway = (flags & RTF_GATEWAY) != 0;
+			route.flags = flags;
+			if (destination == 0 && mask == 0)
+				route.flags |= RTF_DEFAULT;
+			route.mtu = mtu;
+			route.metric = metric;
+			routes.push_back(route);
+		}
+	}
+	fclose(file);
+}
+
+
+// IPv6 routes from /proc/net/ipv6_route:
+// dest dest-len src src-len next-hop metric refcnt use flags iface
+void
+read_ipv6_routes(std::vector<LinuxRoute>& routes)
+{
+	FILE* file = fopen("/proc/net/ipv6_route", "r");
+	if (file == NULL)
+		return;
+
+	char line[256];
+	while (fgets(line, sizeof(line), file) != NULL) {
+		char destination[33], source[33], nextHop[33];
+		char interface[IF_NAMESIZE + 1];
+		unsigned int destinationLength, sourceLength, metric, refCount, use,
+			flags;
+		if (sscanf(line, "%32s %x %32s %x %32s %x %x %x %x %16s",
+				destination, &destinationLength, source, &sourceLength,
+				nextHop, &metric, &refCount, &use, &flags, interface) != 10) {
+			continue;
+		}
+		if ((flags & RTF_REJECT) != 0)
+			continue;
+
+		LinuxRoute route;
+		memset(&route, 0, sizeof(route));
+		strlcpy(route.interface, interface, sizeof(route.interface));
+		if (!parse_ipv6(destination, route.destination)
+			|| !parse_ipv6(nextHop, route.gateway)) {
+			continue;
+		}
+		set_ipv6_mask(route.mask, destinationLength);
+		route.hasGateway = (flags & RTF_GATEWAY) != 0;
+		route.flags = flags;
+		if (destinationLength == 0)
+			route.flags |= RTF_DEFAULT;
+		route.metric = metric;
+		routes.push_back(route);
+	}
+	fclose(file);
+}
+
+}	// namespace
+
+
 status_t
 BNetworkRoute::GetRoutes(int family, const char* interfaceName,
 	uint32 filterFlags, BObjectList<BNetworkRoute, true>& routes)
 {
-	FileDescriptorCloser socket(::socket(family, SOCK_DGRAM, 0));
-	if (!socket.IsSet())
-		return errno;
+	// Haiku asks the stack with SIOCGRTTABLE; Linux lists its routes in /proc.
+	std::vector<LinuxRoute> found;
+	if (family == AF_INET)
+		read_ipv4_routes(found);
+	else if (family == AF_INET6)
+		read_ipv6_routes(found);
+	else
+		return B_NOT_SUPPORTED;
 
-	ifconf config;
-	config.ifc_len = sizeof(config.ifc_value);
-	if (ioctl(socket.Get(), SIOCGRTSIZE, &config, sizeof(struct ifconf)) < 0)
-		return errno;
+	// The preferred route first, so GetDefaultRoute() picks what the kernel uses
+	std::stable_sort(found.begin(), found.end(),
+		[](const LinuxRoute& a, const LinuxRoute& b) {
+			return a.metric < b.metric;
+		});
 
-	uint32 size = (uint32)config.ifc_value;
-	if (size == 0)
-		return B_OK;
-
-	void* buffer = malloc(size);
-	if (buffer == NULL)
-		return B_NO_MEMORY;
-
-	MemoryDeleter bufferDeleter(buffer);
-	config.ifc_len = size;
-	config.ifc_buf = buffer;
-
-	if (ioctl(socket.Get(), SIOCGRTTABLE, &config, sizeof(struct ifconf)) < 0)
-		return errno;
-
-	ifreq* interface = (ifreq*)buffer;
-	ifreq* end = (ifreq*)((uint8*)buffer + size);
-
-	while (interface < end) {
-		route_entry& routeEntry = interface->ifr_route;
-
-		if ((interfaceName == NULL
-				|| strcmp(interface->ifr_name, interfaceName) == 0)
-			&& (filterFlags == 0 || (routeEntry.flags & filterFlags) != 0)) {
-
-			BNetworkRoute* route = new(std::nothrow) BNetworkRoute;
-			if (route == NULL)
-				return B_NO_MEMORY;
-
-			// Note that source is not provided in the buffer.
-			routeEntry.source = NULL;
-
-			status_t result = route->SetTo(routeEntry);
-			if (result != B_OK) {
-				delete route;
-				return result;
-			}
-
-			if (!routes.AddItem(route)) {
-				delete route;
-				return B_NO_MEMORY;
-			}
+	for (size_t i = 0; i < found.size(); i++) {
+		const LinuxRoute& linuxRoute = found[i];
+		if ((interfaceName != NULL
+				&& strcmp(linuxRoute.interface, interfaceName) != 0)
+			|| (filterFlags != 0 && (linuxRoute.flags & filterFlags) == 0)) {
+			continue;
 		}
 
-		size_t addressSize = 0;
-		if (routeEntry.destination != NULL)
-			addressSize += routeEntry.destination->sa_len;
-		if (routeEntry.mask != NULL)
-			addressSize += routeEntry.mask->sa_len;
-		if (routeEntry.gateway != NULL)
-			addressSize += routeEntry.gateway->sa_len;
+		route_entry entry;
+		memset(&entry, 0, sizeof(entry));
+		entry.destination = (sockaddr*)&linuxRoute.destination;
+		entry.mask = (sockaddr*)&linuxRoute.mask;
+		if (linuxRoute.hasGateway)
+			entry.gateway = (sockaddr*)&linuxRoute.gateway;
+		entry.flags = linuxRoute.flags;
+		entry.mtu = linuxRoute.mtu;
 
-		interface = (ifreq *)((addr_t)interface + IF_NAMESIZE
-			+ sizeof(route_entry) + addressSize);
+		BNetworkRoute* route = new(std::nothrow) BNetworkRoute;
+		if (route == NULL)
+			return B_NO_MEMORY;
+
+		status_t result = route->SetTo(entry);
+		if (result != B_OK) {
+			delete route;
+			return result;
+		}
+
+		if (!routes.AddItem(route)) {
+			delete route;
+			return B_NO_MEMORY;
+		}
 	}
 
 	return B_OK;
@@ -329,8 +473,6 @@ status_t
 BNetworkRoute::_AllocateAndSetAddress(const sockaddr& from,
 	sockaddr*& to)
 {
-	if (from.sa_len > sizeof(sockaddr_storage))
-		return B_BAD_VALUE;
 
 	if (to == NULL) {
 		to = (sockaddr*)malloc(sizeof(sockaddr_storage));
@@ -338,7 +480,7 @@ BNetworkRoute::_AllocateAndSetAddress(const sockaddr& from,
 			return B_NO_MEMORY;
 	}
 
-	memcpy(to, &from, from.sa_len);
+	memcpy(to, &from, address_length(from));
 	return B_OK;
 }
 

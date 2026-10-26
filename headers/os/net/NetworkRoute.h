@@ -10,6 +10,20 @@
 #include <ObjectList.h>
 
 
+#ifndef __HAIKU__
+/* Haiku's route description, which glibc's <net/route.h> doesn't have. The
+ * RTF_* flags are the host's; Hokku marks default routes with RTF_DEFAULT. */
+struct route_entry {
+	struct sockaddr*	destination;
+	struct sockaddr*	mask;
+	struct sockaddr*	gateway;
+	struct sockaddr*	source;
+	uint32_t			flags;
+	uint32_t			mtu;
+};
+#endif
+
+
 class BNetworkRoute {
 public:
 								BNetworkRoute();

@@ -24,6 +24,12 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **`BNetworkRoute` works on Linux.** `<NetworkRoute.h>` didn't compile (glibc has no
+  `route_entry`) and the class wasn't built, so apps asking for the default gateway (for
+  UPnP or NAT-PMP port mapping, say) didn't link. It now reads `/proc/net/route` and
+  `/proc/net/ipv6_route`; `GetDefaultRoute()`/`GetDefaultGateway()` return the default
+  route with the lowest metric, as the kernel uses. `BNetworkInterface` and
+  `BNetworkRoster` are still not there.
 - **Smaller AppImages: a build without the apps.** `-Denable_apps=false` leaves out
   `src/apps` and `src/preferences` and installs only the catalogs of the libraries and
   add-ons, so an app bundling Hokku doesn't carry Tracker, the preferences and the rest of

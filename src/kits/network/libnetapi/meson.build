@@ -25,6 +25,11 @@ libnetapi_sources = files(
 
 libnetapi_inc = include_directories('.')
 
+# BNetworkRoute reads the routing table from /proc
+if host_machine.system() == 'linux'
+    libnetapi_sources += files('NetworkRoute.cpp')
+endif
+
 # Check for OpenSSL
 dep_openssl = dependency('openssl', version: '>= 1.1.0', required: false)
 
