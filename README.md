@@ -24,6 +24,11 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **Opening a menu doesn't read the menu bar unlocked.** To avoid a deadlock on Windows, a
+  menu bar unlocks its window while a menu opens, but opening the menu still read the menu
+  bar's position (`Bounds()`, `ConvertToScreen()`, `ScreenLocation()`) from the tracking
+  thread: a race, and a `debugger("Looper must be locked")` with a backtrace every time a
+  menu opened. Those reads now take the menu bar's window lock briefly.
 - **Quiet logs.** `system_beep()` wrote a terminal bell and `beep event "..." requested.` to
   standard output for every event, and the resource reader printed `read_exactly: ...` and
   `InitContainer: Caught Exception` when a file had no resources (a settings file opened

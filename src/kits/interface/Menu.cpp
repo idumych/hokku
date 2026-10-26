@@ -1648,6 +1648,33 @@ BMenu::_InitData(BMessage* archive)
 }
 
 
+// Hokku: _SelectItem() unlocks the supermenu's window while a submenu is shown
+// (the Windows backend deadlocked otherwise), but showing it still reads the
+// supermenu's geometry. Lock that window just for those reads, unless this
+// thread holds it already.
+class SupermenuLocker {
+public:
+	SupermenuLocker(BMenu* superMenu)
+		:
+		fLooper(superMenu != NULL ? superMenu->Looper() : NULL),
+		fLocked(false)
+	{
+		if (fLooper != NULL && !fLooper->IsLocked())
+			fLocked = fLooper->Lock();
+	}
+
+	~SupermenuLocker()
+	{
+		if (fLocked)
+			fLooper->Unlock();
+	}
+
+private:
+	BLooper*	fLooper;
+	bool		fLocked;
+};
+
+
 bool
 BMenu::_Show(bool selectFirstItem, bool keyDown)
 {
@@ -1659,6 +1686,7 @@ BMenu::_Show(bool selectFirstItem, bool keyDown)
 	BMenuWindow* window = NULL;
 	bool ourWindow = false;
 	if (fSuper != NULL) {
+		SupermenuLocker locker(fSuper);
 		fSuperbounds = fSuper->ConvertToScreen(fSuper->Bounds());
 		window = fSuper->_MenuWindow();
 	}
@@ -3515,8 +3543,12 @@ BMenu::_UpdateWindowViewSize(const bool &move)
 		return;
 
 	bool scroll = false;
-	const BPoint screenLocation = move ? ScreenLocation()
-		: window->Frame().LeftTop();
+	BPoint screenLocation;
+	if (move) {
+		SupermenuLocker locker(Supermenu());
+		screenLocation = ScreenLocation();
+	} else
+		screenLocation = window->Frame().LeftTop();
 	BRect frame = _CalcFrame(screenLocation, &scroll);
 	ResizeTo(frame.Width(), frame.Height());
 
