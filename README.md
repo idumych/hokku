@@ -24,6 +24,11 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **Node monitor code compiles unchanged.** Haiku code reads `msg->FindInt64("node", &ref.node)`
+  and `FindInt32("device", &ref.device)`; on Linux `ino_t` and `dev_t` are `unsigned long`, so
+  that didn't compile. `BMessage` now has those overloads. `BDirectory(const node_ref*)` and
+  `SetTo(const node_ref*)` exist too: they find the directory where `watch_node()` does (a
+  watch, or a `BNode`/`BEntry` the app has open).
 - **`BNetworkRoute` works on Linux.** `<NetworkRoute.h>` didn't compile (glibc has no
   `route_entry`) and the class wasn't built, so apps asking for the default gateway (for
   UPnP or NAT-PMP port mapping, say) didn't link. It now reads `/proc/net/route` and

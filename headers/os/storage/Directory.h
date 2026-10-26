@@ -21,8 +21,10 @@ class BDirectory : public BNode, public BEntryList {
 		BDirectory();
 		BDirectory(const BDirectory &dir);
 		BDirectory(const entry_ref *ref);
-		// Note: the node_ref constructor is not implemented in Cosmoe since it require BeFS
-		// BDirectory(const node_ref *nref);
+		BDirectory(const node_ref *nref);
+			// Hokku: Linux can't open a node by number, so this finds the
+			// directory where the app already has it (a watch, an open
+			// BNode/BEntry); see watch_node()
 		BDirectory(const BEntry *entry);
 		BDirectory(const char *path);
 		BDirectory(const BDirectory *dir, const char *path);
@@ -30,8 +32,7 @@ class BDirectory : public BNode, public BEntryList {
 		virtual ~BDirectory();
 
 		status_t SetTo(const entry_ref *ref);
-		// Note: the node_ref SetTo is not implemented in Cosmoe since it would require BeFS
-		//status_t SetTo(const node_ref *nref);
+		status_t SetTo(const node_ref *nref);
 		status_t SetTo(const BEntry *entry);
 		status_t SetTo(const char *path);
 		status_t SetTo(const BDirectory *dir, const char *path);

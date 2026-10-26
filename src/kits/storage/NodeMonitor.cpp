@@ -15,6 +15,7 @@
 #include <Messenger.h>
 #include <MessengerPrivate.h>
 #include <NodeMonitor.h>
+#include <storage_support.h>
 
 #include <algorithm>
 #include <new>
@@ -1028,8 +1029,30 @@ find_path_for_node(const node_ref& ref, std::string& path)
 
 #endif	// __linux__
 
-
 }	// namespace
+
+
+status_t
+BPrivate::Storage::path_for_node(const node_ref& ref, char* path, size_t size)
+{
+#ifndef __linux__
+	(void)ref;
+	(void)path;
+	(void)size;
+	return B_NOT_SUPPORTED;
+#else
+	std::string found;
+	pthread_mutex_lock(&sNodeMonitorLock);
+	bool ok = find_path_for_node(ref, found);
+	pthread_mutex_unlock(&sNodeMonitorLock);
+	if (!ok)
+		return B_ENTRY_NOT_FOUND;
+	if (found.size() >= size)
+		return B_NAME_TOO_LONG;
+	memcpy(path, found.c_str(), found.size() + 1);
+	return B_OK;
+#endif
+}
 
 
 extern "C" status_t

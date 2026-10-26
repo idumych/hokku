@@ -237,6 +237,22 @@ public:
 			status_t			FindInt64(const char* name, int64* value) const;
 			status_t			FindInt64(const char* name, int32 index,
 									int64* value) const;
+#ifdef __linux__
+			// Hokku: Haiku's dev_t and ino_t are int32 and int64, so Haiku
+			// code reads node monitor fields with FindInt32("device",
+			// &ref.device) and FindInt64("node", &ref.node). Linux's are
+			// unsigned long; these let that code compile unchanged.
+			status_t			FindInt32(const char* name, dev_t* value) const
+									{ return FindDevice(name, value); }
+			status_t			FindInt32(const char* name, int32 index,
+									dev_t* value) const
+									{ return FindDevice(name, index, value); }
+			status_t			FindInt64(const char* name, ino_t* value) const
+									{ return FindInode(name, value); }
+			status_t			FindInt64(const char* name, int32 index,
+									ino_t* value) const
+									{ return FindInode(name, index, value); }
+#endif
 			status_t			FindUInt64(const char* name,
 									uint64* value) const;
 			status_t			FindUInt64(const char* name, int32 index,

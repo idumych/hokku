@@ -21,8 +21,13 @@
 #include <string>
 
 
+struct node_ref;
+
 namespace BPrivate {
 namespace Storage {
+
+// Hokku: a path for a node the app has watched or open (see watch_node())
+status_t path_for_node(const node_ref& ref, char* path, size_t size);
 
 // For convenience:
 struct LongDirEntry {
