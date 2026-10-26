@@ -24,6 +24,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **Notifications without a shell.** `BNotification::Send()` ran `system("notify-send \"<title>\"
+  \"<content>\"")`, so a title or content with quotes or `$(...)` (a chat line, a file name
+  from the network) ran commands, and the window waited for `notify-send`. Both are now
+  arguments to a detached `notify-send` (`osascript` on macOS), never seen by a shell.
 - **Pointer events don't walk an unlocked window.** The display thread looked up the view
   under the pointer (for every motion, click, wheel and idle event) without the window's
   lock, racing the window thread and calling `debugger("Looper must be locked")` on every

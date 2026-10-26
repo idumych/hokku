@@ -13,8 +13,13 @@
 
 #include <new>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#	include <sys/wait.h>
+#	include <unistd.h>
+#endif
 
 #include <notification/Notifications.h>
 
@@ -444,30 +449,96 @@ BNotification::SetIcon(const BBitmap* icon)
 }
 
 
+#ifndef _WIN32
+/*!	Runs \a argv detached (no shell, so nothing in it is interpreted, and
+	no waiting for the program). Returns whether it could be started.
+*/
+static bool
+run_detached(const char* const argv[])
+{
+	int pipeFDs[2];
+	if (pipe(pipeFDs) != 0)
+		return false;
+
+	pid_t child = fork();
+	if (child < 0) {
+		close(pipeFDs[0]);
+		close(pipeFDs[1]);
+		return false;
+	}
+
+	if (child == 0) {
+		close(pipeFDs[0]);
+		// Not ours: drop what an AppImage's AppRun set up for the bundle
+		const char* appDir = getenv("APPDIR");
+		size_t length = appDir != NULL ? strlen(appDir) : 0;
+		const char* bundleVariables[] = { "FONTCONFIG_FILE", "TRANSLATORS" };
+		for (size_t i = 0; length > 0 && i < 2; i++) {
+			const char* value = getenv(bundleVariables[i]);
+			if (value != NULL && strncmp(value, appDir, length) == 0)
+				unsetenv(bundleVariables[i]);
+		}
+		setsid();
+		pid_t grandchild = fork();
+		if (grandchild == 0) {
+			close(pipeFDs[1]);
+			execvp(argv[0], (char* const*)argv);
+			_exit(127);
+		}
+		char started = grandchild > 0;
+		ssize_t written = write(pipeFDs[1], &started, 1);
+		(void)written;
+		_exit(0);
+	}
+
+	close(pipeFDs[1]);
+	char started = 0;
+	if (read(pipeFDs[0], &started, 1) != 1)
+		started = 0;
+	close(pipeFDs[0]);
+	waitpid(child, NULL, 0);
+	return started != 0;
+}
+#endif
+
+
 status_t
 BNotification::Send(bigtime_t timeout)
 {
 	// TODO: icon not supported yet
-
 #ifdef _WIN32
+	(void)timeout;
 	return B_ERROR; // Not supported on Windows yet
-#endif
-
-	BString cmd;
-	
-#if __APPLE__
-	cmd << "osascript -e 'display notification \"" << fContent << "\" with title \"" << fTitle << "\"'";
-	if (timeout > 0)
-		cmd << " giving up after " << timeout / 1000 << " seconds'";
 #else
-	cmd << "notify-send \"" << fTitle << "\" \"" << fContent << "\"";
-	if (timeout > 0)
-		cmd << " -t " << timeout / 1000; // notify-send expects timeout in milliseconds
+	// Hokku: the title and content often hold text from elsewhere (a chat
+	// line, a file name from the network), so they are passed as arguments,
+	// never through a shell. This used system("notify-send \"...\"").
+	const char* title = fTitle.String() != NULL ? fTitle.String() : "";
+	const char* content = fContent.String() != NULL ? fContent.String() : "";
+#	ifdef __APPLE__
+	(void)timeout;
+	const char* argv[] = { "osascript",
+		"-e", "on run argv",
+		"-e", "display notification (item 2 of argv) with title (item 1 of argv)",
+		"-e", "end run",
+		title, content, NULL };
+#	else
+	char milliseconds[32];
+	snprintf(milliseconds, sizeof(milliseconds), "%lld",
+		(long long)(timeout > 0 ? timeout / 1000 : 0));
+	const char* argv[] = { "notify-send", "--", title, content, NULL, NULL,
+		NULL };
+	if (timeout > 0) {
+		// notify-send's -t takes milliseconds; options go before "--"
+		argv[1] = "-t";
+		argv[2] = milliseconds;
+		argv[3] = "--";
+		argv[4] = title;
+		argv[5] = content;
+	}
+#	endif
+	return run_detached(argv) ? B_OK : B_ERROR;
 #endif
-
-	int ret = std::system(cmd.String());
-
-	return ret == 0 ? B_OK : B_ERROR;
 }
 
 
