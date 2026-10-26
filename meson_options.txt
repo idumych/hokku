@@ -14,6 +14,11 @@ option('enable_unit_test_compile',
   value : true,
   description : 'Enable compilation of unit tests')
 
+option('enable_apps',
+  type : 'boolean',
+  value : true,
+  description : 'Build the bundled apps and preferences (off: libraries, add-ons and tools only, e.g. for bundling with one app)')
+
 option('enable_libgame',
   type : 'boolean',
   value : true,

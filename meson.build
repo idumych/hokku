@@ -961,8 +961,10 @@ subdir('src/backends')  # backend plugins (X11, Wayland, Windows, Cocoa) — bui
 
 subdir('src/tools')     # test framework (uses real libbe)
 
-subdir('src/apps')
-subdir('src/preferences')
+if get_option('enable_apps')
+  subdir('src/apps')
+  subdir('src/preferences')
+endif
 subdir('src/add-ons')
 if unit_tests_enabled
   subdir('src/tests')
