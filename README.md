@@ -24,6 +24,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **Smaller AppImages: a build without the apps.** `-Denable_apps=false` leaves out
+  `src/apps` and `src/preferences` and installs only the catalogs of the libraries and
+  add-ons, so an app bundling Hokku doesn't carry Tracker, the preferences and the rest of
+  the bundled apps. The default is still to build everything.
 - **`BGLView` for OpenGL.** Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header
   `<opengl/GLView.h>`, the same API as Haiku's): `LockGL()`, `UnlockGL()`, `SwapBuffers()`
   and `GetGLProcAddress()`, from any thread, as on Haiku. It renders with EGL (Mesa's
@@ -117,6 +121,9 @@ Build it exactly like Cosmoe (below). The app templates in
 (x86_64 and aarch64) against Hokku's `hokku` branch by default; an app's `haiku-app.env` can
 point `COSMOE_REPO` and `COSMOE_TAG` at another fork or tag. CI caches the build by the commit
 the branch points at, so a new Hokku commit is picked up on the next build.
+To bundle Hokku with one app, configure it without the apps
+(`meson setup builddir -Denable_apps=false`, or `meson configure builddir -Denable_apps=false`
+on an existing build directory).
 
 Apps shipped on Linux with Hokku (each also runs on Renku OS, Haiku and VitruvianOS, a
 BeOS-like OS based on Linux):
