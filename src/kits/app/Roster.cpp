@@ -18,6 +18,9 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <unistd.h>
+#ifdef __linux__
+#	include <sys/wait.h>
+#endif
 
 #ifdef _WIN32
 #include <process.h>
@@ -840,6 +843,116 @@ wait_for_remote_app(const char* signature, team_id team, bigtime_t timeout)
 
 
 static const char kRosterLaunchEnvVar[] = "COSMOE_ROSTER_LAUNCH";
+
+
+#ifdef __linux__
+/*!	What the desktop should open for a launch no Cosmoe app can handle: the
+	document, a URL given to a URL handler (Haiku's
+	"application/x-vnd.Be.URL.<scheme>" and "text/x-email" take the URL as
+	their first argument), or a "be:url"/"url" field or the first ref of a
+	launch message.
+*/
+static bool
+desktop_target(const char* mimeType, const entry_ref* ref,
+	const BList* messageList, int argc, const char* const* args,
+	BString& target)
+{
+	if (ref != NULL) {
+		BPath path;
+		if (path.SetTo(ref) != B_OK)
+			return false;
+		target = path.Path();
+		return true;
+	}
+
+	if (mimeType != NULL && argc > 0 && args != NULL && args[0] != NULL
+		&& (strncasecmp(mimeType, "application/x-vnd.Be.URL.", 25) == 0
+			|| strcasecmp(mimeType, "text/x-email") == 0)) {
+		target = args[0];
+		return true;
+	}
+
+	for (int32 i = 0; messageList != NULL && i < messageList->CountItems();
+			i++) {
+		const BMessage* message = (const BMessage*)messageList->ItemAt(i);
+		if (message == NULL)
+			continue;
+		const char* url;
+		if (message->FindString("be:url", &url) == B_OK
+			|| message->FindString("url", &url) == B_OK) {
+			target = url;
+			return true;
+		}
+		entry_ref messageRef;
+		BPath path;
+		if (message->FindRef("refs", &messageRef) == B_OK
+			&& path.SetTo(&messageRef) == B_OK) {
+			target = path.Path();
+			return true;
+		}
+	}
+	return false;
+}
+
+
+static bool
+points_into(const char* path, const char* directory)
+{
+	size_t length = directory != NULL ? strlen(directory) : 0;
+	return path != NULL && length > 0 && strncmp(path, directory, length) == 0;
+}
+
+
+/*!	Opens \a target with xdg-open, detached, so the child never needs
+	reaping. Returns the xdg-open process, or -1.
+*/
+static team_id
+open_with_desktop(const char* target)
+{
+	int pipeFDs[2];
+	if (pipe(pipeFDs) != 0)
+		return -1;
+
+	pid_t child = fork();
+	if (child < 0) {
+		close(pipeFDs[0]);
+		close(pipeFDs[1]);
+		return -1;
+	}
+
+	if (child == 0) {
+		close(pipeFDs[0]);
+		// The desktop's apps aren't ours: drop what an AppImage's AppRun set
+		// up for the bundle, and our roster handshake.
+		const char* appDir = getenv("APPDIR");
+		if (points_into(getenv("FONTCONFIG_FILE"), appDir))
+			unsetenv("FONTCONFIG_FILE");
+		if (points_into(getenv("TRANSLATORS"), appDir))
+			unsetenv("TRANSLATORS");
+		unsetenv(kRosterLaunchEnvVar);
+		setsid();
+
+		pid_t grandchild = fork();
+		if (grandchild == 0) {
+			close(pipeFDs[1]);
+			execlp("xdg-open", "xdg-open", target, (char*)NULL);
+			_exit(127);
+		}
+		pid_t reported = grandchild;
+		ssize_t written = write(pipeFDs[1], &reported, sizeof(reported));
+		(void)written;
+		_exit(grandchild < 0 ? 1 : 0);
+	}
+
+	close(pipeFDs[1]);
+	pid_t opener = -1;
+	if (read(pipeFDs[0], &opener, sizeof(opener)) != sizeof(opener))
+		opener = -1;
+	close(pipeFDs[0]);
+	waitpid(child, NULL, 0);
+	return opener > 0 ? (team_id)opener : -1;
+}
+#endif	// __linux__
 
 
 static bool
@@ -2269,8 +2382,22 @@ BRoster::_LaunchApp(const char* mimeType, const entry_ref* ref,
 
 	error = _ResolveApp(mimeType, ref != NULL ? &documentRef : NULL, &appRef,
 		appSignature, &appFlags, &wasDocument);
-	if (error != B_OK)
+	if (error != B_OK) {
+#ifdef __linux__
+		// No Cosmoe app for it: let the desktop open files, folders and
+		// URLs, as Tracker and the URL handlers would on Haiku.
+		BString target;
+		if (desktop_target(mimeType, ref, messageList, argc, args, target)) {
+			team_id team = open_with_desktop(target.String());
+			if (team >= 0) {
+				if (_appTeam != NULL)
+					*_appTeam = team;
+				return B_OK;
+			}
+		}
+#endif
 		return error;
+	}
 
 	BPath appPath;
 	error = appPath.SetTo(&appRef);

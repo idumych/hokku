@@ -24,6 +24,11 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Changes from Cosmoe
 
+- **`BRoster::Launch()` opens files, folders and URLs with the desktop.** Only Cosmoe apps
+  could be launched, so "open file", "show in folder" and clicked links did nothing. When no
+  Cosmoe app handles the document, URL (`application/x-vnd.Be.URL.*`, `text/x-email`) or the
+  `be:url`/refs of the launch message, it now runs `xdg-open`, detached, without the variables
+  an AppImage's AppRun set for the bundle.
 - **`debugger()` and the `<Debug.h>` helpers say something.** `debug_printf()` formatted its
   text and threw it away, so `debugger()` calls (a locked-looper violation, say) were silent;
   they now go to standard error. `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and
