@@ -32,6 +32,14 @@ bootstrap_mime_database() {
         package_files() {
             rpm -ql cosmoe cosmoe-apps cosmoe-desktop 2>/dev/null
         }
+    elif command -v pacman >/dev/null 2>&1; then
+        # Arch packages are named hokku or cosmoe; find whichever owns libbe.
+        base_package="$(pacman -Qqo /usr/lib/libbe.so 2>/dev/null || true)"
+        [ -n "$base_package" ] || return 0
+        package_version="$(pacman -Q "$base_package" 2>/dev/null | cut -d' ' -f2 || true)"
+        package_files() {
+            pacman -Qlq $(pacman -Qq "$base_package" "$base_package-apps" "$base_package-desktop" 2>/dev/null)
+        }
     else
         return 0
     fi
@@ -56,9 +64,12 @@ bootstrap_mime_database() {
 bootstrap_mime_database
 
 # VirtualBox's VMSVGA driver can accept pointer events while failing to display
-# wlroots hardware cursors. Use software cursors and pixmap renderer to avoid this.
-export WLR_NO_HARDWARE_CURSORS=1
-export WLR_RENDERER=pixman
+# wlroots hardware cursors. Use software cursors and pixmap renderer to avoid this,
+# but only there: elsewhere the pixman renderer leaves the GPU unused.
+if [ "$(systemd-detect-virt 2>/dev/null)" = oracle ]; then
+    export WLR_NO_HARDWARE_CURSORS=1
+    export WLR_RENDERER=pixman
+fi
 
 # Usually started via systemd --user, but ensure they are available.
 systemctl --user start pipewire wireplumber 2>/dev/null || true
