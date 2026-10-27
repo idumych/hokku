@@ -2897,6 +2897,8 @@ BView::DrawBitmapAsync(const BBitmap* bitmap, BRect bitmapRect /* source */, BRe
 	// Check if bitmap accepts views (has an offscreen window for rendering)
 	if ((bitmap->Flags() & B_BITMAP_ACCEPTS_VIEWS)
 		&& _BitmapColorSpaceHasAlpha(bitmap->ColorSpace())) {
+		// The app may have written to Bits() since its views last drew.
+		const_cast<BBitmap*>(bitmap)->_UpdateSurface();
 		// Copy bits from the BBitmap's window backing store
 		if (bitmap->fWindow != NULL && bitmap->fWindow->fBackingSurface != NULL) {
 			int width = bitmap->Bounds().IntegerWidth() + 1;
@@ -3259,6 +3261,8 @@ BView::DrawBitmapAsync(const BBitmap* bitmap, BPoint where)
 			&fBounds, &windowViewRect, false, _DisplayScaleFactor(fOwner),
 			updateRect);
 
+		if ((bitmap->Flags() & B_BITMAP_ACCEPTS_VIEWS) != 0)
+			const_cast<BBitmap*>(bitmap)->_UpdateSurface();
 		if ((bitmap->Flags() & B_BITMAP_ACCEPTS_VIEWS) != 0
 			&& _BitmapColorSpaceHasAlpha(bitmap->ColorSpace())
 			&& bitmap->fWindow != NULL

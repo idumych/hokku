@@ -529,6 +529,8 @@ BWindow::_DrawPointerTrackingOverlayLocked(cairo_t* cr)
 		bool destroySurface = false;
 		uint8* premultipliedBits = NULL;
 
+		if ((bitmap->Flags() & B_BITMAP_ACCEPTS_VIEWS) != 0)
+			bitmap->_UpdateSurface();
 		if ((bitmap->Flags() & B_BITMAP_ACCEPTS_VIEWS) != 0
 			&& bitmap->fWindow != NULL
 			&& bitmap->fWindow->fBackingSurface != NULL) {

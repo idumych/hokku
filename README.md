@@ -145,6 +145,13 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   `B_TRANSPARENT_MAGIC_CMAP8` pixels of a `B_CMAP8` bitmap and `B_TRANSPARENT_MAGIC_RGBA32`
   pixels of a `B_RGB32` bitmap are left out, and `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha
   bytes. Before, icons drawn with `B_OP_OVER` showed a white box where they should be clear.
+- **A view bitmap's `Bits()` and its views' drawing stay in step.** On Haiku they are the same
+  memory; here a `B_BITMAP_ACCEPTS_VIEWS` bitmap's views draw into a separate surface. Every
+  `Bits()` call copied that surface over the bits, and `DrawBitmap()` drew the surface, so
+  pixels an app wrote through `Bits()` (a fill, a pasted image, a freshly cleared canvas) were
+  lost unless it locked the bitmap in between. The bitmap now tracks which copy changed: the
+  bits go to the surface on `Lock()` or before the bitmap is drawn, and come back only if the
+  views may have drawn. Test: `src/tests/kits/interface/bbitmap/BitmapBitsSyncTest`.
 - **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
   last. A user translator now hides the system one of the same name instead of both loading.
   If no translator loads at all, the directories searched are printed to stderr.

@@ -41,6 +41,17 @@
 #include "BitmapPrivate.h"
 
 
+// A bitmap that accepts views keeps two copies of its pixels: fBasePointer,
+// which Bits() hands out, and the surface its views draw into. On Haiku they
+// are the same memory. _reserved[0] tracks which copy may have changed since
+// they last matched, so each is brought up to date only when needed and
+// neither overwrites newer pixels in the other.
+enum {
+	kBitsChanged	= 0x1,	// Bits() was handed out: the app may have written
+	kSurfaceChanged	= 0x2	// the bitmap was locked: its views may have drawn
+};
+
+
 using namespace BPrivate;
 
 
@@ -975,38 +986,10 @@ BBitmap::Lock()
 	if (fWindow == NULL || !fWindow->Lock())
 		return false;
 
-	if (fBasePointer == NULL || fWindow->fBackingSurface == NULL)
-		return true;
-
-	int32 width = fBounds.IntegerWidth() + 1;
-	int32 height = fBounds.IntegerHeight() + 1;
-	if (width <= 0 || height <= 0)
-		return true;
-
-	pthread_mutex_lock(&fWindow->fBackingSurfaceLock);
-	cairo_surface_t* copySurface = cairo_image_surface_create(
-		CAIRO_FORMAT_ARGB32, width, height);
-	if (copySurface != NULL
-		&& cairo_surface_status(copySurface) == CAIRO_STATUS_SUCCESS) {
-		uint8* data = cairo_image_surface_get_data(copySurface);
-		int32 stride = cairo_image_surface_get_stride(copySurface);
-		if (data != NULL && stride > 0
-			&& BPrivate::ConvertBits(fBasePointer, data, fSize, stride * height,
-				fBytesPerRow, stride, fColorSpace, B_RGBA32, width, height) == B_OK) {
-			cairo_surface_mark_dirty(copySurface);
-			cairo_t* cr = cairo_create(fWindow->fBackingSurface);
-			if (cr != NULL && cairo_status(cr) == CAIRO_STATUS_SUCCESS) {
-				cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-				cairo_set_source_surface(cr, copySurface, 0.0, 0.0);
-				cairo_paint(cr);
-				cairo_destroy(cr);
-			} else if (cr != NULL)
-				cairo_destroy(cr);
-		}
-		cairo_surface_destroy(copySurface);
-	}
-	pthread_mutex_unlock(&fWindow->fBackingSurfaceLock);
-
+	// The app may have written to Bits() since the views last drew; give
+	// them those pixels, then assume they draw while the bitmap is locked.
+	_UpdateSurface();
+	_reserved[0] |= kSurfaceChanged;
 	return true;
 }
 
@@ -1098,6 +1081,7 @@ BBitmap::_InitObject(BRect bounds, color_space colorSpace, uint32 flags,
 	flags |= B_BITMAP_NO_SERVER_LINK;
 
 	_CleanUp();
+	_reserved[0] = kBitsChanged;
 
 	// check params
 	if (!bounds.IsValid() || !bitmaps_support_space(colorSpace, NULL)) {
@@ -1239,6 +1223,15 @@ BBitmap::_AssertPointer()
 		return;
 	}
 
+	// Only copy the surface back if the views may have drawn since; doing it
+	// every time threw away what the app had written to the bits.
+	if ((_reserved[0] & kSurfaceChanged) == 0) {
+		_reserved[0] |= kBitsChanged;
+		return;
+	}
+	// The caller may write to the bits from now on.
+	_reserved[0] = kBitsChanged;
+
 	int32 width = fBounds.IntegerWidth() + 1;
 	int32 height = fBounds.IntegerHeight() + 1;
 	if (width <= 0 || height <= 0)
@@ -1306,4 +1299,49 @@ BBitmap::_AssertPointer()
 
 	cairo_surface_destroy(copySurface);
 	pthread_mutex_unlock(&fWindow->fBackingSurfaceLock);
+}
+
+
+/*!	Copies the bits into the surface the bitmap's views draw into, if the
+	app may have written to them since the two last matched.
+*/
+void
+BBitmap::_UpdateSurface()
+{
+	if ((_reserved[0] & kBitsChanged) == 0 || fWindow == NULL)
+		return;
+
+	if (fBasePointer == NULL || fWindow->fBackingSurface == NULL)
+		return;
+
+	int32 width = fBounds.IntegerWidth() + 1;
+	int32 height = fBounds.IntegerHeight() + 1;
+	if (width <= 0 || height <= 0)
+		return;
+
+	pthread_mutex_lock(&fWindow->fBackingSurfaceLock);
+	cairo_surface_t* copySurface = cairo_image_surface_create(
+		CAIRO_FORMAT_ARGB32, width, height);
+	if (copySurface != NULL
+		&& cairo_surface_status(copySurface) == CAIRO_STATUS_SUCCESS) {
+		uint8* data = cairo_image_surface_get_data(copySurface);
+		int32 stride = cairo_image_surface_get_stride(copySurface);
+		if (data != NULL && stride > 0
+			&& BPrivate::ConvertBits(fBasePointer, data, fSize, stride * height,
+				fBytesPerRow, stride, fColorSpace, B_RGBA32, width, height) == B_OK) {
+			cairo_surface_mark_dirty(copySurface);
+			cairo_t* cr = cairo_create(fWindow->fBackingSurface);
+			if (cr != NULL && cairo_status(cr) == CAIRO_STATUS_SUCCESS) {
+				cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+				cairo_set_source_surface(cr, copySurface, 0.0, 0.0);
+				cairo_paint(cr);
+				cairo_destroy(cr);
+			} else if (cr != NULL)
+				cairo_destroy(cr);
+		}
+		cairo_surface_destroy(copySurface);
+	}
+	pthread_mutex_unlock(&fWindow->fBackingSurfaceLock);
+
+	_reserved[0] &= ~kBitsChanged;
 }

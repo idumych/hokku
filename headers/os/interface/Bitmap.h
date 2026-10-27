@@ -147,6 +147,7 @@ private:
 									size_t areaOffset = 0);
 			void				_CleanUp();
 			void				_AssertPointer();
+			void				_UpdateSurface();
 
 private:
 			uint8*				fBasePointer;
@@ -161,6 +162,8 @@ private:
 			BWindow*			fWindow;
 			status_t			fInitError;
 			uint32				_reserved[1];
+				// Cosmoe: _reserved[0] holds which of the bits and the
+				// offscreen window's surface changed last (see Bitmap.cpp)
 };
 
 inline float
