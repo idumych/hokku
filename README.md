@@ -93,7 +93,11 @@ progress bars, and the important type marked; they time out, and update in place
 again with the same ID.
 
 - **Hokku apps:** `BNotification::Send()` goes to it when it runs, as on Haiku, and to the
-  desktop's notifications (`notify-send`) when it doesn't.
+  desktop's notifications (`notify-send`) when it doesn't. A Hokku extension gives them
+  buttons: `AddAction(label, message[, target])` adds one, and clicking it sends the
+  message to the target (the app by default) and closes the notification;
+  `CountActions()`, `ActionLabelAt()`, `ActionMessageAt()` and `ActionTargetAt()` read
+  them. The class keeps its size: the actions live outside it, in its reserved room.
 - **The desktop's apps:** it serves `org.freedesktop.Notifications` on the session bus
   when no other notification server does, as on a desktop of Hokku apps; under Plasma or
   GNOME their own popups keep the desktop's apps (it takes over if they ever stop). A

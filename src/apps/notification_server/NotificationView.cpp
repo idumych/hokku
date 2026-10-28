@@ -62,6 +62,10 @@ property_info message_prop_list[] = {
 };
 
 
+// Hokku: one of the notification's action buttons, "index" int32
+const uint32 kActionClicked = 'nsAc';
+
+
 NotificationView::NotificationView(BNotification* notification, bigtime_t timeout,
 	bool disableTimeout)
 	:
@@ -118,6 +122,21 @@ NotificationView::NotificationView(BNotification* notification, bigtime_t timeou
 				B_DARKEN_1_TINT);
 			break;
 	}
+
+	// Hokku: the notification's actions, a row of buttons under the text
+	// (and the progress bar); they target this view once it is attached
+	if (fNotification->CountActions() > 0) {
+		fActionsView = new BGroupView(B_HORIZONTAL,
+			be_control_look->DefaultItemSpacing() / 2);
+		fActionsView->GroupLayout()->AddItem(BSpaceLayoutItem::CreateGlue());
+		for (int32 i = 0; i < fNotification->CountActions(); i++) {
+			BMessage* message = new BMessage(kActionClicked);
+			message->AddInt32("index", i);
+			fActionsView->AddChild(new BButton(
+				fNotification->ActionLabelAt(i), message));
+		}
+		layout->AddView(fActionsView);
+	}
 }
 
 
@@ -160,14 +179,16 @@ void
 NotificationView::MessageReceived(BMessage* msg)
 {
 	switch (msg->what) {
-		case kDBusActionInvoked:
+		case kActionClicked:
 		{
-			// Hokku: one of the action buttons: the app does it, and the
-			// notification goes, as after a click
-			BMessage invoked(kDBusActionInvoked);
-			invoked.AddString("id", fNotification->MessageID());
-			invoked.AddString("key", msg->GetString("key", "default"));
-			be_app_messenger.SendMessage(&invoked);
+			// Hokku: one of the action buttons: its message goes to its
+			// target, and the notification goes, as after a click
+			int32 index = msg->GetInt32("index", -1);
+			const BMessage* action = fNotification->ActionMessageAt(index);
+			if (action != NULL) {
+				BMessage message(*action);
+				fNotification->ActionTargetAt(index).SendMessage(&message);
+			}
 
 			BMessage remove(kRemoveView);
 			remove.AddPointer("view", this);
@@ -558,32 +579,6 @@ NotificationView::SetText(float newMaxWidth)
 	static_cast<BGroupLayout*>(GetLayout())->SetInsets(kIconStripeWidth + 8, fHeight, 8, 8);
 
 	_CalculateSize();
-}
-
-
-/*!	Hokku: the notification's actions (from D-Bus, other than "default",
-	which a click does) as a row of buttons under the text.
-*/
-void
-NotificationView::AddActions(const BMessage& notification)
-{
-	const char* key;
-	for (int32 i = 0; notification.FindString(kActionKeyField, i, &key)
-			== B_OK; i++) {
-		const char* label = notification.GetString(kActionLabelField, i,
-			key);
-		if (fActionsView == NULL) {
-			fActionsView = new BGroupView(B_HORIZONTAL,
-				be_control_look->DefaultItemSpacing() / 2);
-			fActionsView->GroupLayout()->AddItem(
-				BSpaceLayoutItem::CreateGlue());
-			GetLayout()->AddView(fActionsView);
-		}
-		BMessage* message = new BMessage(kDBusActionInvoked);
-		message->AddString("key", key);
-		BButton* button = new BButton(label, message);
-		fActionsView->AddChild(button);
-	}
 }
 
 

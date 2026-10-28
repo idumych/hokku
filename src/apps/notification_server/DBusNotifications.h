@@ -19,11 +19,6 @@
 
 #define kDBusIDPrefix "freedesktop-"
 
-// In a kNotificationMessage, the actions other than "default", shown as
-// buttons: their keys and labels, in order
-#define kActionKeyField		"_hokku:action"
-#define kActionLabelField	"_hokku:action_label"
-
 enum {
 	// view or window -> server
 	kDBusActionInvoked		= 'nsDa',

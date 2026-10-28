@@ -296,9 +296,9 @@ notify(GVariant* parameters)
 	}
 
 	// key, label, key, label...: "default" is done by a click, the others
-	// are buttons
+	// are the notification's actions (buttons), each telling the server
+	// which key to report
 	std::set<std::string> keys;
-	BMessage message(kNotificationMessage);
 	gsize count = g_variant_n_children(actions);
 	for (gsize i = 0; i + 1 < count; i += 2) {
 		const char* key;
@@ -307,8 +307,10 @@ notify(GVariant* parameters)
 		g_variant_get_child(actions, i + 1, "&s", &label);
 		keys.insert(key);
 		if (strcmp(key, "default") != 0) {
-			message.AddString(kActionKeyField, key);
-			message.AddString(kActionLabelField, label);
+			BMessage* invoked = new BMessage(kDBusActionInvoked);
+			invoked->AddString("id", messageID.c_str());
+			invoked->AddString("key", key);
+			notification.AddAction(label, invoked, be_app_messenger);
 		}
 	}
 	{
@@ -319,6 +321,7 @@ notify(GVariant* parameters)
 			sActions[id] = keys;
 	}
 
+	BMessage message(kNotificationMessage);
 	if (notification.Archive(&message) == B_OK) {
 		// the Linux app it comes from, not the server
 		message.ReplaceString("_appname", appName);

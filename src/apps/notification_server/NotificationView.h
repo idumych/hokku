@@ -47,7 +47,6 @@ public:
 
 			void 				SetText(float newMaxWidth = -1);
 			void				SetPreviewModeOn(bool enabled);
-			void				AddActions(const BMessage& notification);
 
 			const char*			MessageID() const;
 			int					ProgressPercent();
