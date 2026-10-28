@@ -7,7 +7,9 @@
 
 #include "CosmoeBackend.h"
 #include "CosmoeBackendAPI.h"
+#include <FindDirectory.h>
 #include <Rect.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <cstdio>
 #include <cstdlib>
@@ -23,6 +25,7 @@
 extern "C" {
 #include "../../libs/wayland/window.h"
 #include "shared/gonx-frame.h"
+#include "shared/file-util.h"
 // Forward declare C functions from window.c
 void widget_set_buffer_scale(struct widget *widget, int32_t scale);
 void widget_set_display_scale_percent(struct widget *widget, int32_t scale_percent);
@@ -227,6 +230,22 @@ write_labwc_environment(const char* layout, const char* variant,
 
 namespace BPrivate {
 
+// The frame's images are in libbe's data folder, wherever libbe was installed
+// or unpacked. The backend doesn't link libbe, so find_directory() is looked
+// up in the app, which has it loaded.
+static void
+set_frame_data_dir()
+{
+	typedef status_t (*find_directory_func)(directory_which, dev_t, bool,
+		char*, int32);
+	find_directory_func findDirectory
+		= (find_directory_func)dlsym(RTLD_DEFAULT, "find_directory");
+	char path[B_PATH_NAME_LENGTH];
+	if (findDirectory != NULL && findDirectory(B_SYSTEM_DATA_DIRECTORY, -1,
+			false, path, sizeof(path)) == B_OK)
+		file_set_datadir(path);
+}
+
 class WaylandBackend : public CosmoeBackend {
 public:
 	WaylandBackend()
@@ -239,6 +258,7 @@ public:
 	// Display management
 	virtual backend_display_t DisplayCreate(int* argc, char** argv)
 	{
+		set_frame_data_dir();
 		fDisplay = (backend_display_t)display_create(argc, (const char**)argv);
 		return fDisplay;
 	}

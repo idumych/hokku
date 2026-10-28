@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "file-util.h"
 
@@ -127,12 +128,27 @@ file_create_dated(const char *path, const char *prefix, const char *suffix,
 	return fdopen(fd, "w");
 }
 
+static char *data_dir;
+
+/* Hokku: the data folder libbe found next to itself, so a relocated install
+ * (an AppImage, a staged tree) finds its frame images; COSMOE_DATA_DIR still
+ * wins, and the configured DATADIR is the last resort. */
+void
+file_set_datadir(const char *dir)
+{
+	free(data_dir);
+	data_dir = dir != NULL ? strdup(dir) : NULL;
+}
+
 char *
 file_name_with_datadir(const char *filename)
 {
 	const char *base = getenv("COSMOE_DATA_DIR");
 	char *out;
 	int len;
+
+	if (base == NULL)
+		base = data_dir;
 
 	if (base)
 		len = asprintf(&out, "%s/%s", base, filename);

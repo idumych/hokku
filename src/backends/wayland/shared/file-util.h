@@ -39,6 +39,9 @@ file_create_dated(const char *path, const char *prefix, const char *suffix,
 char *
 file_name_with_datadir(const char *);
 
+void
+file_set_datadir(const char *dir);
+
 #ifdef  __cplusplus
 }
 #endif

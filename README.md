@@ -305,6 +305,11 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   surface pointing at the freed widget, and a resize already queued for the window then used
   it: the app crashed right after showing the window. The surface and the window now forget
   the widget, and the places that use it check for none.
+- **Wayland: window frames in an AppImage.** The frame's button images were looked for only
+  where Hokku was configured to install (or in `COSMOE_DATA_DIR`), so a relocated copy (an
+  AppImage, a staged install) couldn't build its client-side frame, and its windows had
+  none wherever the compositor doesn't draw one (GNOME, and the Gonx frame everywhere). The
+  backend now uses the data folder libbe finds next to itself.
 
 ### Desktop integration
 
