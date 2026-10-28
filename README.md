@@ -34,7 +34,7 @@ Electron apps (Signal, Slack...), VPN clients, update notifiers. Deskbar starts 
 (`src/apps/traybridge`), a StatusNotifierItem host, which puts each icon in the tray as a
 replicant.
 
-![Deskbar's tray on sway with the Gonx look: three tray icons and the tooltip of the mail icon](docs/screenshots/deskbar-tray-tooltip.png)
+![Deskbar's tray on sway with the Gonx look: the Gonx menu button, three tray icons and the tooltip of the mail icon](docs/screenshots/deskbar-tray-tooltip.png)
 
 ![The mail icon's menu, sent by the app over D-Bus: icons, a checkmark, a disabled entry and a submenu of radio items](docs/screenshots/deskbar-menu.png)
 
@@ -107,6 +107,8 @@ and an alert in the Gonx border.
 - **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
   draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
   Renku add-on; `setcontrollook` can choose it on its own.
+- **Deskbar.** The menu button shows a small Gonx tab with "Hokku" on it instead of the
+  Cosmoe rocket (`src/apps/deskbar/gonx-logo.py` draws it).
 - **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
   Hokku now keeps (see Desktop integration below). The fonts are Noto Sans at 9 and 11 points.
 
