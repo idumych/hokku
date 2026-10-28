@@ -6345,6 +6345,10 @@ BView::_RemoveSelf()
 	BWindow* owner = fOwner;
 	_CheckLock();
 
+	// There's no app_server to repaint what the view uncovers.
+	BRect uncovered = Frame();
+	bool wasShown = owner != NULL && !IsHidden();
+
 	if (owner != NULL) {
 		_Detach();
 	}
@@ -6352,6 +6356,9 @@ BView::_RemoveSelf()
 	BView* parent = fParent;
 	if (!parent || !parent->_RemoveChildFromList(this))
 		return false;
+
+	if (wasShown)
+		parent->Invalidate(uncovered);
 
 	//if (owner != NULL && !fTopLevelView) {
 		// the top level view is deleted by the app_server automatically
