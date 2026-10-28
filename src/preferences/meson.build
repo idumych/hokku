@@ -6,4 +6,5 @@ if is_linux
 	subdir('tracker')
 	subdir('deskbar')
 	subdir('keymap')
+	subdir('notifications')
 endif

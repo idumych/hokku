@@ -311,6 +311,7 @@ deskbar_preferences_menu = [
 	'Backgrounds',
     'DeskbarPreferences',
 	'Keymap',
+	'Notifications',
     'Time',
 	'TrackerPreferences',
 ]
