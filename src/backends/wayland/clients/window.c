@@ -3802,6 +3802,7 @@ window_uses_gonx(struct window *window)
 	switch (window->look) {
 	case 0:		/* not set yet: titled */
 	case 1:		/* B_TITLED_WINDOW_LOOK */
+	case 3:		/* B_MODAL_WINDOW_LOOK: the border without a tab */
 	case 7:		/* B_FLOATING_WINDOW_LOOK */
 	case 11:	/* B_DOCUMENT_WINDOW_LOOK */
 	case 25:	/* kLeftTitledWindowLook */

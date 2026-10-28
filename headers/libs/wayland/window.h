@@ -71,7 +71,7 @@ display_set_port(struct display *display, int32_t sender_port_id, int32_t receiv
 
 struct gonx_style;
 
-/* Draw titled, document and floating windows with the Gonx frame, or with
+/* Draw titled, document, floating and modal windows with the Gonx frame, or with
  * the theme again when style is NULL. Applies to windows created later. */
 void
 display_set_gonx_style(struct display *display,

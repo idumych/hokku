@@ -44,6 +44,7 @@ struct gonx_layout {
 	/* in: the whole surface and the window's kind */
 	int width, height;
 	int small;			/* floating window: smaller frame, plain title */
+	int tabless;		/* modal window: the border alone, no tab */
 	int document;		/* document window: resize knob in the corner */
 	int resizable;
 	int has_button[GONX_BUTTON_COUNT];
@@ -67,8 +68,8 @@ struct gonx_layout {
 
 /* Decoration thickness round the content, before the window is laid out. */
 void
-gonx_frame_sizes(const struct gonx_style *style, int small, int *top,
-		 int *bottom, int *left, int *right);
+gonx_frame_sizes(const struct gonx_style *style, int small, int tabless,
+		 int *top, int *bottom, int *left, int *right);
 
 /* Fills in the out part of layout from its in part. */
 void

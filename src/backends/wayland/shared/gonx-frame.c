@@ -303,13 +303,19 @@ geometry(struct gonx_layout *l, const struct gonx_style *style)
 
 
 void
-gonx_frame_sizes(const struct gonx_style *style, int small, int *top,
-		 int *bottom, int *left, int *right)
+gonx_frame_sizes(const struct gonx_style *style, int small, int tabless,
+		 int *top, int *bottom, int *left, int *right)
 {
 	struct gonx_layout l;
 	memset(&l, 0, sizeof l);
 	l.small = small;
 	geometry(&l, style);
+
+	if (tabless) {
+		/* a modal window: the side border all round */
+		*top = *bottom = *left = *right = l.side;
+		return;
+	}
 
 	*top = l.tab_gap + l.tab_height;
 	*bottom = l.side;
@@ -325,13 +331,14 @@ gonx_frame_layout(struct gonx_layout *l, const struct gonx_style *style,
 	int top, bottom, left, right;
 
 	geometry(l, style);
-	gonx_frame_sizes(style, l->small, &top, &bottom, &left, &right);
+	gonx_frame_sizes(style, l->small, l->tabless, &top, &bottom, &left,
+		&right);
 
 	l->content = make_rect(left, top, l->width - right - 1,
 		l->height - bottom - 1);
 	l->border = make_rect(l->content.left - l->side,
-		l->content.top - l->band, l->content.right + l->side,
-		l->content.bottom + l->side);
+		l->content.top - (l->tabless ? l->side : l->band),
+		l->content.right + l->side, l->content.bottom + l->side);
 
 	if (l->border.right - l->border.left > 2 * kResizeKnobSize) {
 		const int knob = (int)round(kResizeKnobSize * l->scale);
@@ -339,6 +346,13 @@ gonx_frame_layout(struct gonx_layout *l, const struct gonx_style *style,
 			l->border.right, l->border.bottom);
 	} else
 		l->resize = kNoRect;
+
+	if (l->tabless) {
+		l->title = l->shelf = l->flap = kNoRect;
+		for (int b = 0; b < GONX_BUTTON_COUNT; b++)
+			l->button[b] = kNoRect;
+		return;
+	}
 
 	/* the tab, its shelf and buttons; the tab sits at the left edge */
 	const int origin = 0;
@@ -1173,6 +1187,11 @@ gonx_frame_paint(cairo_t *cr, const struct gonx_layout *l,
 	draw_frame(cr, l, active);
 
 	const struct color base = frame_color(active);
+	if (l->tabless) {
+		cairo_restore(cr);
+		return;
+	}
+
 	if (valid(&l->shelf))
 		draw_shelf(cr, l, base, kOutline, mix(base, kWhite, 0.35));
 
@@ -1252,6 +1271,10 @@ gonx_frame_location(const struct gonx_layout *l, int x, int y)
 	if (contains(&corner, x, y)
 		|| (l->document && contains(&l->resize, x, y)))
 		return THEME_LOCATION_RESIZING_BOTTOM_RIGHT;
+
+	/* without a tab, the border is what moves the window */
+	if (l->tabless)
+		return THEME_LOCATION_TITLEBAR;
 
 	if (x < l->content.left)
 		return THEME_LOCATION_RESIZING_LEFT;

@@ -117,6 +117,7 @@ struct frame {
 /* window_look values from BWindow */
 enum {
 	GONX_TITLED_LOOK = 1,
+	GONX_MODAL_LOOK = 3,
 	GONX_FLOATING_LOOK = 7,
 	GONX_DOCUMENT_LOOK = 11,
 	GONX_LEFT_TITLED_LOOK = 25
@@ -124,6 +125,12 @@ enum {
 
 static void
 frame_refresh_geometry(struct frame *frame);
+
+static int
+frame_gonx_tabless(struct frame *frame)
+{
+	return frame->gonx_look == GONX_MODAL_LOOK;
+}
 
 static int
 frame_gonx_small(struct frame *frame)
@@ -555,8 +562,9 @@ frame_border_sizes(struct frame *frame, int32_t *top, int32_t *bottom,
 	struct theme *t = frame->theme;
 
 	if (frame->gonx) {
-		gonx_frame_sizes(frame->gonx, frame_gonx_small(frame), top, bottom,
-				 left, right);
+		gonx_frame_sizes(frame->gonx, frame_gonx_small(frame),
+				 frame_gonx_tabless(frame), top, bottom, left,
+				 right);
 		return;
 	}
 
@@ -622,6 +630,7 @@ frame_refresh_gonx_geometry(struct frame *frame)
 	layout->width = frame->width;
 	layout->height = frame->height;
 	layout->small = frame_gonx_small(frame);
+	layout->tabless = frame_gonx_tabless(frame);
 	layout->document = frame->gonx_look == GONX_DOCUMENT_LOOK;
 	layout->resizable = !(frame->flags & FRAME_FLAG_NO_RESIZE);
 	wl_list_for_each(button, &frame->buttons, link) {
