@@ -173,16 +173,28 @@ theme made for Renku OS: its window frame, its controls, and its colours, fonts 
 colour. Run `gonx-theme apply` to switch to it and `gonx-theme revert` to go back to what was
 there before; apps started afterwards use it.
 
-![Hokku apps on sway with the Gonx look: Showcase's controls, an active document window and a floating palette](docs/screenshots/gonx-theme.png)
+![Hokku apps on sway with the Gonx look: Showcase's controls in front, an inactive StyledEdit window and a floating palette, on the Gonx desktop colour](docs/screenshots/gonx-theme.png)
+
+The same apps before and after `gonx-theme apply` (left: Hokku's own look, with sway's title
+bars; right: Gonx):
+
+![The same desktop in Hokku's own look and in the Gonx look](docs/screenshots/gonx-before-after.png)
+
+Close-ups: the tabs of an active, an inactive and a floating window; the controls; a menu,
+and an alert in the Gonx border.
 
 ![Close-up of the active, inactive and floating tabs](docs/screenshots/gonx-tabs.png)
 
-![Close-up of the Gonx controls in Showcase](docs/screenshots/gonx-controls.png)
+![Close-up of the Gonx controls in Showcase: check box, radio buttons, sliders, buttons, scroll bar and spinner](docs/screenshots/gonx-controls.png)
+
+![An open menu with the Gonx selection colour, and an alert in the Gonx border](docs/screenshots/gonx-menu-alert.png)
 
 - **Window frame.** Titled, document and floating windows get the Gonx tab, flap and
-  rounded corners on Wayland, drawn client-side, so the compositor leaves its own title bar
-  off (tested on sway; KDE honours the same request but hasn't been tried). On X11 the
-  window manager draws frames. `setdecor Gonx` and `setdecor Default` switch only the frame.
+  rounded corners on Wayland, and modal windows (alerts) the Gonx border without a tab,
+  moved by dragging the border. The frame is drawn client-side, so the compositor leaves
+  its own title bar off (tested on sway; KDE honours the same request but hasn't been
+  tried). On X11 the window manager draws frames. `setdecor Gonx` and `setdecor Default`
+  switch only the frame.
 - **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
   draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
   Renku add-on; `setcontrollook` can choose it on its own.
