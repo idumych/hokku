@@ -69,6 +69,14 @@ display_get_user_data(struct display *display);
 void
 display_set_port(struct display *display, int32_t sender_port_id, int32_t receiver_port_id);
 
+struct gonx_style;
+
+/* Draw titled, document, floating and modal windows with the Gonx frame, or with
+ * the theme again when style is NULL. Applies to windows created later. */
+void
+display_set_gonx_style(struct display *display,
+		       const struct gonx_style *style);
+
 /* Find a window by its BWindow object token */
 struct window *
 display_find_window_by_token(struct display *display, int32_t token);

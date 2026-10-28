@@ -160,14 +160,57 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 - **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
   node). File panel titles and Open With show the leaf name. In app code, use
   `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
+- **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
+  `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
+  the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
+  an app started. Colours and the desktop colour are now saved with the appearance settings
+  and fonts with the font settings, and apps started afterwards use them (running apps keep
+  theirs until restarted). A dark control look still brings its own colours.
+  `_set_system_font_()`, the private call Appearance and theme tools use on Haiku, exists.
+  Apps no longer print `ControlLook add-on loaded from ...` when they start.
 - **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
   `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
   finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
   `/usr/local/lib`.
 
-- **The desktop's tray icons in the Deskbar (prototype).** `TrayBridge` (`src/apps/traybridge`) is a StatusNotifierWatcher and host on the session bus, like the Plasma and Xfce panels, and puts each tray icon in the Deskbar tray as a `TrayBridgeItem` replicant: KStatusNotifierItem, libappindicator/libayatana-appindicator, Qt and Electron tray icons (IVPN, Signal, Slack, Nextcloud...). Clicks, middle clicks, the wheel and the right-click menu (com.canonical.dbusmenu, with checkmarks, radio items, submenus and icons) go back to the app; icon, attention, overlay, tooltip and status changes come in live, and Passive items are hidden as Plasma hides them (`HOKKU_TRAY_SHOW_PASSIVE=1` shows them). Icons are looked up in the user's icon theme (KDE, GNOME or GTK setting, or `HOKKU_ICON_THEME`), PNG through cairo and SVG through librsvg when it's installed. Legacy XEmbed icons come through `xembedsniproxy` or `snixembed`, which TrayBridge starts when it finds one (`HOKKU_TRAY_XEMBED=0` to skip). Deskbar starts TrayBridge on Linux unless `HOKKU_TRAYBRIDGE=0`; if another watcher is already running, TrayBridge registers with it as a host instead. Deskbar is linked with `--export-dynamic` so `instantiate_object()` finds `TrayBridgeItem::Instantiate()` in it, and `AddIcon()` accepts a replicant whose add-on can't be found when Deskbar has the class itself. A restarted Deskbar tells the running TrayBridge to add its icons again. Tested with a scripted StatusNotifierItem under X11 (Xvfb), Wayland (headless sway) and a Plasma 6 Wayland session (through kded6's watcher, alongside IVPN's and cachy-update's icons): clicks, the wheel, menu choices including submenus, and dismissals (dbusmenu "clicked", "closed") all reach the app. In Plasma a menu closes when you click elsewhere; under sway it doesn't, since Cosmoe's menus don't take an xdg_popup grab.
+- **The desktop's tray icons in the Deskbar.** `TrayBridge` (`src/apps/traybridge`) is a StatusNotifierWatcher and host on the session bus, like the Plasma and Xfce panels, and puts each tray icon in the Deskbar tray as a `TrayBridgeItem` replicant: KStatusNotifierItem, libappindicator/libayatana-appindicator, Qt and Electron tray icons (IVPN, Signal, Slack, Nextcloud...). Clicks, middle clicks, the wheel and the right-click menu (com.canonical.dbusmenu, with checkmarks, radio items, submenus and icons) go back to the app; icon, attention, overlay, tooltip and status changes come in live, and Passive items are hidden as Plasma hides them (`HOKKU_TRAY_SHOW_PASSIVE=1` shows them). Icons are looked up in the user's icon theme (KDE, GNOME or GTK setting, or `HOKKU_ICON_THEME`), PNG through cairo and SVG through librsvg when it's installed. Legacy XEmbed icons come through `xembedsniproxy` or `snixembed`, which TrayBridge starts when it finds one (`HOKKU_TRAY_XEMBED=0` to skip). Deskbar starts TrayBridge on Linux unless `HOKKU_TRAYBRIDGE=0`; if another watcher is already running, TrayBridge registers with it as a host instead. Deskbar is linked with `--export-dynamic` so `instantiate_object()` finds `TrayBridgeItem::Instantiate()` in it, and `AddIcon()` accepts a replicant whose add-on can't be found when Deskbar has the class itself. A restarted Deskbar tells the running TrayBridge to add its icons again. Tested with a scripted StatusNotifierItem under X11 (Xvfb), Wayland (headless sway) and a Plasma 6 Wayland session (through kded6's watcher, alongside IVPN's and cachy-update's icons): clicks, the wheel, menu choices including submenus, and dismissals (dbusmenu "clicked", "closed") all reach the app. In Plasma a menu closes when you click elsewhere; under sway it doesn't, since Cosmoe's menus don't take an xdg_popup grab.
 
 - **`BShelf` works again, so Deskbar's tray holds replicants.** Cosmoe had replaced Haiku's `BShelf` with empty stubs (`AddReplicant()` always failed), apparently because its `<AutoLock.h>` include collides with `<Autolock.h>` on macOS's case-insensitive file system. Haiku's implementation is back, using `<AutoLocker.h>`. Along with it: `BView::RemoveChild()` repaints the area the view leaves (there's no app_server to do it), `BRoster::GetAppInfo()` and `IsRunning()` find running apps without windows through their registered messengers, `BMessenger::IsValid()` is true for a messenger into another running app (ports are per process), and `BDeskbar::AddItem()` returns Deskbar's error instead of `B_NAME_NOT_FOUND`.
+
+## Gonx look
+
+Hokku can take on the whole [Gonx](https://github.com/idumych/gonx) look, the BeOS concept
+theme made for Renku OS: its window frame, its controls, and its colours, fonts and desktop
+colour. Run `gonx-theme apply` to switch to it and `gonx-theme revert` to go back to what was
+there before; apps started afterwards use it.
+
+![Hokku apps on sway with the Gonx look: Showcase's controls in front, an inactive StyledEdit window and a floating palette, on the Gonx desktop colour](docs/screenshots/gonx-theme.png)
+
+The same apps before and after `gonx-theme apply` (left: Hokku's own look, with sway's title
+bars; right: Gonx):
+
+![The same desktop in Hokku's own look and in the Gonx look](docs/screenshots/gonx-before-after.png)
+
+Close-ups: the tabs of an active, an inactive and a floating window; the controls; a menu,
+and an alert in the Gonx border.
+
+![Close-up of the active, inactive and floating tabs](docs/screenshots/gonx-tabs.png)
+
+![Close-up of the Gonx controls in Showcase: check box, radio buttons, sliders, buttons, scroll bar and spinner](docs/screenshots/gonx-controls.png)
+
+![An open menu with the Gonx selection colour, and an alert in the Gonx border](docs/screenshots/gonx-menu-alert.png)
+
+- **Window frame.** Titled, document and floating windows get the Gonx tab, flap and
+  rounded corners on Wayland, and modal windows (alerts) the Gonx border without a tab,
+  moved by dragging the border. The frame is drawn client-side, so the compositor leaves
+  its own title bar off (tested on sway; KDE honours the same request but hasn't been
+  tried). On X11 the window manager draws frames. `setdecor Gonx` and `setdecor Default`
+  switch only the frame.
+- **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
+  draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
+  Renku add-on; `setcontrollook` can choose it on its own.
+- **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
+  Hokku now keeps (see the changes above). The fonts are Noto Sans at 9 and 11 points.
 
 ## Using it
 
@@ -205,10 +248,6 @@ or already fixed.
 ---
 
 *Upstream Cosmoe's README follows.*
-
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/cosmoe_desktop.png" alt="Cosmoe Logo" />
-</p>
 
 Welcome to Cosmoe!
 https://www.cosmoe.org
@@ -279,10 +318,6 @@ sudo pacman -S python meson pkg-config libwebp libtiff libraw libicns gcc binuti
 
 ### macOS Prerequisites
 
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/cosmoe_mac.png" alt="Mac running several Cosmoe-based apps" />
-</p>
-
 On macOS, install prerequisites using [Homebrew](https://brew.sh/):
 
 ```bash
@@ -297,10 +332,6 @@ brew install meson ninja pkg-config cairo pango libpng jpeg-turbo webp icu4c fre
 ```
 
 ### Windows Prerequisites
-
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/CosmoeWindows.png" alt="Windows PC running several Cosmoe-based apps" />
-</p>
 
 The Windows version is cross-compiled on Linux or WSL using MinGW64 MXE, and can
 run in Windows or WINE.
@@ -431,7 +462,3 @@ Acknowledgements
 ----------------
 Thank you to the Haiku team for their work over the years that helped make this possible.
 Cosmoe apps compile and run on Haiku too!
-
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/ShowcaseHaiku.png" alt="Showcase app on Haiku" />
-</p>

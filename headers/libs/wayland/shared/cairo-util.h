@@ -255,6 +255,29 @@ frame_tablet_tool_motion(struct frame *frame, void *pointer, int x, int y);
 void
 frame_repaint(struct frame *frame, cairo_t *cr);
 
+struct gonx_style;
+
+/* Draw the frame as Gonx (see gonx-frame.h) for a window of this
+ * window_look, or as the theme again with style NULL. */
+void
+frame_set_gonx(struct frame *frame, const struct gonx_style *style,
+	       uint32_t look);
+
+int
+frame_is_gonx(struct frame *frame);
+
+/* Draws what a Gonx frame paints over the content's edge; call after the
+ * content has drawn. */
+void
+frame_repaint_overlay(struct frame *frame, cairo_t *cr);
+
+/* The parts of a Gonx frame that take input. */
+void
+frame_gonx_input_rects(struct frame *frame,
+		       void (*add)(void *data, int x, int y, int width,
+				   int height),
+		       void *data);
+
 void
 cleanup_after_cairo(void);
 

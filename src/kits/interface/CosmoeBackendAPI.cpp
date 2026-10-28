@@ -32,6 +32,18 @@ cosmoe_display_create(int* argc, char** argv)
 }
 
 
+status_t
+cosmoe_display_set_decorator(cosmoe_display_t display,
+	const cosmoe_decorator_style* style)
+{
+	CosmoeBackend* backend = GetBackend();
+	if (backend == NULL || display == NULL)
+		return B_BAD_VALUE;
+
+	return backend->DisplaySetDecorator((backend_display_t)display, style);
+}
+
+
 void
 cosmoe_display_destroy(cosmoe_display_t display)
 {

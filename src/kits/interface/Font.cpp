@@ -619,15 +619,23 @@ FontList::_InitSingleton()
 //	#pragma mark -
 
 
+// Takes the family, style and size of a font saved in the settings.
+static void
+use_saved_font(BFont& font, const BFont& saved)
+{
+	font_family family;
+	font_style style;
+	saved.GetFamilyAndStyle(&family, &style);
+	if (family[0] == '\0' || font.SetFamilyAndStyle(family, style) != B_OK)
+		return;
+	if (saved.Size() > 0)
+		font.SetSize(saved.Size());
+}
+
+
 void
 _init_global_fonts_()
 {
-	DesktopSettings settings;
-
-	settings.GetDefaultPlainFont(sPlainFont);
-	settings.GetDefaultBoldFont(sBoldFont);
-	settings.GetDefaultFixedFont(sFixedFont);
-
 	sPlainFont.SetFamilyAndStyle(DEFAULT_PLAIN_FONT_FAMILY, DEFAULT_PLAIN_FONT_STYLE);
 	sPlainFont.SetFlags(B_REGULAR_FACE);
 	sPlainFont.SetSize(DEFAULT_FONT_SIZE);
@@ -646,6 +654,54 @@ _init_global_fonts_()
 	sFixedFont.SetSize(DEFAULT_FONT_SIZE);
 	sFixedFont.fExtraFlags = B_IS_FIXED |
 			(uint32)B_FONT_LEFT_TO_RIGHT << B_PRIVATE_FONT_DIRECTION_SHIFT;
+
+	// Then the fonts chosen in Appearance (or by _set_system_font_()). The
+	// settings start from the defaults just set, so an unsaved font keeps
+	// its default.
+	DesktopSettings settings;
+	BFont saved;
+	settings.GetDefaultPlainFont(saved);
+	use_saved_font(sPlainFont, saved);
+	settings.GetDefaultBoldFont(saved);
+	use_saved_font(sBoldFont, saved);
+	settings.GetDefaultFixedFont(saved);
+	if (saved.IsFixed())
+		use_saved_font(sFixedFont, saved);
+}
+
+
+/*!	Sets one of the system fonts ("plain", "bold" or "fixed") for apps
+	started from now on, and for this one. Private, as on Haiku, where
+	Appearance and theme tools declare it themselves.
+*/
+void
+_set_system_font_(const char* which, font_family family, font_style style,
+	float size)
+{
+	BFont* font;
+	if (strcmp(which, "plain") == 0)
+		font = &sPlainFont;
+	else if (strcmp(which, "bold") == 0)
+		font = &sBoldFont;
+	else if (strcmp(which, "fixed") == 0)
+		font = &sFixedFont;
+	else
+		return;
+
+	BFont newFont(*font);
+	if (newFont.SetFamilyAndStyle(family, style) != B_OK)
+		return;
+	newFont.SetSize(size);
+
+	LockedDesktopSettings settings;
+	if (font == &sPlainFont)
+		settings.SetDefaultPlainFont(newFont);
+	else if (font == &sBoldFont)
+		settings.SetDefaultBoldFont(newFont);
+	else
+		settings.SetDefaultFixedFont(newFont);
+
+	*font = newFont;
 }
 
 

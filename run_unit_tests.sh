@@ -126,7 +126,9 @@ cd "$BUILD_DIR"
 echo "Using build directory: $BUILD_DIR"
 
 # Setup library paths and prefer the just-built libraries over installed copies.
-export LD_LIBRARY_PATH=$PWD:$PWD/src/kits:$PWD/src/tools/cppunit${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# The backends are dlopen()ed by bare name, so their build dirs must be on the
+# path too, or the first test that creates a BApplication ends the run.
+export LD_LIBRARY_PATH=$PWD:$PWD/src/kits:$PWD/src/tools/cppunit:$PWD/src/backends/X11:$PWD/src/backends/wayland/backend${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 # Create test addon directory if it doesn't exist.
 mkdir -p src/tests/lib

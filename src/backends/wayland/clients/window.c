@@ -84,6 +84,7 @@ enum {
 };
 
 #include "window.h"
+#include "gonx-frame.h"
 #include "fractional-scale-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
 #include "CosmoeBackendAPI.h"
@@ -163,6 +164,8 @@ struct display {
 	struct wl_list deferred_window_deletion_list;
 
 	struct theme *theme;
+	/* the Gonx frame, when that decorator is chosen */
+	struct gonx_style *gonx_style;
 
 	struct wl_cursor_theme *cursor_theme;
 	struct wl_cursor **cursors;
@@ -802,6 +805,9 @@ struct widget {
 	struct rectangle allocation;
 	widget_resize_handler_t resize_handler;
 	widget_redraw_handler_t redraw_handler;
+	/* runs after the children have drawn, for frame parts that overlap
+	 * them */
+	widget_redraw_handler_t overlay_handler;
 	widget_enter_handler_t enter_handler;
 	widget_leave_handler_t leave_handler;
 	widget_motion_handler_t motion_handler;
@@ -3365,6 +3371,12 @@ widget_set_tooltip(struct widget *parent, char *entry, float x, float y)
 }
 
 static void
+add_input_rect(void *data, int x, int y, int width, int height)
+{
+	wl_region_add(data, x, y, width, height);
+}
+
+static void
 frame_resize_handler(struct widget *widget,
 		     int32_t width, int32_t height, void *data)
 {
@@ -3414,7 +3426,10 @@ frame_resize_handler(struct widget *widget,
 	widget->surface->input_region =
 		wl_compositor_create_region(widget->window->display->compositor);
 	if (!frame->frame || !widget->window->fullscreen) {
-		if (frame->frame) {
+		if (frame->frame && frame_is_gonx(frame->frame)) {
+			frame_gonx_input_rects(frame->frame, add_input_rect,
+					       widget->surface->input_region);
+		} else if (frame->frame) {
 			frame_input_rect(frame->frame, &input.x, &input.y,
 					 &input.width, &input.height);
 			wl_region_add(widget->surface->input_region,
@@ -3776,6 +3791,27 @@ frame_tablet_tool_up_handler(struct widget *widget, struct tablet_tool *tool,
 	frame_handle_status(frame, tool->input, time, location);
 }
 
+/* Windows that get the Gonx frame when it is chosen: the looks that have a
+ * tab (titled, document, floating). Others keep the theme's frame. */
+static int
+window_uses_gonx(struct window *window)
+{
+	if (window == NULL || window->display->gonx_style == NULL)
+		return 0;
+
+	switch (window->look) {
+	case 0:		/* not set yet: titled */
+	case 1:		/* B_TITLED_WINDOW_LOOK */
+	case 3:		/* B_MODAL_WINDOW_LOOK: the border without a tab */
+	case 7:		/* B_FLOATING_WINDOW_LOOK */
+	case 11:	/* B_DOCUMENT_WINDOW_LOOK */
+	case 25:	/* kLeftTitledWindowLook */
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static int
 window_prefers_system_decorations(struct window *window)
 {
@@ -3783,6 +3819,7 @@ window_prefers_system_decorations(struct window *window)
 		&& !window->custom
 		&& !window_uses_panel(window)
 		&& !(window->cosmoe_flags & COSMOE_WINDOW_FLAG_NOT_CLOSABLE)
+		&& !window_uses_gonx(window)
 		&& window->display->decoration_manager != NULL;
 }
 
@@ -3801,10 +3838,28 @@ window_frame_buttons(struct window *window)
 	return buttons;
 }
 
+/* The Gonx frame reaches a few pixels into the content: its rounded inner
+ * corners and a document window's resize knob. */
+static void
+frame_overlay_handler(struct widget *widget, void *data)
+{
+	struct window_frame *frame = data;
+	cairo_t *cr;
+
+	if (widget->window->fullscreen || frame->frame == NULL
+		|| !frame_is_gonx(frame->frame))
+		return;
+
+	cr = widget_cairo_create(widget);
+	frame_repaint_overlay(frame->frame, cr);
+	cairo_destroy(cr);
+}
+
 static void
 window_frame_set_client_side_handlers(struct window_frame *frame)
 {
 	widget_set_redraw_handler(frame->widget, frame_redraw_handler);
+	frame->widget->overlay_handler = frame_overlay_handler;
 	widget_set_resize_handler(frame->widget, frame_resize_handler);
 	widget_set_enter_handler(frame->widget, frame_enter_handler);
 	widget_set_leave_handler(frame->widget, frame_leave_handler);
@@ -3824,6 +3879,7 @@ static void
 window_frame_set_pass_through_handlers(struct window_frame *frame)
 {
 	widget_set_redraw_handler(frame->widget, frame_redraw_handler);
+	frame->widget->overlay_handler = NULL;
 	widget_set_resize_handler(frame->widget, frame_resize_handler);
 	widget_set_enter_handler(frame->widget, NULL);
 	widget_set_leave_handler(frame->widget, NULL);
@@ -3851,6 +3907,10 @@ window_frame_enable_client_side_decorations(struct window *window)
 	                            window_frame_buttons(window), title, NULL);
 	if (!frame->frame)
 		return -1;
+
+	if (window_uses_gonx(window))
+		frame_set_gonx(frame->frame, window->display->gonx_style,
+			       window->look);
 
 	if (window->cosmoe_flags & COSMOE_WINDOW_FLAG_NOT_RESIZABLE)
 		frame_set_flag(frame->frame, FRAME_FLAG_NO_RESIZE);
@@ -3961,6 +4021,12 @@ window_frame_set_child_size(struct widget *widget, int child_width,
 	if (frame == NULL || frame->frame == NULL) {
 		width = child_width;
 		height = child_height;
+	} else if (!widget->window->fullscreen
+		&& frame_is_gonx(frame->frame)) {
+		int32_t top, bottom, left, right;
+		frame_decoration_sizes(frame->frame, &top, &bottom, &left, &right);
+		width = child_width + left + right;
+		height = child_height + top + bottom;
 	} else if (!widget->window->fullscreen) {
 		decoration_width = (t->width + margin) * 2;
 		decoration_height = t->width +
@@ -6420,6 +6486,8 @@ widget_redraw(struct widget *widget)
 		widget->redraw_handler(widget, widget->user_data);
 	wl_list_for_each(child, &widget->child_list, link)
 		widget_redraw(child);
+	if (widget->overlay_handler)
+		widget->overlay_handler(widget, widget->user_data);
 }
 
 static void
@@ -6749,9 +6817,18 @@ window_set_look(struct window *window, uint32_t look)
 	if (window == NULL)
 		return;
 
+	const int had_gonx = window_uses_gonx(window);
 	window->look = look;
 	window->desktop_mode = window->look == COSMOE_WINDOW_LOOK_DESKTOP
 		&& window->feel == COSMOE_WINDOW_FEEL_DESKTOP;
+
+	/* a Gonx frame depends on the look (floating windows are smaller) */
+	if (window->display->gonx_style != NULL && window->frame != NULL
+		&& window->frame->frame != NULL
+		&& (had_gonx || window_uses_gonx(window))) {
+		window_frame_disable_client_side_decorations(window);
+		window_frame_enable_client_side_decorations(window);
+	}
 }
 
 void
@@ -7419,7 +7496,7 @@ window_show(struct window *window)
 				&toplevel_decoration_listener, window);
 			zxdg_toplevel_decoration_v1_set_mode(
 				window->xdg_toplevel_decoration,
-				window->desktop_mode
+				window->desktop_mode || window_uses_gonx(window)
 					? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
 					: ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 		}
@@ -7741,6 +7818,18 @@ window_get_decorator_size(struct window *window, int *borderWidth, int *tabHeigh
 	/* Wayland does not provide explicit frame extents; use the defined
 	   approximate values for the content decoration offsets (top/left). */
 	(void)window;
+}
+
+void
+display_set_gonx_style(struct display *display,
+		       const struct gonx_style *style)
+{
+	free(display->gonx_style);
+	display->gonx_style = NULL;
+	if (style != NULL) {
+		display->gonx_style = xmalloc(sizeof *style);
+		*display->gonx_style = *style;
+	}
 }
 
 int
@@ -9542,6 +9631,7 @@ display_create(const int *argc, const char *argv[])
 	s_custom_cursor_display = d;
 
 	d->theme = theme_create();
+	d->gonx_style = NULL;
 
 	init_dummy_surface(d);
 
@@ -9603,6 +9693,7 @@ display_destroy(struct display *display)
 
 	if (display->theme)
 		theme_destroy(display->theme);
+	free(display->gonx_style);
 	if (display == s_custom_cursor_display) {
 		custom_cursor_destroy_all();
 		s_custom_cursor_display = NULL;

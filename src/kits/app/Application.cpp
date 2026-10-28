@@ -51,6 +51,7 @@ extern "C" void __libbe_initialize_before();
 #include <MenuWindow.h>
 #include <RosterPrivate.h>
 #include <CosmoeBackendAPI.h>
+#include <DecoratorPrivate.h>
 // #include <PicturePrivate.h>
 
 static void fill_argv_message(BMessage &message);
@@ -1448,6 +1449,9 @@ BApplication::_InitGUIContext()
 	error = _init_interface_kit_();
 	if (error != B_OK)
 		return error;
+
+	// the window decorator needs the system fonts and colours
+	BPrivate::apply_decorator(fDisplay);
 
 	// create global system cursors
 	B_CURSOR_SYSTEM_DEFAULT = new BCursor(B_HAND_CURSOR);
