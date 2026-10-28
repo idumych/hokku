@@ -34,6 +34,7 @@
 #include <string.h>
 #include <ctype.h>
 #if !defined(_WIN32)
+#include <limits.h>
 #include <unistd.h>
 #endif
 
@@ -1943,14 +1944,44 @@ describe_font(char* out, size_t size, const BFont& font)
 }
 
 
+/*!	Hokku: whether this app is a standalone one, run from its AppImage: its
+	own executable is inside APPDIR. Apps it starts inherit APPDIR, so the
+	variable alone isn't enough.
+*/
+static bool
+runs_from_appimage()
+{
+#ifdef __linux__
+	const char* appDir = getenv("APPDIR");
+	if (appDir == NULL || appDir[0] == '\0')
+		return false;
+
+	char dir[PATH_MAX];
+	char exe[PATH_MAX];
+	if (realpath(appDir, dir) == NULL || realpath("/proc/self/exe", exe) == NULL)
+		return false;
+
+	size_t length = strlen(dir);
+	return strncmp(exe, dir, length) == 0 && exe[length] == '/';
+#else
+	return false;
+#endif
+}
+
+
 status_t
 apply_decorator(void* display)
 {
 	if (display == NULL)
 		return B_BAD_VALUE;
 
+	// Standalone apps keep the desktop's own frames; the rest of the look
+	// (controls, colours, fonts) still follows the settings.
 	BString name;
-	get_decorator(name);
+	if (runs_from_appimage())
+		name = "Default";
+	else
+		get_decorator(name);
 
 	cosmoe_decorator_style style;
 	memset(&style, 0, sizeof(style));

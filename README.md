@@ -153,7 +153,9 @@ and an alert in the Gonx border.
   moved by dragging the border. The frame is drawn client-side, so the compositor leaves
   its own title bar off (tested on sway; KDE honours the same request but hasn't been
   tried). On X11 the window manager draws frames. `setdecor Gonx` and `setdecor Default`
-  switch only the frame.
+  switch only the frame. Standalone apps run from their AppImage keep the desktop's own
+  frames (Hokku's default frame where the compositor draws none), while taking the rest of
+  the look; apps they start don't count, as their executable isn't in the AppImage.
 - **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
   draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
   Renku add-on; `setcontrollook` can choose it on its own.
