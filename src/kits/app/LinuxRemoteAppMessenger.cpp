@@ -528,6 +528,46 @@ FindRemoteAppMessenger(const char* signature, team_id team, app_info* info)
 }
 
 
+int32
+GetRemoteAppTeams(team_id* teams, int32 maxCount)
+{
+	if (teams == NULL || maxCount <= 0)
+		return 0;
+
+	FILE* file = fopen("/proc/net/unix", "r");
+	if (file == NULL)
+		return 0;
+
+	int32 count = 0;
+	char line[1024];
+	while (count < maxCount && fgets(line, sizeof(line), file) != NULL) {
+		char* marker = strchr(line, '@');
+		if (marker == NULL)
+			continue;
+
+		char* end = marker;
+		while (*end != '\0' && *end != '\n' && *end != '\r'
+			&& *end != ' ' && *end != '\t') {
+			end++;
+		}
+		*end = '\0';
+
+		RemoteAppEndpoint candidate;
+		if (!parse_socket_name(marker + 1, &candidate))
+			continue;
+
+		bool known = false;
+		for (int32 i = 0; i < count && !known; i++)
+			known = teams[i] == candidate.team;
+		if (!known)
+			teams[count++] = candidate.team;
+	}
+
+	fclose(file);
+	return count;
+}
+
+
 bool
 SendRemoteAppMessage(port_id port, team_id team, int32 token,
 	BMessage* message, BMessenger replyTo, bigtime_t timeout,
@@ -651,6 +691,13 @@ status_t
 FindRemoteAppMessenger(const char*, team_id, app_info*)
 {
 	return B_NOT_SUPPORTED;
+}
+
+
+int32
+GetRemoteAppTeams(team_id*, int32)
+{
+	return 0;
 }
 
 

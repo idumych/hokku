@@ -1514,14 +1514,20 @@ BRoster::GetAppList(BList* teamIDList) const
 	const int32 kMaxTeams = 1024;
 	team_id teams[kMaxTeams];
 	int32 count = cosmoe_display_get_app_list(display, teams, kMaxTeams);
-	if (count <= 0)
-		return;
-
 	if (count > kMaxTeams)
 		count = kMaxTeams;
 
 	for (int32 i = 0; i < count; i++)
 		teamIDList->AddItem((void*)(addr_t)teams[i]);
+
+	// The display only knows apps with ordinary windows. Apps without them
+	// (servers, panels such as the Deskbar) are found by the messenger every
+	// BApplication registers, as Haiku's registrar knows every app.
+	count = BPrivate::GetRemoteAppTeams(teams, kMaxTeams);
+	for (int32 i = 0; i < count; i++) {
+		if (!teamIDList->HasItem((void*)(addr_t)teams[i]))
+			teamIDList->AddItem((void*)(addr_t)teams[i]);
+	}
 }
 
 
@@ -1658,6 +1664,14 @@ BRoster::GetRunningAppInfo(team_id team, app_info* info) const
 	if (be_app != NULL && team == be_app->Team()
 		&& be_app->Signature() != NULL && be_app->Signature()[0] != '\0') {
 		strlcpy(info->signature, be_app->Signature(), B_MIME_TYPE_LENGTH);
+	} else {
+		// Another app: the signature and port its BApplication registered
+		app_info remoteInfo;
+		if (BPrivate::FindRemoteAppMessenger(NULL, team, &remoteInfo)
+				== B_OK) {
+			strlcpy(info->signature, remoteInfo.signature, B_MIME_TYPE_LENGTH);
+			info->port = remoteInfo.port;
+		}
 	}
 
 	if (info->signature[0] == '\0') {

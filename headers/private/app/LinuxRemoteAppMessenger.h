@@ -17,6 +17,10 @@ void UnregisterRemoteAppMessenger();
 status_t FindRemoteAppMessenger(const char* signature, team_id team,
 	app_info* info);
 
+// The teams of all running apps that registered their messenger, with or
+// without windows; returns how many it put in teams.
+int32 GetRemoteAppTeams(team_id* teams, int32 maxCount);
+
 bool SendRemoteAppMessage(port_id port, team_id team, int32 token,
 	BMessage* message, BMessenger replyTo, bigtime_t timeout,
 	status_t* _result);

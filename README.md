@@ -83,7 +83,9 @@ It needed four fixes in the kits, which every app gets:
 - **Apps without windows are seen.** `BRoster::GetAppInfo()` and `IsRunning()` find a
   running app that has no window through the messenger every app registers, and
   `BMessenger::IsValid()` is true for a messenger into another running app (ports are per
-  process here).
+  process here). `GetAppList()` lists those apps too, with the signature they registered,
+  so `hey` reaches the Deskbar, Tracker's desktop and the servers (`hey Deskbar BeMn`
+  opens the Deskbar menu).
 - **`BDeskbar::AddItem()` returns Deskbar's error** instead of `B_NAME_NOT_FOUND`.
 
 ### Notifications, the Haiku way
@@ -279,6 +281,8 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   corner panel (a layer-shell surface) always sat in its corner. One with the private
   `kWindowPanelOffsetFlag` turns `MoveTo()` into margins from that corner, worked out
   from the screen `BScreen` reports, so the notification window sits beside the Deskbar.
+  The margins follow the panel's size as it grows, and the compositor's echo of an
+  earlier size no longer undoes a newer one.
 - **Touch screens work.** Wayland gives touch to apps as touch, never as a mouse, and only
   window frames handled it, so a finger did nothing in an app. Now the first finger on a
   window drives the mouse, as a tablet does on Haiku: a tap is a left click, a finger that
@@ -312,6 +316,11 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   AppImage, a staged install) couldn't build its client-side frame, and its windows had
   none wherever the compositor doesn't draw one (GNOME, and the Gonx frame everywhere). The
   backend now uses the data folder libbe finds next to itself.
+- **Wayland: panels have no window frame.** Once the frame's images were found, a panel
+  (the notification window) got a client-side frame too: its size went into the window's,
+  which the panel's size limits took back, again and again, so the notifications were cut
+  off, sat over the Deskbar, and an empty frame showed behind them. Panels and the desktop
+  are never framed now.
 
 ### Desktop integration
 
