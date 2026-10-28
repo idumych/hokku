@@ -878,6 +878,12 @@ struct input {
 	int32_t touch_emulated_id;
 	struct widget *touch_emulated_widget;
 	float touch_emulated_x, touch_emulated_y;
+	/* where the finger came down, and the button pressed for it: none
+	 * until it moves, lifts or is held (see touch_emulate_down()) */
+	float touch_start_x, touch_start_y;
+	uint32_t touch_start_time;
+	uint32_t touch_pressed_button;
+	struct toytimer touch_hold_timer;
 	struct window *pointer_focus;
 	struct window *keyboard_focus;
 	/* Toplevel that lost keyboard focus while the pointer was already
@@ -4934,9 +4940,19 @@ static const struct wl_keyboard_listener keyboard_listener = {
 
 /* Cosmoe's windows take only pointer events, as Haiku apps do: there a
  * touch screen is a tablet, which moves the mouse. So a finger on a widget
- * without touch handlers of its own (the frame has some) is the left mouse
- * button: the pointer moves to it, presses, follows it and releases. Only
- * the first finger down does this; others are ignored until it lifts. */
+ * without touch handlers of its own (the frame has some) moves the pointer
+ * and acts as a mouse button. Which one isn't known when it comes down:
+ *  - lifted soon: a left click there;
+ *  - moved more than TOUCH_SLOP: the left button, pressed where it came
+ *    down, held while it drags;
+ *  - held still for TOUCH_HOLD_USEC: a right click there (a context
+ *    menu). The rest of the touch only moves the pointer, so a menu that
+ *    opened under the finger isn't chosen from by lifting it; tap an item.
+ * Only the first finger down does this; others are ignored until it lifts. */
+#define TOUCH_SLOP 10.0f
+#define TOUCH_HOLD_USEC 600000
+/* touch_pressed_button once the hold's right click is done */
+#define TOUCH_HOLD_CLICKED UINT32_MAX
 /* The widget the emulated button acts on: the grab, else the widget
  * the finger came down on; NULL once that is gone. */
 static struct widget *
@@ -4945,12 +4961,55 @@ touch_emulated_target(struct input *input)
 	return input->grab ? input->grab : input->touch_emulated_widget;
 }
 
+/* Presses button where the finger came down. */
+static void
+touch_emulate_press(struct input *input, uint32_t button, uint32_t time)
+{
+	struct widget *target;
+
+	TOUCH_DEBUG("emulate press %s at %.1f,%.1f\n",
+		    button == BTN_RIGHT ? "right" : "left",
+		    input->touch_start_x, input->touch_start_y);
+	toytimer_disarm(&input->touch_hold_timer);
+	input->touch_pressed_button = button;
+	input->sx = input->touch_start_x;
+	input->sy = input->touch_start_y;
+
+	if (input->grab == NULL && input->touch_emulated_widget != NULL)
+		input_grab(input, input->touch_emulated_widget, button);
+	target = touch_emulated_target(input);
+	if (target && target->button_handler)
+		target->button_handler(target, input, time, button,
+				       WL_POINTER_BUTTON_STATE_PRESSED,
+				       target->user_data);
+}
+
+static void
+touch_hold_timer_func(struct toytimer *tt)
+{
+	struct input *input = container_of(tt, struct input, touch_hold_timer);
+	uint32_t time = input->touch_start_time + TOUCH_HOLD_USEC / 1000;
+	struct widget *target;
+
+	if (!input->touch_emulating || input->touch_pressed_button != 0)
+		return;
+
+	touch_emulate_press(input, BTN_RIGHT, time);
+	target = touch_emulated_target(input);
+	TOUCH_DEBUG("emulate release right (hold)\n");
+	if (target && target->button_handler)
+		target->button_handler(target, input, time, BTN_RIGHT,
+				       WL_POINTER_BUTTON_STATE_RELEASED,
+				       target->user_data);
+	if (input->grab && input->grab_button == BTN_RIGHT)
+		input_ungrab(input);
+	input->touch_pressed_button = TOUCH_HOLD_CLICKED;
+}
+
 static void
 touch_emulate_down(struct input *input, struct widget *widget,
 		   uint32_t time, int32_t id, float sx, float sy)
 {
-	struct widget *target;
-
 	TOUCH_DEBUG("emulate down id %d at %.1f,%.1f widget %p grab %p\n", id,
 		    sx, sy, (void *)widget, (void *)input->grab);
 	input->touch_emulating = true;
@@ -4958,6 +5017,10 @@ touch_emulate_down(struct input *input, struct widget *widget,
 	input->touch_emulated_widget = widget;
 	input->touch_emulated_x = sx;
 	input->touch_emulated_y = sy;
+	input->touch_start_x = sx;
+	input->touch_start_y = sy;
+	input->touch_start_time = time;
+	input->touch_pressed_button = 0;
 	input->sx = sx;
 	input->sy = sy;
 
@@ -4967,13 +5030,7 @@ touch_emulate_down(struct input *input, struct widget *widget,
 		widget->motion_handler(widget, input, time, sx, sy,
 				       widget->user_data);
 
-	if (input->grab == NULL)
-		input_grab(input, widget, BTN_LEFT);
-	target = touch_emulated_target(input);
-	if (target && target->button_handler)
-		target->button_handler(target, input, time, BTN_LEFT,
-				       WL_POINTER_BUTTON_STATE_PRESSED,
-				       target->user_data);
+	toytimer_arm_once_usec(&input->touch_hold_timer, TOUCH_HOLD_USEC);
 }
 
 static void
@@ -5067,12 +5124,22 @@ touch_window_under(struct window *window, float sx, float sy,
 static void
 touch_emulate_motion(struct input *input, uint32_t time, float sx, float sy)
 {
-	struct widget *target = touch_emulated_target(input);
+	struct widget *target;
 	struct window *under = NULL;
 	float lx = sx, ly = sy;
 
 	input->touch_emulated_x = sx;
 	input->touch_emulated_y = sy;
+	if (input->touch_pressed_button == 0) {
+		float dx = sx - input->touch_start_x;
+		float dy = sy - input->touch_start_y;
+		if (dx * dx + dy * dy < TOUCH_SLOP * TOUCH_SLOP)
+			return;
+		/* a drag: the left button, from where the finger came down */
+		touch_emulate_press(input, BTN_LEFT, time);
+	}
+
+	target = touch_emulated_target(input);
 	if (target != NULL && input->touch_focus != NULL)
 		under = touch_window_under(input->touch_focus, sx, sy, &lx, &ly);
 	TOUCH_DEBUG("emulate motion at %.1f,%.1f target %p, in %p at %.1f,%.1f\n",
@@ -5095,11 +5162,36 @@ touch_emulate_motion(struct input *input, uint32_t time, float sx, float sy)
 }
 
 static void
-touch_emulate_up(struct input *input, uint32_t time)
+touch_emulate_up(struct input *input, uint32_t time, bool cancel)
 {
-	struct widget *target = touch_emulated_target(input);
+	struct widget *target;
 	struct window *under = NULL;
+	uint32_t button;
 	float lx, ly;
+
+	toytimer_disarm(&input->touch_hold_timer);
+	if (input->touch_pressed_button == TOUCH_HOLD_CLICKED) {
+		/* clicked already: lifting the finger is nothing */
+		TOUCH_DEBUG("emulate up after hold\n");
+		input->touch_pressed_button = 0;
+		input->touch_emulating = false;
+		input->touch_emulated_widget = NULL;
+		return;
+	}
+	if (input->touch_pressed_button == 0) {
+		if (cancel) {
+			input->touch_emulating = false;
+			input->touch_emulated_widget = NULL;
+			return;
+		}
+		/* a tap: a left click where the finger came down */
+		touch_emulate_press(input, BTN_LEFT, time);
+		input->touch_emulated_x = input->touch_start_x;
+		input->touch_emulated_y = input->touch_start_y;
+	}
+	button = input->touch_pressed_button;
+	input->touch_pressed_button = 0;
+	target = touch_emulated_target(input);
 
 	/* released over another of our popups: release there, as a pointer
 	 * would, so a menu sees which item the finger lifted from */
@@ -5121,10 +5213,10 @@ touch_emulate_up(struct input *input, uint32_t time)
 	input->touch_emulating = false;
 	input->touch_emulated_widget = NULL;
 	if (target && target->button_handler)
-		target->button_handler(target, input, time, BTN_LEFT,
+		target->button_handler(target, input, time, button,
 				       WL_POINTER_BUTTON_STATE_RELEASED,
 				       target->user_data);
-	if (input->grab && input->grab_button == BTN_LEFT)
+	if (input->grab && input->grab_button == button)
 		input_ungrab(input);
 }
 
@@ -5215,7 +5307,7 @@ touch_handle_up(void *data, struct wl_touch *wl_touch,
 		else if (input->touch_emulating
 			&& input->touch_emulated_id == id) {
 			input->display->serial = serial;
-			touch_emulate_up(input, time);
+			touch_emulate_up(input, time, false);
 		}
 
 		wl_list_remove(&tp->link);
@@ -5295,7 +5387,7 @@ touch_handle_cancel(void *data, struct wl_touch *wl_touch)
 	}
 
 	if (input->touch_emulating)
-		touch_emulate_up(input, 0);
+		touch_emulate_up(input, 0, true);
 
 	wl_list_for_each_safe(tp, tmp, &input->touch_point_list, link) {
 		if (tp->widget->touch_cancel_handler)
@@ -8999,6 +9091,8 @@ display_add_input(struct display *d, uint32_t id, int display_seat_version)
 	input->idle_timer_running = false;
 	toytimer_init(&input->idle_timer, CLOCK_MONOTONIC, d,
 		      idle_timer_func);
+	toytimer_init(&input->touch_hold_timer, CLOCK_MONOTONIC, d,
+		      touch_hold_timer_func);
 }
 
 static void
@@ -9068,6 +9162,7 @@ input_destroy(struct input *input)
 	toytimer_fini(&input->repeat_timer);
 	toytimer_fini(&input->cursor_timer);
 	toytimer_fini(&input->idle_timer);
+	toytimer_fini(&input->touch_hold_timer);
 	free(input);
 }
 

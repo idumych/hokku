@@ -338,6 +338,12 @@ BMenuBar::MouseDown(BPoint where)
 	if (fTracking)
 		return;
 
+	// The item pressed on, before GetMouse() moves where on: a fast drag
+	// (a finger, which presses only once it moves) may have left it by the
+	// time tracking starts, and should still open its menu.
+	BMenuItem* pressedItem = _HitTestItems(where, B_ORIGIN);
+	int32 pressedIndex = pressedItem != NULL ? IndexOf(pressedItem) : -1;
+
 	uint32 buttons;
 	GetMouse(&where, &buttons);
 
@@ -353,7 +359,7 @@ BMenuBar::MouseDown(BPoint where)
 		}
 	}
 
-	StartMenuBar(-1, false, false);
+	StartMenuBar(pressedIndex, false, false);
 }
 
 
