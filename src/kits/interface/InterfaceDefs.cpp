@@ -467,8 +467,11 @@ linux_build_key_map(key_map** map, char** key_buffer,
 	ssize_t* key_buffer_size)
 {
 	LinuxXkbNames names;
-	if (!get_backend_xkb_names(names) && !get_current_xkb_names(names))
-		return false;
+	if (!get_backend_xkb_names(names) && !get_current_xkb_names(names)) {
+		// No layout configured (and no setxkbmap on a Wayland-only system):
+		// use xkbcommon's defaults, as the compositor does (XKB_DEFAULT_*, else us).
+		names = LinuxXkbNames();
+	}
 
 	xkb_context* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	if (context == NULL)
@@ -1334,6 +1337,11 @@ get_key_map(key_map **map, char **key_buffer)
 void
 _get_key_map(key_map **map, char **key_buffer, ssize_t *key_buffer_size)
 {
+	// Callers check for NULL, often with uninitialized pointers.
+	*map = NULL;
+	*key_buffer = NULL;
+	if (key_buffer_size != NULL)
+		*key_buffer_size = 0;
 #ifdef __linux__
 	if (linux_build_key_map(map, key_buffer, key_buffer_size))
 		return;
