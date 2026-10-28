@@ -161,6 +161,17 @@ ResolveMenuEntriesRef(const BPath& menuEntriesPath, entry_ref& _ref)
 	}
 
 	fclose(file);
+
+	// The directory named in the file is where the install was made; an
+	// install moved since (an AppImage, a staged install) has the menu
+	// beside the file.
+	BPath beside;
+	if (menuEntriesPath.GetParent(&beside) == B_OK
+		&& beside.Append("menu") == B_OK) {
+		BEntry besideEntry(beside.Path(), true);
+		if (besideEntry.InitCheck() == B_OK && besideEntry.IsDirectory())
+			return besideEntry.GetRef(&_ref) == B_OK;
+	}
 	return false;
 }
 
@@ -207,6 +218,11 @@ TBarWindow::MenusBeginning()
 	if (GetDeskbarDataDirectory(path) == B_OK
 		&& path.Append(kDeskbarMenuEntriesFileName) == B_OK
 		&& ResolveMenuEntriesRef(path, ref)) {
+		sDeskbarMenu->SetNavDir(&ref);
+	} else if (find_directory(B_USER_DESKBAR_DIRECTORY, &path, true) == B_OK
+		&& get_ref_for_path(path.Path(), &ref) == B_OK) {
+		// No system menu (run from the build folder, say): the user's
+		// Deskbar folder, so the menu at least has its standard items.
 		sDeskbarMenu->SetNavDir(&ref);
 	} else {
 		//	this really should never happen

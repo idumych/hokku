@@ -318,22 +318,30 @@ deskbar_preferences_menu = [
 # Ensure Deskbar's system menu source exists for SetNavDir fallback.
 deskbar_menu_entries_dir = dir_cosmoe_data / 'deskbar'
 
+# The menu's links point to the apps relatively where meson can work that
+# out (1.3 and later), so a moved install (an AppImage, say) keeps them.
+deskbar_menu_bindir = dir_prefix / get_option('bindir')
+if meson.version().version_compare('>=1.3.0')
+    deskbar_menu_bindir = import('fs').relative_to(deskbar_menu_bindir,
+        deskbar_menu_entries_dir / 'menu' / 'Applications')
+endif
+
 foreach item : deskbar_applications_menu
     install_symlink(item,
-        pointing_to : (dir_prefix / get_option('bindir') / item),
+        pointing_to : (deskbar_menu_bindir / item),
         install_dir : deskbar_menu_entries_dir / 'menu' / 'Applications')
 endforeach
 
 foreach item : deskbar_demos_menu
     install_symlink(item,
-        pointing_to : (dir_prefix / get_option('bindir') / item),
+        pointing_to : (deskbar_menu_bindir / item),
         install_dir : deskbar_menu_entries_dir / 'menu' / 'Demos')
 endforeach
 
 foreach item : deskbar_preferences_menu
     symlink_name = item.replace('Preferences', '')
     install_symlink(symlink_name,
-        pointing_to : (dir_prefix / get_option('bindir') / item),
+        pointing_to : (deskbar_menu_bindir / item),
         install_dir : deskbar_menu_entries_dir / 'menu' / 'Preferences')
 endforeach
 
