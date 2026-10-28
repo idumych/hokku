@@ -69,6 +69,24 @@ if ! run_mimeset -a --mimedb "$tmpdir" --mimedb "$mime_db_path" "$dest_path"; th
     exit 0
 fi
 
+# mimeset records where it found the app (META:PPATH, and the name it shows,
+# META:S:DESC), which in a staged install is under DESTDIR: record where the
+# app will be installed instead, or the app can't be found from its signature.
+if [ -n "$destdir" ]; then
+    installed_path="${install_dir}/${app_name}"
+    find "$tmpdir" -type f | while IFS= read -r node; do
+        for attr in META:PPATH META:S:DESC; do
+            value="$(LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+                DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
+                "$build_root/catattr" -d "$attr" "$node" 2>/dev/null)" || continue
+            [ "$value" = "$dest_path" ] || continue
+            LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+                DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
+                "$build_root/addattr" "$attr" "$installed_path" "$node"
+        done
+    done
+fi
+
 mkdir -p "$mime_db_path"
 cp -a "$tmpdir/." "$mime_db_path/"
 find "$mime_db_path" -type d -exec chmod 755 {} \;
