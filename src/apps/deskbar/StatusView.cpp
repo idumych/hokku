@@ -969,6 +969,15 @@ TReplicantTray::AddIcon(BMessage* archive, int32* id, const entry_ref* addOn)
 		if (status == B_OK) {
 			BRoster roster;
 			status = roster.FindApp(signature, &ref);
+			if (status != B_OK) {
+				// Not in the MIME database (run from a build folder, say),
+				// but running: use the running app's executable.
+				app_info info;
+				if (roster.GetAppInfo(signature, &info) == B_OK) {
+					ref = info.ref;
+					status = B_OK;
+				}
+			}
 		}
 		if (status != B_OK)
 			return status;

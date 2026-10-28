@@ -80,6 +80,12 @@ All rights reserved.
 
 #include "icons.h"
 
+#if defined(__linux__)
+#	include <spawn.h>
+#	include "TrayBridgeProtocol.h"
+extern char** environ;
+#endif
+
 
 BLocker TBarApp::sSubscriberLock;
 BList TBarApp::sBarTeamInfoList;
@@ -279,6 +285,33 @@ TBarApp::TBarApp()
 	// statusview so that all additions to the tray
 	// follow the same path
 	fStatusViewMessenger = BMessenger(fBarWindow->FindView("BarView"));
+
+	_StartTrayBridge();
+}
+
+
+/*!	On Linux, start TrayBridge, which shows the desktop's tray icons
+	(StatusNotifierItem and, through a proxy, XEmbed) as Deskbar
+	replicants. Set HOKKU_TRAYBRIDGE=0 to leave it off.
+*/
+void
+TBarApp::_StartTrayBridge()
+{
+#if defined(__linux__)
+	const char* setting = getenv("HOKKU_TRAYBRIDGE");
+	if (setting != NULL && strcmp(setting, "0") == 0)
+		return;
+	if (be_roster->IsRunning(TRAY_BRIDGE_SIGNATURE))
+		return;
+	if (be_roster->Launch(TRAY_BRIDGE_SIGNATURE) == B_OK)
+		return;
+
+	// Not in the MIME database yet (a build-tree run, say): use $PATH.
+	char* argv[] = { (char*)"TrayBridge", NULL };
+	pid_t pid;
+	if (posix_spawnp(&pid, "TrayBridge", NULL, NULL, argv, environ) != 0)
+		fprintf(stderr, "Deskbar: couldn't start TrayBridge\n");
+#endif
 }
 
 

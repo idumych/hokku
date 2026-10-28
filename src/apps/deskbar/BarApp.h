@@ -177,6 +177,8 @@ private:
 			status_t				_CacheTeamIcon(BarTeamInfo* barInfo, int32 size);
 			status_t				_CacheWindowIcon(WindowIconCache* winCache);
 
+			void					_StartTrayBridge();
+
 private:
 			TBarWindow*				fBarWindow;
 			TBarView*				fBarView;

@@ -165,6 +165,8 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
   `/usr/local/lib`.
 
+- **The desktop's tray icons in the Deskbar (prototype).** `TrayBridge` (`src/apps/traybridge`) is a StatusNotifierWatcher and host on the session bus, like the Plasma and Xfce panels, and puts each tray icon in the Deskbar tray as a `TrayBridgeItem` replicant: KStatusNotifierItem, libappindicator/libayatana-appindicator, Qt and Electron tray icons (IVPN, Signal, Slack, Nextcloud...). Clicks, middle clicks, the wheel and the right-click menu (com.canonical.dbusmenu, with checkmarks, radio items, submenus and icons) go back to the app; icon, attention, overlay, tooltip and status changes come in live, and Passive items are hidden as Plasma hides them (`HOKKU_TRAY_SHOW_PASSIVE=1` shows them). Icons are looked up in the user's icon theme (KDE, GNOME or GTK setting, or `HOKKU_ICON_THEME`), PNG through cairo and SVG through librsvg when it's installed. Legacy XEmbed icons come through `xembedsniproxy` or `snixembed`, which TrayBridge starts when it finds one (`HOKKU_TRAY_XEMBED=0` to skip). Deskbar starts TrayBridge on Linux unless `HOKKU_TRAYBRIDGE=0`; if another watcher is already running, TrayBridge registers with it as a host instead. Deskbar is linked with `--export-dynamic` so `instantiate_object()` finds `TrayBridgeItem::Instantiate()` in it, and `AddIcon()` accepts a replicant whose add-on signature is a running app not yet in the MIME database. Not tested on a real desktop yet.
+
 ## Using it
 
 Build it exactly like Cosmoe (below). The app templates in
