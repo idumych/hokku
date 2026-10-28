@@ -690,6 +690,12 @@ struct surface {
 struct window {
 	struct display *display;
 	struct wl_list window_output_list;
+	/* a popup's parent, and where the compositor placed it (relative to
+	 * the parent's window geometry, once popup_placed): it may have
+	 * flipped or slid it from where we asked */
+	struct window *popup_parent;
+	int popup_x, popup_y;
+	bool popup_placed;
 	char *title;
 	char *appid;
 	struct rectangle saved_allocation;
@@ -864,6 +870,14 @@ struct input {
 	struct wl_keyboard *keyboard;
 	struct wl_touch *touch;
 	struct wl_list touch_point_list;
+	/* the touch point acting as the left mouse button (see
+	 * touch_emulate_down()), if touch_emulating, and the widget it
+	 * pressed: kept apart from focus_widget, which belongs to the real
+	 * pointer (compositors send it a leave when the screen is touched) */
+	bool touch_emulating;
+	int32_t touch_emulated_id;
+	struct widget *touch_emulated_widget;
+	float touch_emulated_x, touch_emulated_y;
 	struct window *pointer_focus;
 	struct window *keyboard_focus;
 	/* Toplevel that lost keyboard focus while the pointer was already
@@ -2527,6 +2541,14 @@ window_destroy(struct window *window)
 
 	wl_list_remove(&window->redraw_task.link);
 
+	{
+		struct window *child;
+		wl_list_for_each(child, &display->window_list, link) {
+			if (child->popup_parent == window)
+				child->popup_parent = NULL;
+		}
+	}
+
 	wl_list_for_each(input, &display->input_list, link) {
 		struct touch_point *tp, *tmp;
 
@@ -2539,6 +2561,9 @@ window_destroy(struct window *window)
 			}
 
 			input->touch_focus = NULL;
+			/* the finger's up won't come to us any more */
+			input->touch_emulating = false;
+			input->touch_emulated_widget = NULL;
 		}
 		if (input->pointer_focus == window)
 			input->pointer_focus = NULL;
@@ -2784,8 +2809,15 @@ widget_destroy(struct widget *widget)
 			input->grab_button = 0;
 		}
 
+		if (input->touch_emulated_widget == widget)
+			input->touch_emulated_widget = NULL;
 		wl_list_for_each_safe(tp, tmp, &input->touch_point_list, link) {
 			if (tp->widget == widget) {
+				/* its up will find no touch point: stop emulating
+				 * now, or no later finger would */
+				if (input->touch_emulating
+				    && input->touch_emulated_id == tp->id)
+					input->touch_emulating = false;
 				wl_list_remove(&tp->link);
 				free(tp);
 			}
@@ -4221,6 +4253,23 @@ pointer_handle_enter(void *data, struct wl_pointer *pointer,
 	input_set_focus_widget(input, widget, sx, sy);
 }
 
+/* HOKKU_TOUCH_DEBUG=1 prints touch events and the pointer emulation's
+ * decisions on stderr, for checking touch screens. */
+static bool
+touch_debug(void)
+{
+	static int enabled = -1;
+	if (enabled < 0) {
+		const char *value = getenv("HOKKU_TOUCH_DEBUG");
+		enabled = value != NULL && value[0] != '\0'
+			&& strcmp(value, "0") != 0;
+	}
+	return enabled;
+}
+
+#define TOUCH_DEBUG(...) \
+	do { if (touch_debug()) fprintf(stderr, "touch: " __VA_ARGS__); } while (0)
+
 static void
 pointer_handle_leave(void *data, struct wl_pointer *pointer,
 		     uint32_t serial, struct wl_surface *surface)
@@ -4229,6 +4278,7 @@ pointer_handle_leave(void *data, struct wl_pointer *pointer,
 	struct widget *widget = input->focus_widget;
 
 	input->display->serial = serial;
+	TOUCH_DEBUG("pointer leave (grab %p)\n", (void *)input->grab);
 
 	/* The view that was under the pointer gets no more motion, so it would
 	 * never hear that the pointer has gone (on Haiku it gets B_EXITED_VIEW,
@@ -4882,6 +4932,202 @@ static const struct wl_keyboard_listener keyboard_listener = {
 
 };
 
+/* Cosmoe's windows take only pointer events, as Haiku apps do: there a
+ * touch screen is a tablet, which moves the mouse. So a finger on a widget
+ * without touch handlers of its own (the frame has some) is the left mouse
+ * button: the pointer moves to it, presses, follows it and releases. Only
+ * the first finger down does this; others are ignored until it lifts. */
+/* The widget the emulated button acts on: the grab, else the widget
+ * the finger came down on; NULL once that is gone. */
+static struct widget *
+touch_emulated_target(struct input *input)
+{
+	return input->grab ? input->grab : input->touch_emulated_widget;
+}
+
+static void
+touch_emulate_down(struct input *input, struct widget *widget,
+		   uint32_t time, int32_t id, float sx, float sy)
+{
+	struct widget *target;
+
+	TOUCH_DEBUG("emulate down id %d at %.1f,%.1f widget %p grab %p\n", id,
+		    sx, sy, (void *)widget, (void *)input->grab);
+	input->touch_emulating = true;
+	input->touch_emulated_id = id;
+	input->touch_emulated_widget = widget;
+	input->touch_emulated_x = sx;
+	input->touch_emulated_y = sy;
+	input->sx = sx;
+	input->sy = sy;
+
+	if (!input->grab)
+		input_set_focus_widget(input, widget, sx, sy);
+	if (widget->motion_handler)
+		widget->motion_handler(widget, input, time, sx, sy,
+				       widget->user_data);
+
+	if (input->grab == NULL)
+		input_grab(input, widget, BTN_LEFT);
+	target = touch_emulated_target(input);
+	if (target && target->button_handler)
+		target->button_handler(target, input, time, BTN_LEFT,
+				       WL_POINTER_BUTTON_STATE_PRESSED,
+				       target->user_data);
+}
+
+static void
+window_get_geometry(struct window *window, struct rectangle *geometry);
+
+/* A window's origin in the surface coordinates of the root its popups hang
+ * from (a toplevel or a panel), from where the compositor placed each popup
+ * on the way; false while one of them isn't placed yet. */
+static bool
+popup_chain_offset(struct window *window, struct window **root,
+		   int *x, int *y)
+{
+	*x = 0;
+	*y = 0;
+	while (window->popup_parent != NULL) {
+		struct rectangle parent_geometry, geometry;
+
+		if (!window->popup_placed)
+			return false;
+		/* placed relative to the parent's window geometry; both may sit
+		 * inside their surfaces (frames, shadows) */
+		window_get_geometry(window->popup_parent, &parent_geometry);
+		window_get_geometry(window, &geometry);
+		*x += window->popup_x + parent_geometry.x - geometry.x;
+		*y += window->popup_y + parent_geometry.y - geometry.y;
+		window = window->popup_parent;
+	}
+	*root = window;
+	return true;
+}
+
+static bool
+surface_contains(struct window *window, float x, float y)
+{
+	struct rectangle *allocation;
+
+	if (window->main_surface == NULL)
+		return false;
+	allocation = &window->main_surface->allocation;
+	return x >= 0 && y >= 0 && x < allocation->width
+		&& y < allocation->height;
+}
+
+/* While a finger is down the compositor reports it relative to the surface
+ * it came down on. Dragged onto one of our popups (a submenu), it must
+ * reach that popup as a pointer would, in that popup's coordinates: the
+ * Interface Kit's idea of where popups are can't be trusted, since the
+ * compositor may have flipped or slid them. Returns the deepest popup, or
+ * the root, under the finger, else window itself; *lx, *ly in it. */
+static struct window *
+touch_window_under(struct window *window, float sx, float sy,
+		   float *lx, float *ly)
+{
+	struct window *root, *candidate, *best = NULL;
+	int ox, oy, best_depth = -1;
+	float ax, ay;
+
+	*lx = sx;
+	*ly = sy;
+	if (!popup_chain_offset(window, &root, &ox, &oy))
+		return window;
+	ax = sx + ox;
+	ay = sy + oy;
+
+	wl_list_for_each(candidate, &window->display->window_list, link) {
+		struct window *candidate_root, *walk;
+		int cx, cy, depth = 0;
+
+		if (candidate->xdg_popup == NULL
+		    || !popup_chain_offset(candidate, &candidate_root, &cx, &cy)
+		    || candidate_root != root
+		    || !surface_contains(candidate, ax - cx, ay - cy))
+			continue;
+		for (walk = candidate; walk->popup_parent; walk = walk->popup_parent)
+			depth++;
+		if (depth > best_depth) {
+			best = candidate;
+			best_depth = depth;
+			*lx = ax - cx;
+			*ly = ay - cy;
+		}
+	}
+	if (best == NULL && surface_contains(root, ax, ay)) {
+		best = root;
+		*lx = ax;
+		*ly = ay;
+	}
+	return best != NULL ? best : window;
+}
+
+static void
+touch_emulate_motion(struct input *input, uint32_t time, float sx, float sy)
+{
+	struct widget *target = touch_emulated_target(input);
+	struct window *under = NULL;
+	float lx = sx, ly = sy;
+
+	input->touch_emulated_x = sx;
+	input->touch_emulated_y = sy;
+	if (target != NULL && input->touch_focus != NULL)
+		under = touch_window_under(input->touch_focus, sx, sy, &lx, &ly);
+	TOUCH_DEBUG("emulate motion at %.1f,%.1f target %p, in %p at %.1f,%.1f\n",
+		    sx, sy, (void *)target, (void *)under, lx, ly);
+	if (target == NULL)
+		return;
+
+	input->sx = lx;
+	input->sy = ly;
+	if (under != NULL && under != target->window) {
+		struct widget *widget = window_find_widget(under, lx, ly);
+		if (widget && widget->motion_handler)
+			widget->motion_handler(widget, input, time, lx, ly,
+					       widget->user_data);
+		return;
+	}
+	if (target->motion_handler)
+		target->motion_handler(target, input, time, lx, ly,
+				       target->user_data);
+}
+
+static void
+touch_emulate_up(struct input *input, uint32_t time)
+{
+	struct widget *target = touch_emulated_target(input);
+	struct window *under = NULL;
+	float lx, ly;
+
+	/* released over another of our popups: release there, as a pointer
+	 * would, so a menu sees which item the finger lifted from */
+	if (target != NULL && input->touch_focus != NULL) {
+		under = touch_window_under(input->touch_focus,
+					   input->touch_emulated_x,
+					   input->touch_emulated_y, &lx, &ly);
+		if (under != target->window) {
+			struct widget *widget = window_find_widget(under, lx, ly);
+			if (widget != NULL) {
+				input->sx = lx;
+				input->sy = ly;
+				target = widget;
+			}
+		}
+	}
+
+	TOUCH_DEBUG("emulate up target %p\n", (void *)target);
+	input->touch_emulating = false;
+	input->touch_emulated_widget = NULL;
+	if (target && target->button_handler)
+		target->button_handler(target, input, time, BTN_LEFT,
+				       WL_POINTER_BUTTON_STATE_RELEASED,
+				       target->user_data);
+	if (input->grab && input->grab_button == BTN_LEFT)
+		input_ungrab(input);
+}
+
 static void
 touch_handle_down(void *data, struct wl_touch *wl_touch,
 		  uint32_t serial, uint32_t time, struct wl_surface *surface,
@@ -4918,6 +5164,10 @@ touch_handle_down(void *data, struct wl_touch *wl_touch,
 		widget = window_find_widget(input->touch_focus,
 					    wl_fixed_to_double(x_w),
 					    wl_fixed_to_double(y_w));
+	TOUCH_DEBUG("down id %d at %.1f,%.1f window %p '%s' widget %p\n", id,
+		    sx, sy, (void *)input->touch_focus,
+		    input->touch_focus->title ? input->touch_focus->title : "",
+		    (void *)widget);
 	if (widget) {
 		struct touch_point *tp = xmalloc(sizeof *tp);
 		if (tp) {
@@ -4932,6 +5182,9 @@ touch_handle_down(void *data, struct wl_touch *wl_touch,
 							      serial, time, id,
 							      sx, sy,
 							      widget->user_data);
+			else if (!input->touch_emulating)
+				touch_emulate_down(input, widget, time, id,
+						   sx, sy);
 		}
 	}
 }
@@ -4943,6 +5196,8 @@ touch_handle_up(void *data, struct wl_touch *wl_touch,
 	struct input *input = data;
 	struct touch_point *tp, *tmp;
 
+	TOUCH_DEBUG("up id %d (emulating %d id %d)\n", id,
+		    input->touch_emulating, input->touch_emulated_id);
 	if (!input->touch_focus) {
 		DBG("No touch focus found for touch up event!\n");
 		return;
@@ -4957,6 +5212,11 @@ touch_handle_up(void *data, struct wl_touch *wl_touch,
 			(*tp->widget->touch_up_handler)(tp->widget, input, serial,
 							time, id,
 							tp->widget->user_data);
+		else if (input->touch_emulating
+			&& input->touch_emulated_id == id) {
+			input->display->serial = serial;
+			touch_emulate_up(input, time);
+		}
 
 		wl_list_remove(&tp->link);
 		free(tp);
@@ -4975,6 +5235,7 @@ touch_handle_motion(void *data, struct wl_touch *wl_touch,
 	float sy = wl_fixed_to_double(y_w);
 
 	DBG("touch_handle_motion: %i %i\n", id, wl_list_length(&input->touch_point_list));
+	TOUCH_DEBUG("motion id %d at %.1f,%.1f\n", id, sx, sy);
 
 	if (!input->touch_focus) {
 		DBG("No touch focus found for touch motion event!\n");
@@ -4992,6 +5253,9 @@ touch_handle_motion(void *data, struct wl_touch *wl_touch,
 			(*tp->widget->touch_motion_handler)(tp->widget, input, time,
 							    id, sx, sy,
 							    tp->widget->user_data);
+		else if (input->touch_emulating
+			&& input->touch_emulated_id == id)
+			touch_emulate_motion(input, time, sx, sy);
 		return;
 	}
 }
@@ -5023,11 +5287,15 @@ touch_handle_cancel(void *data, struct wl_touch *wl_touch)
 	struct touch_point *tp, *tmp;
 
 	DBG("touch_handle_cancel\n");
+	TOUCH_DEBUG("cancel\n");
 
 	if (!input->touch_focus) {
 		DBG("No touch focus found for touch cancel event!\n");
 		return;
 	}
+
+	if (input->touch_emulating)
+		touch_emulate_up(input, 0);
 
 	wl_list_for_each_safe(tp, tmp, &input->touch_point_list, link) {
 		if (tp->widget->touch_cancel_handler)
@@ -7618,6 +7886,7 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	/* Store the requested position */
 	window->x = x;
 	window->y = y;
+	window->popup_parent = parent_window;
 	
 	/* If no parent or no xdg_shell support, return basic window */
 	if (!parent_window || !display->xdg_shell) {
@@ -8073,6 +8342,11 @@ xdg_popup_handle_configure(void *data,
 		return;
 
 	DBG("xdg_popup_handle_configure: x=%d y=%d w=%d h=%d\n", x, y, width, height);
+
+	/* where the compositor placed it, for touch_window_under() */
+	window->popup_x = x;
+	window->popup_y = y;
+	window->popup_placed = true;
 
 	/* Use the compositor-provided size for the popup surface.
 	 * If width/height are zero the compositor defers to the positioner size;
