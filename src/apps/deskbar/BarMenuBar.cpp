@@ -43,6 +43,10 @@ All rights reserved.
 #include <Debug.h>
 #include <IconUtils.h>
 #include <NodeInfo.h>
+#include <String.h>
+
+#include <DecoratorPrivate.h>
+#include <InterfacePrivate.h>
 
 #include "icons.h"
 
@@ -99,6 +103,22 @@ TSeparatorItem::Draw()
 }
 
 
+/*!	The Gonx look (its decorator or its control look, which gonx-theme sets
+	together) gets a logo drawn as a Gonx window tab.
+*/
+static bool
+gonx_look()
+{
+	BString decorator;
+	if (BPrivate::get_decorator(decorator) && decorator == "Gonx")
+		return true;
+
+	BString controlLook;
+	return BPrivate::get_control_look(controlLook)
+		&& controlLook.EndsWith("/GonxControlLook.so");
+}
+
+
 //	#pragma mark - TBarMenuBar
 
 
@@ -120,7 +140,7 @@ TBarMenuBar::TBarMenuBar(BRect frame, const char* name, TBarView* barView)
 	BBitmap* icon = NULL;
 	size_t dataSize;
 	const void* data = AppResSet()->FindResource(B_VECTOR_ICON_TYPE,
-		R_CosmoeLogoBitmap, &dataSize);
+		gonx_look() ? R_GonxLogoBitmap : R_CosmoeLogoBitmap, &dataSize);
 	if (data != NULL) {
 		// seems valid, scale bitmap according to be_bold_font size
 		float width = std::max(100.f, ceilf(100 * be_bold_font->Size() / 12.f));

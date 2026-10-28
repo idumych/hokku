@@ -33,6 +33,7 @@ app_srcs = files(
 app_resource_defs = files(
     'Deskbar.rdef',
     'icons.rdef',
+    'GonxLogo.rdef',
 )
 
 app_dependencies = [dep_libbe, dep_libtracker]
