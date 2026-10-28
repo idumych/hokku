@@ -910,6 +910,9 @@ struct input {
 	uint32_t pending_axis_source;
 	uint32_t pending_axis_time;
 	float sx, sy;
+	/* where the compositor last put the pointer, relative to
+	 * pointer_focus; sx, sy may be in a popup it was handed to */
+	float pointer_sx, pointer_sy;
 	struct wl_list link;
 	uint8_t pending_axis_mask;
 	uint8_t pending_axis_discrete_mask;
@@ -4210,6 +4213,27 @@ input_remove_pointer_focus(struct input *input)
 	cancel_pointer_image_update(input);
 }
 
+static struct window *
+popup_window_under(struct window *window, float sx, float sy,
+		   float *lx, float *ly);
+
+/* HOKKU_TOUCH_DEBUG=1 prints touch events and the pointer emulation's
+ * decisions on stderr, for checking touch screens. */
+static bool
+touch_debug(void)
+{
+	static int enabled = -1;
+	if (enabled < 0) {
+		const char *value = getenv("HOKKU_TOUCH_DEBUG");
+		enabled = value != NULL && value[0] != '\0'
+			&& strcmp(value, "0") != 0;
+	}
+	return enabled;
+}
+
+#define TOUCH_DEBUG(...) \
+	do { if (touch_debug()) fprintf(stderr, "touch: " __VA_ARGS__); } while (0)
+
 static void
 pointer_handle_enter(void *data, struct wl_pointer *pointer,
 		     uint32_t serial, struct wl_surface *surface,
@@ -4234,6 +4258,8 @@ pointer_handle_enter(void *data, struct wl_pointer *pointer,
 
 	input->display->serial = serial;
 	input->pointer_enter_serial = serial;
+	TOUCH_DEBUG("pointer enter %p '%s' at %.1f,%.1f\n", (void *)window,
+		    window->title ? window->title : "", sx, sy);
 	input->pointer_focus = window;
 	input->menu_dismiss_window = NULL;
 	/* Create the cursor surface before the modal-parent early return below. */
@@ -4254,27 +4280,12 @@ pointer_handle_enter(void *data, struct wl_pointer *pointer,
 	 */
 	input->sx = sx;
 	input->sy = sy;
+	input->pointer_sx = sx;
+	input->pointer_sy = sy;
 
 	widget = window_find_widget(window, sx, sy);
 	input_set_focus_widget(input, widget, sx, sy);
 }
-
-/* HOKKU_TOUCH_DEBUG=1 prints touch events and the pointer emulation's
- * decisions on stderr, for checking touch screens. */
-static bool
-touch_debug(void)
-{
-	static int enabled = -1;
-	if (enabled < 0) {
-		const char *value = getenv("HOKKU_TOUCH_DEBUG");
-		enabled = value != NULL && value[0] != '\0'
-			&& strcmp(value, "0") != 0;
-	}
-	return enabled;
-}
-
-#define TOUCH_DEBUG(...) \
-	do { if (touch_debug()) fprintf(stderr, "touch: " __VA_ARGS__); } while (0)
 
 static void
 pointer_handle_leave(void *data, struct wl_pointer *pointer,
@@ -4316,6 +4327,28 @@ pointer_handle_motion(void *data, struct wl_pointer *pointer,
 
 	input->sx = sx;
 	input->sy = sy;
+	input->pointer_sx = sx;
+	input->pointer_sy = sy;
+
+	/* a held button keeps the pointer on the surface it was pressed on:
+	 * dragged onto another of our popups, it goes there */
+	if (input->grab && input->grab_button) {
+		float lx, ly;
+		struct window *under = popup_window_under(window, sx, sy,
+							  &lx, &ly);
+		TOUCH_DEBUG("pointer drag at %.1f,%.1f: in %p at %.1f,%.1f (grab in %p)\n",
+			    sx, sy, (void *)under, lx, ly,
+			    (void *)input->grab->window);
+		if (under != input->grab->window) {
+			widget = window_find_widget(under, lx, ly);
+			input->sx = lx;
+			input->sy = ly;
+			if (widget && widget->motion_handler)
+				widget->motion_handler(widget, input, time, lx, ly,
+						       widget->user_data);
+			return;
+		}
+	}
 
 	/* Reset idle timer on mouse movement */
 	if (input->idle_timer_running) {
@@ -4451,6 +4484,38 @@ pointer_handle_button(void *data, struct wl_pointer *pointer, uint32_t serial,
 		input_grab(input, input->focus_widget, button);
 
 	widget = input->grab;
+	TOUCH_DEBUG("pointer button %u %s, focus %p '%s', grab %p (button %u)\n",
+		    button, state == WL_POINTER_BUTTON_STATE_PRESSED
+			? "pressed" : "released",
+		    (void *)input->pointer_focus,
+		    input->pointer_focus && input->pointer_focus->title
+			? input->pointer_focus->title : "",
+		    (void *)widget, input->grab_button);
+
+	/* released over another of our popups than the one pressed on (see
+	 * pointer_handle_motion()): release there */
+	if (widget && state == WL_POINTER_BUTTON_STATE_RELEASED
+	    && input->grab_button == button && input->pointer_focus) {
+		float lx, ly;
+		struct window *under = popup_window_under(input->pointer_focus,
+							  input->pointer_sx,
+							  input->pointer_sy,
+							  &lx, &ly);
+		if (under != widget->window) {
+			struct widget *target = window_find_widget(under, lx, ly);
+			if (target) {
+				input->sx = lx;
+				input->sy = ly;
+				if (target->button_handler)
+					target->button_handler(target, input, time,
+							       button, state,
+							       target->user_data);
+				input_ungrab(input);
+				return;
+			}
+		}
+	}
+
 	if (widget && widget->button_handler)
 		(*widget->button_handler)(widget,
 					  input, time,
@@ -5074,14 +5139,15 @@ surface_contains(struct window *window, float x, float y)
 		&& y < allocation->height;
 }
 
-/* While a finger is down the compositor reports it relative to the surface
- * it came down on. Dragged onto one of our popups (a submenu), it must
- * reach that popup as a pointer would, in that popup's coordinates: the
- * Interface Kit's idea of where popups are can't be trusted, since the
- * compositor may have flipped or slid them. Returns the deepest popup, or
- * the root, under the finger, else window itself; *lx, *ly in it. */
+/* While a finger is down, or a mouse button held, the compositor reports
+ * it relative to the surface it started on (an implicit grab). Dragged onto
+ * one of our popups (a submenu), it must reach that popup as a free pointer
+ * would, in that popup's coordinates: the Interface Kit's idea of where
+ * popups are can't be trusted, since the compositor may have flipped or slid
+ * them. Returns the deepest popup, or the root, under (sx, sy) in window,
+ * else window itself; *lx, *ly in it. */
 static struct window *
-touch_window_under(struct window *window, float sx, float sy,
+popup_window_under(struct window *window, float sx, float sy,
 		   float *lx, float *ly)
 {
 	struct window *root, *candidate, *best = NULL;
@@ -5141,7 +5207,7 @@ touch_emulate_motion(struct input *input, uint32_t time, float sx, float sy)
 
 	target = touch_emulated_target(input);
 	if (target != NULL && input->touch_focus != NULL)
-		under = touch_window_under(input->touch_focus, sx, sy, &lx, &ly);
+		under = popup_window_under(input->touch_focus, sx, sy, &lx, &ly);
 	TOUCH_DEBUG("emulate motion at %.1f,%.1f target %p, in %p at %.1f,%.1f\n",
 		    sx, sy, (void *)target, (void *)under, lx, ly);
 	if (target == NULL)
@@ -5196,7 +5262,7 @@ touch_emulate_up(struct input *input, uint32_t time, bool cancel)
 	/* released over another of our popups: release there, as a pointer
 	 * would, so a menu sees which item the finger lifted from */
 	if (target != NULL && input->touch_focus != NULL) {
-		under = touch_window_under(input->touch_focus,
+		under = popup_window_under(input->touch_focus,
 					   input->touch_emulated_x,
 					   input->touch_emulated_y, &lx, &ly);
 		if (under != target->window) {
@@ -8435,7 +8501,7 @@ xdg_popup_handle_configure(void *data,
 
 	DBG("xdg_popup_handle_configure: x=%d y=%d w=%d h=%d\n", x, y, width, height);
 
-	/* where the compositor placed it, for touch_window_under() */
+	/* where the compositor placed it, for popup_window_under() */
 	window->popup_x = x;
 	window->popup_y = y;
 	window->popup_placed = true;
