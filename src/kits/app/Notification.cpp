@@ -25,6 +25,7 @@
 
 #include <Bitmap.h>
 #include <Message.h>
+#include <Messenger.h>
 #include <NodeInfo.h>
 #include <Path.h>
 #include <Roster.h>
@@ -505,7 +506,21 @@ run_detached(const char* const argv[])
 status_t
 BNotification::Send(bigtime_t timeout)
 {
-	// TODO: icon not supported yet
+	// Hokku: as on Haiku, to the notification_server when it runs (the
+	// Deskbar starts it on Linux), which shows it in its own windows.
+	BMessenger server(kNotificationServerSignature);
+	if (server.IsValid()) {
+		BMessage message(kNotificationMessage);
+		status_t status = Archive(&message);
+		if (status == B_OK && timeout > 0)
+			status = message.AddInt64("timeout", timeout);
+		if (status == B_OK)
+			status = server.SendMessage(&message);
+		if (status == B_OK)
+			return B_OK;
+	}
+
+	// Otherwise to the desktop's notifications. TODO: icon not supported yet
 #ifdef _WIN32
 	(void)timeout;
 	return B_ERROR; // Not supported on Windows yet

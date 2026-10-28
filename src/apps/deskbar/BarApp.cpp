@@ -86,6 +86,7 @@ All rights reserved.
 #if defined(__linux__)
 #	include <spawn.h>
 #	include "TrayBridgeProtocol.h"
+#	include <notification/Notifications.h>
 extern char** environ;
 #endif
 
@@ -290,6 +291,7 @@ TBarApp::TBarApp()
 	fStatusViewMessenger = BMessenger(fBarWindow->FindView("BarView"));
 
 	_StartTrayBridge();
+	_StartNotificationServer();
 }
 
 
@@ -309,14 +311,40 @@ TBarApp::_StartTrayBridge()
 		BMessenger(TRAY_BRIDGE_SIGNATURE).SendMessage(kTBDeskbarStarted);
 		return;
 	}
-	if (be_roster->Launch(TRAY_BRIDGE_SIGNATURE) == B_OK)
+	_StartService(TRAY_BRIDGE_SIGNATURE, "TrayBridge");
+#endif
+}
+
+
+/*!	On Linux, start the notification_server, which shows notifications the
+	Haiku way: Hokku apps' and, when no other notification server does, the
+	desktop's. Set HOKKU_NOTIFICATIONS=0 to leave it off.
+*/
+void
+TBarApp::_StartNotificationServer()
+{
+#if defined(__linux__)
+	const char* setting = getenv("HOKKU_NOTIFICATIONS");
+	if (setting != NULL && strcmp(setting, "0") == 0)
+		return;
+	if (!be_roster->IsRunning(kNotificationServerSignature))
+		_StartService(kNotificationServerSignature, "notification_server");
+#endif
+}
+
+
+void
+TBarApp::_StartService(const char* signature, const char* executable)
+{
+#if defined(__linux__)
+	if (be_roster->Launch(signature) == B_OK)
 		return;
 
 	// Not in the MIME database yet (a build-tree run, say): use $PATH.
-	char* argv[] = { (char*)"TrayBridge", NULL };
+	char* argv[] = { (char*)executable, NULL };
 	pid_t pid;
-	if (posix_spawnp(&pid, "TrayBridge", NULL, NULL, argv, environ) != 0)
-		fprintf(stderr, "Deskbar: couldn't start TrayBridge\n");
+	if (posix_spawnp(&pid, executable, NULL, NULL, argv, environ) != 0)
+		fprintf(stderr, "Deskbar: couldn't start %s\n", executable);
 #endif
 }
 
