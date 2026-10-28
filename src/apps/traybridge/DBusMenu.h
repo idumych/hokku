@@ -23,9 +23,13 @@ void	ShowAsync(GDBusConnection* connection, const std::string& service,
 			const std::string& path, const std::string& iconThemePath,
 			int x, int y, const BMessenger& view);
 
-// Tells the app that menu item id was chosen.
+// Tells the app that menu item id was chosen, and the menu closed.
 void	SendClicked(GDBusConnection* connection, const std::string& service,
 			const std::string& path, int32 id);
+
+// Tells the app that the menu closed without a choice.
+void	SendClosed(GDBusConnection* connection, const std::string& service,
+			const std::string& path);
 
 }	// namespace DBusMenu
 

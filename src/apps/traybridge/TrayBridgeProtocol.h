@@ -35,7 +35,12 @@ enum {
 	kTBMenuRequest		= 'tbMr',
 		// "tb:item", "x"/"y" int32 (screen), "primary" bool
 	kTBMenuEvent		= 'tbMe',
-		// "tb:item", "id" int32 (dbusmenu item id)
+		// "tb:item", "id" int32 (dbusmenu item id), no "id" when the menu
+		// closed without a choice
+
+	// Deskbar -> bridge
+	kTBDeskbarStarted	= 'tbDs',
+		// a new Deskbar found the bridge running: its tray is empty
 
 	// bridge -> replicant
 	kTBUpdate			= 'tbUp',

@@ -43,6 +43,7 @@ private:
 			BString				fItem;
 			BMessenger			fBridge;
 			BBitmap*			fIcon;
+			bool				fMenuChoiceSent;
 };
 
 

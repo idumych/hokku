@@ -326,6 +326,14 @@ SendClicked(GDBusConnection* connection, const std::string& service,
 		g_variant_new("(isvu)", id, "clicked", g_variant_new_int32(0),
 			(guint32)(g_get_real_time() / 1000)),
 		NULL, G_DBUS_CALL_FLAGS_NONE, kTimeout, NULL, NULL, NULL);
+	SendClosed(connection, service, path);
+}
+
+
+void
+SendClosed(GDBusConnection* connection, const std::string& service,
+	const std::string& path)
+{
 	g_dbus_connection_call(connection, service.c_str(), path.c_str(),
 		kInterface, "Event",
 		g_variant_new("(isvu)", 0, "closed", g_variant_new_int32(0), 0),

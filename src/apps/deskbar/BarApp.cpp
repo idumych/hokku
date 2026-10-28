@@ -301,8 +301,11 @@ TBarApp::_StartTrayBridge()
 	const char* setting = getenv("HOKKU_TRAYBRIDGE");
 	if (setting != NULL && strcmp(setting, "0") == 0)
 		return;
-	if (be_roster->IsRunning(TRAY_BRIDGE_SIGNATURE))
+	if (be_roster->IsRunning(TRAY_BRIDGE_SIGNATURE)) {
+		// left over from an earlier Deskbar: have it add its items again
+		BMessenger(TRAY_BRIDGE_SIGNATURE).SendMessage(kTBDeskbarStarted);
 		return;
+	}
 	if (be_roster->Launch(TRAY_BRIDGE_SIGNATURE) == B_OK)
 		return;
 

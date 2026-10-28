@@ -108,13 +108,38 @@ unarchive_bitmap(BMessage* archive)
 	return bitmap;
 }
 
+const uint32 kMsgMenuClosed = 'tbmc';
+
+
+/*!	Tells the replicant when it goes away, which an asynchronous BPopUpMenu
+	does when it closes, after invoking the chosen item if there was one.
+*/
+class TrayPopUpMenu : public BPopUpMenu {
+public:
+	TrayPopUpMenu(const BMessenger& replicant)
+		:
+		BPopUpMenu("tray item menu", false, false),
+		fReplicant(replicant)
+	{
+	}
+
+	virtual ~TrayPopUpMenu()
+	{
+		fReplicant.SendMessage(kMsgMenuClosed);
+	}
+
+private:
+	BMessenger	fReplicant;
+};
+
 }	// namespace
 
 
 TrayBridgeItem::TrayBridgeItem(BMessage* archive)
 	:
 	BView(archive),
-	fIcon(NULL)
+	fIcon(NULL),
+	fMenuChoiceSent(false)
 {
 	archive->FindString(TB_FIELD_ITEM, &fItem);
 	archive->FindMessenger(TB_FIELD_BRIDGE, &fBridge);
@@ -245,6 +270,27 @@ TrayBridgeItem::MessageReceived(BMessage* message)
 			_ShowMenu(message);
 			break;
 
+		case kTBMenuEvent:
+		{
+			// a menu item was chosen
+			BMessage event(kTBMenuEvent);
+			event.AddString(TB_FIELD_ITEM, fItem);
+			event.AddInt32("id", message->GetInt32("id", 0));
+			_SendToBridge(&event);
+			fMenuChoiceSent = true;
+			break;
+		}
+
+		case kMsgMenuClosed:
+			if (!fMenuChoiceSent) {
+				// closed without a choice: dbusmenu apps want to know
+				BMessage event(kTBMenuEvent);
+				event.AddString(TB_FIELD_ITEM, fItem);
+				_SendToBridge(&event);
+			}
+			fMenuChoiceSent = false;
+			break;
+
 		case B_MOUSE_WHEEL_CHANGED:
 		{
 			float deltaX = 0, deltaY = 0;
@@ -309,7 +355,7 @@ TrayBridgeItem::_ShowMenu(BMessage* message)
 	if (message->FindPoint("where", &where) != B_OK)
 		where = ConvertToScreen(Bounds().LeftBottom());
 
-	BPopUpMenu* menu = new BPopUpMenu("tray item menu", false, false);
+	BPopUpMenu* menu = new TrayPopUpMenu(BMessenger(this));
 	menu->SetFont(be_plain_font);
 	_AddMenuItems(menu, &root);
 	if (menu->CountItems() == 0) {
@@ -317,6 +363,7 @@ TrayBridgeItem::_ShowMenu(BMessage* message)
 		return;
 	}
 
+	fMenuChoiceSent = false;
 	menu->SetAsyncAutoDestruct(true);
 	BRect clickToOpen = ConvertToScreen(Bounds());
 	menu->Go(where, true, true, clickToOpen, true);
@@ -355,14 +402,13 @@ TrayBridgeItem::_AddMenuItems(BMenu* menu, BMessage* node)
 				? new IconMenuItem(submenu, NULL, icon)
 				: new BMenuItem(submenu);
 		} else {
-			// Menu choices go straight to the bridge, not through Deskbar.
+			// to this replicant, which passes it on to the bridge
 			BMessage* invoke = new BMessage(kTBMenuEvent);
-			invoke->AddString(TB_FIELD_ITEM, fItem);
 			invoke->AddInt32("id", id);
 			item = icon != NULL
 				? new IconMenuItem(label, invoke, icon)
 				: new BMenuItem(label, invoke);
-			item->SetTarget(fBridge);
+			item->SetTarget(this);
 		}
 
 		item->SetEnabled(child.GetBool("enabled", true));

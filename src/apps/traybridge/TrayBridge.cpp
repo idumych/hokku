@@ -37,7 +37,6 @@
 #include <Application.h>
 #include <Bitmap.h>
 #include <Deskbar.h>
-#include <Roster.h>
 #include <View.h>
 
 #include "DBusMenu.h"
@@ -45,7 +44,6 @@
 #include "TrayBridgeProtocol.h"
 
 
-static const char* kDeskbarSignature = "application/x-vnd.Be-TSKB";
 static const char* kWatcherPath = "/StatusNotifierWatcher";
 static const char* kKDEWatcher = "org.kde.StatusNotifierWatcher";
 static const char* kFreedesktopWatcher
@@ -240,8 +238,7 @@ public:
 			// called on the GLib thread with messages from replicants
 			void			HandleMessage(BMessage* message);
 
-			void			DeskbarLaunched();
-			void			DeskbarQuit();
+			void			DeskbarStarted();
 
 private:
 	static	void			_BusAcquired(GObject* source, GAsyncResult* result,
@@ -919,8 +916,11 @@ Bridge::_RemoveFromDeskbar(TrayItem* item)
 	if (item->deskbarID < 0)
 		return;
 
+	// By name, not ID: IDs start over with each Deskbar, so a stale one
+	// could take out another replicant.
 	BDeskbar deskbar;
-	deskbar.RemoveItem(item->deskbarID);
+	deskbar.RemoveItem(
+		(std::string(TRAY_BRIDGE_VIEW_PREFIX) + item->key).c_str());
 	item->deskbarID = -1;
 	item->view = BMessenger();
 }
@@ -1044,11 +1044,19 @@ Bridge::HandleMessage(BMessage* message)
 			break;
 
 		case kTBMenuEvent:
-			if (!item->menuPath.empty()) {
+		{
+			if (item->menuPath.empty())
+				break;
+			int32 id;
+			if (message->FindInt32("id", &id) == B_OK) {
 				DBusMenu::SendClicked(fConnection, item->service,
-					item->menuPath, message->GetInt32("id", 0));
+					item->menuPath, id);
+			} else {
+				DBusMenu::SendClosed(fConnection, item->service,
+					item->menuPath);
 			}
 			break;
+		}
 
 		case kTBScroll:
 			_CallItem(item, "Scroll", g_variant_new("(is)",
@@ -1069,7 +1077,7 @@ Bridge::_ReAddTimeout(gpointer data)
 
 
 void
-Bridge::DeskbarLaunched()
+Bridge::DeskbarStarted()
 {
 	// Its tray starts empty; give it a moment to come up.
 	for (auto& entry : fItems) {
@@ -1077,16 +1085,6 @@ Bridge::DeskbarLaunched()
 		entry.second->view = BMessenger();
 	}
 	g_timeout_add(750, &_ReAddTimeout, NULL);
-}
-
-
-void
-Bridge::DeskbarQuit()
-{
-	for (auto& entry : fItems) {
-		entry.second->deskbarID = -1;
-		entry.second->view = BMessenger();
-	}
 }
 
 
@@ -1150,11 +1148,8 @@ handle_message(gpointer data)
 {
 	BMessage* message = (BMessage*)data;
 	switch (message->what) {
-		case B_SOME_APP_LAUNCHED:
-			sBridge->DeskbarLaunched();
-			break;
-		case B_SOME_APP_QUIT:
-			sBridge->DeskbarQuit();
+		case kTBDeskbarStarted:
+			sBridge->DeskbarStarted();
 			break;
 		default:
 			sBridge->HandleMessage(message);
@@ -1207,14 +1202,10 @@ public:
 		fLoop = g_main_loop_new(NULL, FALSE);
 		g_idle_add(&start_bridge, NULL);
 		fThread = g_thread_new("traybridge dbus", &run_main_loop, fLoop);
-
-		be_roster->StartWatching(be_app_messenger,
-			B_REQUEST_LAUNCHED | B_REQUEST_QUIT);
 	}
 
 	virtual bool QuitRequested()
 	{
-		be_roster->StopWatching(be_app_messenger);
 		if (fLoop == NULL)
 			return true;
 
@@ -1242,18 +1233,7 @@ public:
 	virtual void MessageReceived(BMessage* message)
 	{
 		switch (message->what) {
-			case B_SOME_APP_LAUNCHED:
-			case B_SOME_APP_QUIT:
-			{
-				const char* signature;
-				if (message->FindString("be:signature", &signature) != B_OK
-					|| strcasecmp(signature, kDeskbarSignature) != 0) {
-					break;
-				}
-				_Forward(message);
-				break;
-			}
-
+			case kTBDeskbarStarted:
 			case kTBRegisterView:
 			case kTBActivate:
 			case kTBScroll:

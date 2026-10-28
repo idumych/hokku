@@ -140,6 +140,8 @@ load_theme(const std::string& name)
 		if (theme == NULL) {
 			std::string index = root + "/index.theme";
 			GKeyFile* keyFile = g_key_file_new();
+			g_key_file_set_list_separator(keyFile, ',');
+				// index.theme lists are comma-separated, not GLib's ';'
 			if (!g_key_file_load_from_file(keyFile, index.c_str(),
 					G_KEY_FILE_NONE, NULL)) {
 				g_key_file_free(keyFile);
@@ -242,6 +244,11 @@ user_theme_name()
 	g_key_file_free(keyFile);
 	if (!sName.empty())
 		return sName;
+
+	// Plasma leaves the key out while the theme is its default
+	const char* desktop = getenv("XDG_CURRENT_DESKTOP");
+	if (desktop != NULL && strstr(desktop, "KDE") != NULL)
+		return sName = "breeze";
 
 	// GNOME, Xfce and other GTK desktops
 	GSettingsSchemaSource* source = g_settings_schema_source_get_default();

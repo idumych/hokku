@@ -969,11 +969,12 @@ TReplicantTray::AddIcon(BMessage* archive, int32* id, const entry_ref* addOn)
 		if (status == B_OK) {
 			BRoster roster;
 			status = roster.FindApp(signature, &ref);
-			if (status != B_OK) {
-				// Not in the MIME database (run from a build folder, say),
-				// but running: use the running app's executable.
+			if (status != B_OK && find_instantiation_func(archive) != NULL) {
+				// The add-on isn't in the MIME database (a build-tree run,
+				// or a windowless app the roster can't see), but the class
+				// is one Deskbar has itself (TrayBridgeItem): use Deskbar.
 				app_info info;
-				if (roster.GetAppInfo(signature, &info) == B_OK) {
+				if (be_app->GetAppInfo(&info) == B_OK) {
 					ref = info.ref;
 					status = B_OK;
 				}
