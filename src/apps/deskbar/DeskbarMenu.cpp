@@ -49,6 +49,9 @@ All rights reserved.
 #include "BarView.h"
 #include "DeskbarUtils.h"
 #include "IconMenuItem.h"
+#if defined(__linux__)
+#	include "LinuxAppsMenu.h"
+#endif
 #include "MountMenu.h"
 #include "RecentItems.h"
 #include "StatusView.h"
@@ -167,6 +170,10 @@ TDeskbarMenu::DoneBuildingItemList()
 				item->SetTarget(deskbarTarget);
 		}
 	}
+
+#if defined(__linux__)
+	AddItem(TLinuxAppsMenu::NewItem());
+#endif
 }
 
 

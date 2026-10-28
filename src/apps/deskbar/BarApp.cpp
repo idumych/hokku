@@ -71,6 +71,9 @@ All rights reserved.
 
 #include "BarView.h"
 #include "BarWindow.h"
+#if defined(__linux__)
+#	include "LinuxAppsMenu.h"
+#endif
 #include "DeskbarUtils.h"
 #include "FSUtils.h"
 #include "PreferencesWindow.h"
@@ -566,6 +569,12 @@ TBarApp::MessageReceived(BMessage* message)
 {
 	switch (message->what) {
 		// BDeskbar originating messages we can handle
+#if defined(__linux__)
+		case kLaunchLinuxApp:
+			TLinuxAppsMenu::LaunchLinuxApp(message->GetString("path", NULL));
+			break;
+#endif
+
 		case kMsgIsAlwaysOnTop:
 		{
 			BMessage reply('rply');

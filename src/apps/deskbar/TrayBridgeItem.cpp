@@ -17,77 +17,11 @@
 #include <SeparatorItem.h>
 #include <Window.h>
 
+#include "BitmapMenuItem.h"
 #include "TrayBridgeProtocol.h"
 
 
 namespace {
-
-/*!	A menu item that draws an icon in front of its label, for dbusmenu
-	entries that have "icon-name" or "icon-data".
-*/
-class IconMenuItem : public BMenuItem {
-public:
-	IconMenuItem(const char* label, BMessage* message, BBitmap* icon)
-		:
-		BMenuItem(label, message),
-		fIcon(icon)
-	{
-	}
-
-	IconMenuItem(BMenu* submenu, BMessage* message, BBitmap* icon)
-		:
-		BMenuItem(submenu, message),
-		fIcon(icon)
-	{
-	}
-
-	virtual ~IconMenuItem()
-	{
-		delete fIcon;
-	}
-
-	virtual void GetContentSize(float* width, float* height)
-	{
-		BMenuItem::GetContentSize(width, height);
-		if (fIcon != NULL) {
-			*width += fIcon->Bounds().Width() + 1 + _Spacing();
-			*height = std::max(*height, fIcon->Bounds().Height() + 1);
-		}
-	}
-
-	virtual void DrawContent()
-	{
-		if (fIcon != NULL) {
-			BMenu* menu = Menu();
-			BPoint location = ContentLocation();
-			BRect frame = Frame();
-			float iconHeight = fIcon->Bounds().Height() + 1;
-			BPoint iconLocation(location.x,
-				frame.top + floorf((frame.Height() + 1 - iconHeight) / 2));
-
-			menu->PushState();
-			menu->SetDrawingMode(B_OP_ALPHA);
-			menu->SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
-			if (!IsEnabled())
-				menu->SetHighColor(0, 0, 0, 96);
-			menu->DrawBitmap(fIcon, iconLocation);
-			menu->PopState();
-
-			menu->MovePenTo(location.x + fIcon->Bounds().Width() + 1
-				+ _Spacing(), menu->PenLocation().y);
-		}
-		BMenuItem::DrawContent();
-	}
-
-private:
-	float _Spacing() const
-	{
-		return 6;
-	}
-
-	BBitmap* fIcon;
-};
-
 
 BBitmap*
 unarchive_bitmap(BMessage* archive)
@@ -399,14 +333,14 @@ TrayBridgeItem::_AddMenuItems(BMenu* menu, BMessage* node)
 			submenu->SetFont(be_plain_font);
 			_AddMenuItems(submenu, &child);
 			item = icon != NULL
-				? new IconMenuItem(submenu, NULL, icon)
+				? new TBitmapMenuItem(submenu, icon)
 				: new BMenuItem(submenu);
 		} else {
 			// to this replicant, which passes it on to the bridge
 			BMessage* invoke = new BMessage(kTBMenuEvent);
 			invoke->AddInt32("id", id);
 			item = icon != NULL
-				? new IconMenuItem(label, invoke, icon)
+				? new TBitmapMenuItem(label, invoke, icon)
 				: new BMenuItem(label, invoke);
 			item->SetTarget(this);
 		}

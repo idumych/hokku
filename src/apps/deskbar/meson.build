@@ -28,6 +28,7 @@ app_srcs = files(
     'CalendarMenuWindow.cpp',
 	'ScreenCornerSelector.cpp',
     'TrayBridgeItem.cpp',
+    'BitmapMenuItem.cpp',
 )
 
 app_resource_defs = files(
@@ -48,6 +49,16 @@ app_cpp_args = [
 ]
 
 if is_linux
+    # The Linux applications menu reads .desktop files with GIO and loads
+    # their icons with TrayBridge's icon loader.
+    deskbar_rsvg = dependency('librsvg-2.0', required: false)
+    app_srcs += files('LinuxAppsMenu.cpp', '../traybridge/IconLoader.cpp')
+    app_dependencies += [dependency('gio-2.0', version: '>= 2.44'),
+        dependency('gio-unix-2.0'), dependency('cairo'), deskbar_rsvg]
+    if deskbar_rsvg.found()
+        app_cpp_args += ['-DHAVE_LIBRSVG']
+    endif
+
     # Replicants are instantiated by looking their Instantiate() up in the
     # loaded images; the main executable's symbols must be visible for
     # TrayBridgeItem to be found.
