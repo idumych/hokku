@@ -275,8 +275,21 @@ BMessenger::operator==(const BMessenger& other) const
 bool
 BMessenger::IsValid() const
 {
+	if (fPort < 0)
+		return false;
+
+	// Ports are per process here; a messenger into another app is valid
+	// while that app's remote messenger is registered.
+	if (fTeam >= 0 && fTeam != BPrivate::current_team()) {
+		app_info remoteInfo;
+		status_t status = BPrivate::FindRemoteAppMessenger(NULL, fTeam,
+			&remoteInfo);
+		if (status != B_NOT_SUPPORTED)
+			return status == B_OK;
+	}
+
 	port_info info;
-	return fPort >= 0 && get_port_info(fPort, &info) == B_OK;
+	return get_port_info(fPort, &info) == B_OK;
 }
 
 

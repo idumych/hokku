@@ -1552,11 +1552,25 @@ BRoster::GetAppInfo(const char* signature, app_info* info) const
 
 	BList teams;
 	GetAppList(signature, &teams);
-	if (teams.IsEmpty())
+	if (!teams.IsEmpty()) {
+		team_id team = (team_id)(addr_t)teams.ItemAt(0);
+		return GetRunningAppInfo(team, info);
+	}
+
+	// The display's app list only has apps with windows; a background app
+	// is found by the messenger every BApplication registers.
+	app_info remoteInfo;
+	status_t status = BPrivate::FindRemoteAppMessenger(signature, -1,
+		&remoteInfo);
+	if (status != B_OK)
 		return B_ENTRY_NOT_FOUND;
 
-	team_id team = (team_id)(addr_t)teams.ItemAt(0);
-	return GetRunningAppInfo(team, info);
+	status = GetRunningAppInfo(remoteInfo.team, info);
+	if (status != B_OK)
+		return status;
+	info->port = remoteInfo.port;
+	strlcpy(info->signature, remoteInfo.signature, B_MIME_TYPE_LENGTH);
+	return B_OK;
 }
 
 
