@@ -4017,9 +4017,12 @@ BWindow::MoveTo(float x, float y)
 
 	// A Wayland panel is positioned by its layer-shell anchors, but views and
 	// menus still use this logical frame for screen-coordinate conversion.
+	// One that keeps its offset is still told (below): it becomes margins.
+	bool panelMoved = false;
 	if (isWayland && fParentWindow == NULL && WindowIsPanel(fFlags)
 		&& (fFrame.left != x || fFrame.top != y)) {
 			fFrame.OffsetTo(x, y);
+			panelMoved = (fFlags & kWindowPanelOffsetFlag) != 0;
 	}
 
 	// If Show() already fired but backend doesn't exist yet, create it now at
@@ -4069,7 +4072,7 @@ BWindow::MoveTo(float x, float y)
 			fLink->Attach<float>(fPopupPosition.y);
 			fLink->Flush();
 		} else {
-			if (fFrame.left != x || fFrame.top != y) {
+			if (fFrame.left != x || fFrame.top != y || panelMoved) {
 				BEGIN_MESSAGE
 				fLink->StartMessage(AS_WINDOW_MOVE);
 				fLink->Attach<int32_t>(fWindowToken);

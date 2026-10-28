@@ -762,10 +762,9 @@ public:
 
 	virtual void WindowSetPosition(backend_window_t window, int32_t x, int32_t y)
 	{
-		/* Wayland does not support absolute window move; ignore the request */
-		(void)window;
-		(void)x;
-		(void)y;
+		/* Wayland does not support absolute window move; only a corner
+		 * panel that keeps its offset turns it into margins */
+		window_set_panel_offset((struct window*)window, x, y);
 	}
 
 	virtual void WindowGetDecoratorSize(backend_window_t window, int32_t* borderWidth, int32_t* tabHeight)

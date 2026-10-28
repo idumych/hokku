@@ -706,6 +706,9 @@ struct window {
 	int x, y;
 	uint32_t cosmoe_flags;
 	uint32_t panel_placement;
+	/* layer-shell margins of a corner panel that keeps its offset */
+	int32_t panel_margin_top, panel_margin_right;
+	int32_t panel_margin_bottom, panel_margin_left;
 	uint32_t look;
 	uint32_t feel;
 	int desktop_mode;
@@ -6527,10 +6530,79 @@ window_apply_panel_state(struct window *window)
 	window_get_panel_metrics(window, &anchor, &exclusive, &width, &height);
 	zwlr_layer_surface_v1_set_anchor(window->layer_surface, anchor);
 	zwlr_layer_surface_v1_set_exclusive_zone(window->layer_surface, exclusive);
-	zwlr_layer_surface_v1_set_margin(window->layer_surface, 0, 0, 0, 0);
+	zwlr_layer_surface_v1_set_margin(window->layer_surface,
+		window->panel_margin_top, window->panel_margin_right,
+		window->panel_margin_bottom, window->panel_margin_left);
 	zwlr_layer_surface_v1_set_keyboard_interactivity(window->layer_surface,
 		ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND);
 	zwlr_layer_surface_v1_set_size(window->layer_surface, width, height);
+}
+
+/* Wayland windows can't place themselves, so a corner panel sits in its
+ * corner. One that asked to keep its offset (the notification window,
+ * beside the Deskbar) is moved by margins from that corner instead, worked
+ * out from where it is moved to on the screen BScreen reports. */
+void
+window_set_panel_offset(struct window *window, int32_t x, int32_t y)
+{
+	struct rectangle screen;
+	struct output *output;
+	uint32_t anchor, width, height;
+	int exclusive, scale = 1;
+	int32_t right, bottom;
+
+	if (window == NULL || !window_uses_panel(window)
+	    || (window->cosmoe_flags & COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG) == 0)
+		return;
+
+	display_get_screen_dimensions(window->display, &screen);
+	output = display_get_output(window->display);
+	if (output != NULL && output->scale > 1)
+		scale = output->scale;
+	if (screen.width <= 0 || screen.height <= 0)
+		return;
+
+	window_get_panel_metrics(window, &anchor, &exclusive, &width, &height);
+	right = screen.width / scale - (x + (int32_t)width);
+	bottom = screen.height / scale - (y + (int32_t)height);
+
+	window->panel_margin_top = 0;
+	window->panel_margin_right = 0;
+	window->panel_margin_bottom = 0;
+	window->panel_margin_left = 0;
+	switch (window->panel_placement) {
+		case COSMOE_PANEL_PLACEMENT_LEFT_TOP:
+			window->panel_margin_left = x;
+			window->panel_margin_top = y;
+			break;
+		case COSMOE_PANEL_PLACEMENT_RIGHT_TOP:
+			window->panel_margin_right = right;
+			window->panel_margin_top = y;
+			break;
+		case COSMOE_PANEL_PLACEMENT_LEFT_BOTTOM:
+			window->panel_margin_left = x;
+			window->panel_margin_bottom = bottom;
+			break;
+		case COSMOE_PANEL_PLACEMENT_RIGHT_BOTTOM:
+			window->panel_margin_right = right;
+			window->panel_margin_bottom = bottom;
+			break;
+		default:
+			return;
+	}
+	if (window->panel_margin_top < 0)
+		window->panel_margin_top = 0;
+	if (window->panel_margin_right < 0)
+		window->panel_margin_right = 0;
+	if (window->panel_margin_bottom < 0)
+		window->panel_margin_bottom = 0;
+	if (window->panel_margin_left < 0)
+		window->panel_margin_left = 0;
+
+	if (window->layer_surface != NULL) {
+		window_apply_panel_state(window);
+		wl_surface_commit(window->main_surface->surface);
+	}
 }
 
 static void

@@ -462,6 +462,9 @@ window_toggle_always_on_top(struct window *window, int enabled);
 int
 window_uses_panel(struct window *window);
 
+void
+window_set_panel_offset(struct window *window, int32_t x, int32_t y);
+
 int
 window_uses_client_side_decorations(struct window *window);
 

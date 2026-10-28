@@ -38,6 +38,9 @@ typedef enum cosmoe_private_window_panel_placement private_window_panel_placemen
 const uint32 kWindowPanelFlag = COSMOE_PRIVATE_WINDOW_PANEL_FLAG;
 const uint32 kWindowPanelPlacementShift = COSMOE_PRIVATE_WINDOW_PANEL_PLACEMENT_SHIFT;
 const uint32 kWindowPanelPlacementMask = COSMOE_PRIVATE_WINDOW_PANEL_PLACEMENT_MASK;
+const uint32 kWindowPanelOffsetFlag = COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG;
+	// a corner panel's MoveTo() sets its distance to the corner (on Wayland,
+	// where windows don't place themselves); without it, it sits in it
 
 const private_window_panel_placement kWindowPanelTop = COSMOE_PANEL_PLACEMENT_TOP;
 const private_window_panel_placement kWindowPanelBottom = COSMOE_PANEL_PLACEMENT_BOTTOM;
