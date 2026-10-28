@@ -17,6 +17,7 @@
 #include <strings.h>
 
 #include <algorithm>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -81,10 +82,10 @@ const int kIconSize = 64;
 GDBusConnection* sConnection = NULL;
 guint32 sNextID = 1;
 
-// notifications that offered a "default" action, the only one a Haiku
-// notification can carry out (by being clicked)
+// the action keys each notification offered: "default" is a click on it,
+// the others are its buttons
 std::mutex sLock;
-std::set<guint32> sDefaultAction;
+std::map<guint32, std::set<std::string> > sActions;
 
 
 guint32
@@ -294,24 +295,30 @@ notify(GVariant* parameters)
 		delete icon;
 	}
 
-	bool hasDefault = false;
-	GVariantIter iter;
-	const char* action;
-	g_variant_iter_init(&iter, actions);
-	for (int i = 0; g_variant_iter_next(&iter, "&s", &action); i++) {
-		// key, label, key, label...
-		if (i % 2 == 0 && strcmp(action, "default") == 0)
-			hasDefault = true;
+	// key, label, key, label...: "default" is done by a click, the others
+	// are buttons
+	std::set<std::string> keys;
+	BMessage message(kNotificationMessage);
+	gsize count = g_variant_n_children(actions);
+	for (gsize i = 0; i + 1 < count; i += 2) {
+		const char* key;
+		const char* label;
+		g_variant_get_child(actions, i, "&s", &key);
+		g_variant_get_child(actions, i + 1, "&s", &label);
+		keys.insert(key);
+		if (strcmp(key, "default") != 0) {
+			message.AddString(kActionKeyField, key);
+			message.AddString(kActionLabelField, label);
+		}
 	}
 	{
 		std::lock_guard<std::mutex> locker(sLock);
-		if (hasDefault)
-			sDefaultAction.insert(id);
+		if (keys.empty())
+			sActions.erase(id);
 		else
-			sDefaultAction.erase(id);
+			sActions[id] = keys;
 	}
 
-	BMessage message(kNotificationMessage);
 	if (notification.Archive(&message) == B_OK) {
 		// the Linux app it comes from, not the server
 		message.ReplaceString("_appname", appName);
@@ -425,7 +432,7 @@ Start()
 
 
 void
-ActionInvoked(const char* messageID)
+ActionInvoked(const char* messageID, const char* key)
 {
 	guint32 id = id_from_message_id(messageID);
 	GDBusConnection* connection
@@ -434,13 +441,16 @@ ActionInvoked(const char* messageID)
 		return;
 
 	{
+		// only actions the app offered
 		std::lock_guard<std::mutex> locker(sLock);
-		if (sDefaultAction.find(id) == sDefaultAction.end())
+		auto found = sActions.find(id);
+		if (found == sActions.end()
+			|| found->second.find(key) == found->second.end())
 			return;
 	}
 	// GDBus connections may be used from any thread
 	g_dbus_connection_emit_signal(connection, NULL, kPath, kName,
-		"ActionInvoked", g_variant_new("(us)", id, "default"), NULL);
+		"ActionInvoked", g_variant_new("(us)", id, key), NULL);
 }
 
 
@@ -455,7 +465,7 @@ NotificationClosed(const char* messageID, int32 reason)
 
 	{
 		std::lock_guard<std::mutex> locker(sLock);
-		sDefaultAction.erase(id);
+		sActions.erase(id);
 	}
 	g_dbus_connection_emit_signal(connection, NULL, kPath, kName,
 		"NotificationClosed", g_variant_new("(uu)", id, (guint32)reason),

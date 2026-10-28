@@ -219,6 +219,7 @@ NotificationWindow::MessageReceived(BMessage* message)
 					// leaves it out) never expires
 					NotificationView* view = new NotificationView(
 						notification, timeout, timeout <= 0);
+					view->AddActions(*message);
 
 					group->AddInfo(view);
 

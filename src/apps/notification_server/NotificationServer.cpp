@@ -82,7 +82,8 @@ NotificationServer::MessageReceived(BMessage* message)
 			break;
 
 		case kDBusActionInvoked:
-			DBusNotifications::ActionInvoked(message->GetString("id", NULL));
+			DBusNotifications::ActionInvoked(message->GetString("id", NULL),
+				message->GetString("key", "default"));
 			break;
 
 		case kDBusNotificationClosed:

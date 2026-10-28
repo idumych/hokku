@@ -16,6 +16,7 @@
 
 class AppGroupView;
 class BBitmap;
+class BGroupView;
 class BMessageRunner;
 class BNotification;
 
@@ -46,6 +47,7 @@ public:
 
 			void 				SetText(float newMaxWidth = -1);
 			void				SetPreviewModeOn(bool enabled);
+			void				AddActions(const BMessage& notification);
 
 			const char*			MessageID() const;
 			int					ProgressPercent();
@@ -76,6 +78,7 @@ private:
 			rgb_color			fStripeColor;
 			bool				fCloseClicked;
 			bool				fPreviewModeOn;
+			BGroupView*			fActionsView;
 };
 
 #endif	// _NOTIFICATION_VIEW_H

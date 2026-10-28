@@ -19,9 +19,11 @@
 
 
 #include <Bitmap.h>
+#include <Button.h>
 #include <Application.h>
 #include <ControlLook.h>
 #include <GroupLayout.h>
+#include <GroupView.h>
 #include <LayoutUtils.h>
 #include <MessageRunner.h>
 #include <Messenger.h>
@@ -29,6 +31,7 @@
 #include <NumberFormat.h>
 #include <Path.h>
 #include <PropertyInfo.h>
+#include <SpaceLayoutItem.h>
 #include <Roster.h>
 #include <StatusBar.h>
 
@@ -71,7 +74,8 @@ NotificationView::NotificationView(BNotification* notification, bigtime_t timeou
 	fRunner(NULL),
 	fBitmap(NULL),
 	fCloseClicked(false),
-	fPreviewModeOn(false)
+	fPreviewModeOn(false),
+	fActionsView(NULL)
 {
 	if (fNotification->Icon() != NULL) {
 		fBitmap = new BBitmap(fNotification->Icon());
@@ -136,6 +140,13 @@ NotificationView::AttachedToWindow()
 
 	fGroupView = dynamic_cast<AppGroupView*>(Parent());
 
+	if (fActionsView != NULL) {
+		for (int32 i = 0; BView* child = fActionsView->ChildAt(i); i++) {
+			if (BButton* button = dynamic_cast<BButton*>(child))
+				button->SetTarget(this);
+		}
+	}
+
 	if (!fDisableTimeout) {
 		BMessage msg(kRemoveView);
 		msg.AddPointer("view", this);
@@ -149,6 +160,21 @@ void
 NotificationView::MessageReceived(BMessage* msg)
 {
 	switch (msg->what) {
+		case kDBusActionInvoked:
+		{
+			// Hokku: one of the action buttons: the app does it, and the
+			// notification goes, as after a click
+			BMessage invoked(kDBusActionInvoked);
+			invoked.AddString("id", fNotification->MessageID());
+			invoked.AddString("key", msg->GetString("key", "default"));
+			be_app_messenger.SendMessage(&invoked);
+
+			BMessage remove(kRemoveView);
+			remove.AddPointer("view", this);
+			remove.AddInt32("reason", kClosedDismissed);
+			BMessenger(Parent()).SendMessage(&remove);
+			break;
+		}
 		case B_GET_PROPERTY:
 		{
 			BMessage specifier;
@@ -330,6 +356,7 @@ NotificationView::MouseDown(BPoint point)
 				// click (its "default" action)
 				BMessage invoked(kDBusActionInvoked);
 				invoked.AddString("id", fNotification->MessageID());
+				invoked.AddString("key", "default");
 				be_app_messenger.SendMessage(&invoked);
 			} else if (!closeRect.Contains(point)) {
 				entry_ref launchRef;
@@ -534,6 +561,32 @@ NotificationView::SetText(float newMaxWidth)
 }
 
 
+/*!	Hokku: the notification's actions (from D-Bus, other than "default",
+	which a click does) as a row of buttons under the text.
+*/
+void
+NotificationView::AddActions(const BMessage& notification)
+{
+	const char* key;
+	for (int32 i = 0; notification.FindString(kActionKeyField, i, &key)
+			== B_OK; i++) {
+		const char* label = notification.GetString(kActionLabelField, i,
+			key);
+		if (fActionsView == NULL) {
+			fActionsView = new BGroupView(B_HORIZONTAL,
+				be_control_look->DefaultItemSpacing() / 2);
+			fActionsView->GroupLayout()->AddItem(
+				BSpaceLayoutItem::CreateGlue());
+			GetLayout()->AddView(fActionsView);
+		}
+		BMessage* message = new BMessage(kDBusActionInvoked);
+		message->AddString("key", key);
+		BButton* button = new BButton(label, message);
+		fActionsView->AddChild(button);
+	}
+}
+
+
 void
 NotificationView::SetPreviewModeOn(bool enabled)
 {
@@ -567,6 +620,12 @@ NotificationView::_CalculateSize()
 		be_plain_font->GetHeight(&fh);
 		float fontHeight = fh.ascent + fh.descent + fh.leading;
 		height += fGroupView->CloseButtonSize() + fontHeight * 2;
+	}
+
+	// Hokku: the row of action buttons, under the text (and progress bar)
+	if (fActionsView != NULL) {
+		height += fActionsView->PreferredSize().height
+			+ be_control_look->DefaultItemSpacing();
 	}
 
 	SetExplicitMinSize(BSize(0, height));

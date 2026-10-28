@@ -19,10 +19,16 @@
 
 #define kDBusIDPrefix "freedesktop-"
 
+// In a kNotificationMessage, the actions other than "default", shown as
+// buttons: their keys and labels, in order
+#define kActionKeyField		"_hokku:action"
+#define kActionLabelField	"_hokku:action_label"
+
 enum {
 	// view or window -> server
 	kDBusActionInvoked		= 'nsDa',
-		// "id" string (message ID): the notification was clicked
+		// "id" string (message ID), "key" string (none: "default"): the
+		// notification was clicked, or one of its action buttons
 	kDBusNotificationClosed	= 'nsDc',
 		// "id" string (message ID), "reason" int32 (see below)
 
@@ -46,7 +52,7 @@ namespace DBusNotifications {
 void	Start();
 
 // Report to the app that sent notification messageID (a no-op for others).
-void	ActionInvoked(const char* messageID);
+void	ActionInvoked(const char* messageID, const char* key);
 void	NotificationClosed(const char* messageID, int32 reason);
 
 }	// namespace DBusNotifications

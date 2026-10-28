@@ -99,9 +99,9 @@ again with the same ID.
   GNOME their own popups keep the desktop's apps (it takes over if they ever stop). A
   Linux app's icon, image or icon name is its icon, critical urgency is the important
   type, a progress hint is a progress bar, a replacement ID updates the notification, a
-  click is the app's default action, and the app hears why a notification closed
-  (expired, dismissed, or closed by the app). Haiku notifications have no buttons, so
-  actions other than the default one aren't offered.
+  click is the app's default action, its other actions are a row of buttons under the text
+  (Reply, Mark read...), and the app hears why a notification closed (expired, dismissed,
+  or closed by the app).
 - **The preferences** (Notifications, in the Deskbar's Preferences): turn notifications
   on or off, their width, timeout and position, and mute any app. Changes apply at once.
   Every app that sent one is listed, the desktop's apps too, which Haiku's list (apps
