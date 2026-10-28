@@ -49,11 +49,20 @@ bootstrap_mime_database() {
     command -v mimeset >/dev/null 2>&1 || return 0
 
     mkdir -p "$mime_db" || return 0
+    # Layer the system database under the user's: types the apps claim are
+    # then copied with their icons and preferred apps, instead of created
+    # empty, which would hide the system entries (no icons, and e.g. DiskUsage
+    # as the folder handler).
+    system_mime_db=
+    system_data="$(finddir B_SYSTEM_DATA_DIRECTORY 2>/dev/null || true)"
+    [ -d "$system_data/mime_db" ] && system_mime_db="$system_data/mime_db"
     if ! package_files \
         | while IFS= read -r path; do
-            [ -x "$path" ] && printf '%s\n' "$path"
+            # Package file lists include directories, which are -x too, and
+            # mimeset -a recurses into them: "/usr/" would cover the whole disk.
+            [ -f "$path" ] && [ -x "$path" ] && printf '%s\n' "$path"
         done \
-        | mimeset -a --mimedb "$mime_db" @; then
+        | mimeset -a --mimedb "$mime_db" ${system_mime_db:+--mimedb "$system_mime_db"} @; then
         return 0
     fi
     printf '%s\n' "$package_version" >"$marker"
