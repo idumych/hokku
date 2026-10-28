@@ -370,11 +370,10 @@ BDeskbar::AddItem(BView* view, int32* _id)
 
 	BMessage reply;
 	result = fMessenger->SendMessage(&request, &reply);
-	if (result == B_OK) {
+	if (result == B_OK && reply.FindInt32("error", &result) != B_OK) {
+		result = B_OK;
 		if (_id != NULL)
 			result = reply.FindInt32("id", _id);
-		else
-			reply.FindInt32("error", &result);
 	}
 
 	return result;
@@ -389,11 +388,10 @@ BDeskbar::AddItem(entry_ref* addon, int32* _id)
 
 	BMessage reply;
 	status_t status = fMessenger->SendMessage(&request, &reply);
-	if (status == B_OK) {
+	if (status == B_OK && reply.FindInt32("error", &status) != B_OK) {
+		status = B_OK;
 		if (_id != NULL)
 			status = reply.FindInt32("id", _id);
-		else
-			reply.FindInt32("error", &status);
 	}
 
 	return status;
