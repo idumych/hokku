@@ -68,6 +68,8 @@ overriding the system's), in submenus by freedesktop main category, with their i
 Choosing one starts it through GIO as the desktop's launcher does. The list is read again
 when an applications folder changes.
 
+![The Deskbar menu open on Linux applications, with a submenu for each main category: Development, Games, Graphics, Internet, Multimedia, Office, Settings, System and Utilities](docs/screenshots/deskbar-linux-apps.png)
+
 It needed four fixes in the kits, which every app gets:
 
 - **`BShelf` works again.** Cosmoe had replaced Haiku's `BShelf` with empty stubs
@@ -92,6 +94,8 @@ Haiku, beside the Deskbar: grouped by app under a header with a close button, wi
 progress bars, and the important type marked; they time out, and update in place when sent
 again with the same ID.
 
+![Three notifications beside the Deskbar: a Thunderbird mail sent over D-Bus with Reply and Mark read buttons, a backup at 65% with a progress bar, and a reminder from a Hokku app with Open and Snooze buttons](docs/screenshots/notifications.png)
+
 - **Hokku apps:** `BNotification::Send()` goes to it when it runs, as on Haiku, and to the
   desktop's notifications (`notify-send`) when it doesn't. A Hokku extension gives them
   buttons: `AddAction(label, message[, target])` adds one, and clicking it sends the
@@ -111,8 +115,17 @@ again with the same ID.
   Every app that sent one is listed, the desktop's apps too, which Haiku's list (apps
   added from a file panel) couldn't hold.
 
+![The Notifications preferences in the Gonx look: the General tab with width, timeout and position, and the Applications tab listing the apps that sent notifications](docs/screenshots/notifications-prefs.png)
+
 On Wayland, where windows can't place themselves, the notification window is a corner
 panel that keeps the distance to its corner it is moved to (see Wayland below).
+
+### Touch screens
+
+On Wayland, Hokku apps work with a finger: a tap is a click, a drag is a drag (through
+menus and into their submenus too), and a long press is a right click, which opens a tray
+icon's menu or a context menu. Tested on a touch screen in Plasma; the details are under
+Wayland below.
 
 ### The Gonx look
 
@@ -146,7 +159,9 @@ and an alert in the Gonx border.
   Renku add-on; `setcontrollook` can choose it on its own.
 - **Deskbar and About.** The Deskbar's menu button shows a small Gonx tab with "Hokku" on
   it instead of the Cosmoe rocket, and AboutSystem shows it large
-  (`src/apps/deskbar/gonx-logo.py` draws it).
+  (`src/apps/deskbar/gonx-logo.py` draws it), with what Hokku adds to Cosmoe.
+
+  ![AboutSystem in the Gonx look: the large Gonx badge, the system's details, and what Hokku adds](docs/screenshots/about.png)
 - **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
   Hokku now keeps (see Desktop integration below). The fonts are Noto Sans at 9 and 11 points.
 
