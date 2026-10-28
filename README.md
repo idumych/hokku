@@ -235,8 +235,13 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   right click, which opens context menus (a tray icon's, say); tap an item in it. Dragged
   from one menu into a submenu, it
   reaches the submenu where the compositor really put it (flipped or slid at the screen's
-  edge), not where the app asked for it. `HOKKU_TOUCH_DEBUG=1` prints what touch does.
+  edge), not where the app asked for it; a mouse dragged with its button held does the
+  same. `HOKKU_TOUCH_DEBUG=1` prints what touch and the pointer do.
   Tested with KWin's fake input and on a touch screen in Plasma.
+- **A click counts where it happened.** `GetMouse()` falls back on the last position a
+  motion reported, and presses didn't update it, so the first click after the pointer
+  entered a window was judged where it had last moved: a menu bar opened the wrong menu, or
+  none.
 - **A tap or click on a menu item with a submenu opens it.** Menu tracking judged a press
   by where the pointer was before it moved, so a finger landing on an item (a move and a
   press at once) counted as a click outside and closed the menu; and releasing on an item

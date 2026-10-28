@@ -5635,6 +5635,11 @@ BWindow::_SanitizeMessage(BMessage* message, BHandler* target, bool usePreferred
 				message->AddPoint("window_where", where);
 			}
 
+			// GetMouse() falls back on the last position seen, so a press
+			// or release must count too, not only motion: the first click
+			// after the pointer enters a window may come with none.
+			BView::sLastMousePosition = where + Frame().LeftTop();
+
 			BView* view = dynamic_cast<BView*>(target);
 
 			if (view == NULL || message->what == B_MOUSE_MOVED) {
