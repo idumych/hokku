@@ -158,6 +158,23 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
   finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
   `/usr/local/lib`.
 
+## Gonx window frame
+
+On Wayland, Hokku can draw windows with the frame from
+[Gonx](https://github.com/idumych/gonx), the BeOS concept look made for Renku OS: a yellow
+tab with a raised shelf for the buttons, a slanted flap, and rounded corners. Run
+`setdecor Gonx` to choose it (`setdecor Default` goes back). Apps started afterwards use it.
+
+![Hokku apps on sway with the Gonx frame: an active document window, an inactive window and a floating palette](docs/screenshots/gonx-frame.png)
+
+![Close-up of the active, inactive and floating tabs](docs/screenshots/gonx-tabs.png)
+
+Titled, document and floating windows get the frame. It is drawn client-side, so the
+compositor leaves its own title bar off (tested on sway; KDE honours the same request but
+hasn't been tried). The tab follows the system's tab colours and bold font. It is Wayland
+only (on X11 the window manager draws frames), and the control look and colours of the full
+Gonx theme aren't part of Hokku.
+
 ## Using it
 
 Build it exactly like Cosmoe (below). The app templates in
@@ -194,10 +211,6 @@ or already fixed.
 ---
 
 *Upstream Cosmoe's README follows.*
-
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/cosmoe_desktop.png" alt="Cosmoe Logo" />
-</p>
 
 Welcome to Cosmoe!
 https://www.cosmoe.org
@@ -268,10 +281,6 @@ sudo pacman -S python meson pkg-config libwebp libtiff libraw libicns gcc binuti
 
 ### macOS Prerequisites
 
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/cosmoe_mac.png" alt="Mac running several Cosmoe-based apps" />
-</p>
-
 On macOS, install prerequisites using [Homebrew](https://brew.sh/):
 
 ```bash
@@ -286,10 +295,6 @@ brew install meson ninja pkg-config cairo pango libpng jpeg-turbo webp icu4c fre
 ```
 
 ### Windows Prerequisites
-
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/CosmoeWindows.png" alt="Windows PC running several Cosmoe-based apps" />
-</p>
 
 The Windows version is cross-compiled on Linux or WSL using MinGW64 MXE, and can
 run in Windows or WINE.
@@ -420,7 +425,3 @@ Acknowledgements
 ----------------
 Thank you to the Haiku team for their work over the years that helped make this possible.
 Cosmoe apps compile and run on Haiku too!
-
-<p align="center">
-     <img src="https://cosmoe.org/assets/img/ShowcaseHaiku.png" alt="Showcase app on Haiku" />
-</p>
