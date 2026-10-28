@@ -11,6 +11,7 @@
 #include "IconLoader.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -25,6 +26,7 @@
 #endif
 
 #include <Bitmap.h>
+#include <InterfaceDefs.h>
 
 
 namespace {
@@ -56,6 +58,47 @@ const char* kExtensions[] = {
 #endif
 	NULL
 };
+
+
+#ifdef HAVE_LIBRSVG
+/*!	KDE's symbolic icons (KDE Connect's, Breeze's) colour their parts with
+	the classes of a "current-color-scheme" stylesheet, which Plasma replaces
+	with its own colours when it draws them. Here they get the system
+	colours, so they match the Deskbar instead of being drawn for a dark
+	panel. The file's own stylesheet is author CSS, so these need !important.
+*/
+std::string
+color_scheme_stylesheet()
+{
+	struct { const char* name; rgb_color color; } classes[] = {
+		{ "Text", ui_color(B_PANEL_TEXT_COLOR) },
+		{ "Background", ui_color(B_PANEL_BACKGROUND_COLOR) },
+		{ "Highlight", ui_color(B_NAVIGATION_BASE_COLOR) },
+		{ "HighlightedText", ui_color(B_DOCUMENT_BACKGROUND_COLOR) },
+		{ "ViewText", ui_color(B_DOCUMENT_TEXT_COLOR) },
+		{ "ViewBackground", ui_color(B_DOCUMENT_BACKGROUND_COLOR) },
+		{ "ViewHover", ui_color(B_NAVIGATION_BASE_COLOR) },
+		{ "ViewFocus", ui_color(B_NAVIGATION_BASE_COLOR) },
+		{ "ButtonText", ui_color(B_CONTROL_TEXT_COLOR) },
+		{ "ButtonBackground", ui_color(B_CONTROL_BACKGROUND_COLOR) },
+		{ "ButtonHover", ui_color(B_NAVIGATION_BASE_COLOR) },
+		{ "ButtonFocus", ui_color(B_NAVIGATION_BASE_COLOR) },
+		{ "NegativeText", ui_color(B_FAILURE_COLOR) },
+		{ "PositiveText", ui_color(B_SUCCESS_COLOR) },
+		{ "NeutralText", make_color(246, 116, 0) },
+	};
+
+	std::string css;
+	for (auto& entry : classes) {
+		char rule[96];
+		snprintf(rule, sizeof(rule),
+			".ColorScheme-%s { color: #%02x%02x%02x !important; }\n",
+			entry.name, entry.color.red, entry.color.green, entry.color.blue);
+		css += rule;
+	}
+	return css;
+}
+#endif
 
 
 std::vector<std::string>
@@ -517,6 +560,9 @@ LoadFile(const char* path, int size)
 		RsvgHandle* handle = rsvg_handle_new_from_file(path, NULL);
 		if (handle == NULL)
 			return NULL;
+		std::string css = color_scheme_stylesheet();
+		rsvg_handle_set_stylesheet(handle, (const guint8*)css.c_str(),
+			css.size(), NULL);
 
 		cairo_surface_t* surface = cairo_image_surface_create(
 			CAIRO_FORMAT_ARGB32, size, size);
