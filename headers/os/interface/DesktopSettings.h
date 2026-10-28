@@ -68,6 +68,7 @@ public:
 			rgb_color			UIColor(color_which which) const;
 			const BString&		ControlLook() const;
 			const BString&		Decorator() const;
+			rgb_color			DesktopColor() const;
 
 protected:
 			DesktopSettingsPrivate*	fSettings;
@@ -106,6 +107,7 @@ public:
 
 			status_t			SetControlLook(const char* path);
 			status_t			SetDecorator(const char* name);
+			void				SetDesktopColor(rgb_color color);
 
 private:
 							LockedDesktopSettings(

@@ -759,6 +759,15 @@ executable(
 )
 
 executable(
+    'gonx-theme',
+    'src/bin/gonx-theme.cpp',
+    dependencies: dep_libbe,
+    include_directories: common_inc,
+    install: true,
+    install_dir: get_option('bindir'),
+)
+
+executable(
 	'mime_db_builder',
 	'src/bin/mime_db_builder.cpp',
 	dependencies: dep_libbe,

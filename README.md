@@ -153,27 +153,41 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 - **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
   node). File panel titles and Open With show the leaf name. In app code, use
   `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
+- **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
+  `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
+  the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
+  an app started. Colours and the desktop colour are now saved with the appearance settings
+  and fonts with the font settings, and apps started afterwards use them (running apps keep
+  theirs until restarted). A dark control look still brings its own colours.
+  `_set_system_font_()`, the private call Appearance and theme tools use on Haiku, exists.
+  Apps no longer print `ControlLook add-on loaded from ...` when they start.
 - **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
   `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
   finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
   `/usr/local/lib`.
 
-## Gonx window frame
+## Gonx look
 
-On Wayland, Hokku can draw windows with the frame from
-[Gonx](https://github.com/idumych/gonx), the BeOS concept look made for Renku OS: a yellow
-tab with a raised shelf for the buttons, a slanted flap, and rounded corners. Run
-`setdecor Gonx` to choose it (`setdecor Default` goes back). Apps started afterwards use it.
+Hokku can take on the whole [Gonx](https://github.com/idumych/gonx) look, the BeOS concept
+theme made for Renku OS: its window frame, its controls, and its colours, fonts and desktop
+colour. Run `gonx-theme apply` to switch to it and `gonx-theme revert` to go back to what was
+there before; apps started afterwards use it.
 
-![Hokku apps on sway with the Gonx frame: an active document window, an inactive window and a floating palette](docs/screenshots/gonx-frame.png)
+![Hokku apps on sway with the Gonx look: Showcase's controls, an active document window and a floating palette](docs/screenshots/gonx-theme.png)
 
 ![Close-up of the active, inactive and floating tabs](docs/screenshots/gonx-tabs.png)
 
-Titled, document and floating windows get the frame. It is drawn client-side, so the
-compositor leaves its own title bar off (tested on sway; KDE honours the same request but
-hasn't been tried). The tab follows the system's tab colours and bold font. It is Wayland
-only (on X11 the window manager draws frames), and the control look and colours of the full
-Gonx theme aren't part of Hokku.
+![Close-up of the Gonx controls in Showcase](docs/screenshots/gonx-controls.png)
+
+- **Window frame.** Titled, document and floating windows get the Gonx tab, flap and
+  rounded corners on Wayland, drawn client-side, so the compositor leaves its own title bar
+  off (tested on sway; KDE honours the same request but hasn't been tried). On X11 the
+  window manager draws frames. `setdecor Gonx` and `setdecor Default` switch only the frame.
+- **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
+  draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
+  Renku add-on; `setcontrollook` can choose it on its own.
+- **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
+  Hokku now keeps (see the changes above). The fonts are Noto Sans at 9 and 11 points.
 
 ## Using it
 

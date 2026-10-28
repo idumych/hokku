@@ -84,6 +84,8 @@ public:
 			const BString&		ControlLook() const;
 			status_t			SetDecorator(const char* name);
 			const BString&		Decorator() const;
+			void				SetDesktopColor(rgb_color color);
+			rgb_color			DesktopColor() const;
 
 private:
 			void				_SetDefaults();
@@ -109,6 +111,7 @@ private:
 			BMessage			fWorkspaceMessages[kMaxWorkspaces];
 			BString				fControlLook;
 			BString				fDecorator;
+			rgb_color			fDesktopColor;
 
 			server_read_only_memory	fShared;
 };

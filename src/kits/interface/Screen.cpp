@@ -16,6 +16,8 @@
 #include <Bitmap.h>
 #include <Window.h>
 
+#include <DesktopSettings.h>
+
 //#include <PrivateScreen.h>
 
 
@@ -207,28 +209,35 @@ BScreen::ColorMap()
 rgb_color
 BScreen::DesktopColor()
 {
-	rgb_color color = { 51, 102, 152, 255 };
-
-	return color;
+	// one colour for every workspace, kept in the appearance settings
+	DesktopSettings settings;
+	return settings.DesktopColor();
 }
 
 
 rgb_color
 BScreen::DesktopColor(uint32 workspace)
 {
-	rgb_color color = { 51, 102, 152, 255 };
-
-	return color;
+	return DesktopColor();
 }
 
 
 void
 BScreen::SetDesktopColor(rgb_color color, bool stick)
 {
+	SetDesktopColor(color, 0, stick);
 }
 
 
 void
 BScreen::SetDesktopColor(rgb_color color, uint32 workspace, bool stick)
 {
+	// Hokku's desktop (Tracker) draws the colour itself and reads it when
+	// it starts; without "stick" Haiku changes it until the next reboot,
+	// which here is the same as not at all
+	if (!stick)
+		return;
+
+	LockedDesktopSettings settings;
+	settings.SetDesktopColor(color);
 }

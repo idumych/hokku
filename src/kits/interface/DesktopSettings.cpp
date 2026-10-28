@@ -113,6 +113,8 @@ DesktopSettingsPrivate::_SetDefaults()
 	fWorkspacesColumns = 2;
 	fWorkspacesRows = 2;
 
+	fDesktopColor.set_to(51, 102, 152);
+
 	memcpy((void*)&fShared.colormap, system_colors(),
 		sizeof(color_map));
 	memcpy((void*)fShared.colors, BPrivate::kDefaultColors,
@@ -313,6 +315,10 @@ DesktopSettingsPrivate::_Load()
 			if (settings.FindString("decorator", &decorator) == B_OK)
 				fDecorator = decorator;
 
+			int32 desktopColor;
+			if (settings.FindInt32("desktop color", &desktopColor) == B_OK)
+				fDesktopColor = _ColorFromInt32(desktopColor);
+
 			// colors
 			for (int32 i = 0; i < kColorWhichCount; i++) {
 				char colorName[12];
@@ -465,6 +471,7 @@ DesktopSettingsPrivate::Save(uint32 mask)
 
 			settings.AddString("control look", fControlLook);
 			settings.AddString("decorator", fDecorator);
+			settings.AddInt32("desktop color", _ColorToInt32(fDesktopColor));
 
 			for (int32 i = 0; i < kColorWhichCount; i++) {
 				char colorName[12];
@@ -780,6 +787,21 @@ DesktopSettingsPrivate::Decorator() const
 
 
 void
+DesktopSettingsPrivate::SetDesktopColor(rgb_color color)
+{
+	fDesktopColor = color;
+	Save(kAppearanceSettings);
+}
+
+
+rgb_color
+DesktopSettingsPrivate::DesktopColor() const
+{
+	return fDesktopColor;
+}
+
+
+void
 DesktopSettingsPrivate::_ValidateWorkspacesLayout(int32& columns,
 	int32& rows) const
 {
@@ -931,6 +953,13 @@ DesktopSettings::Decorator() const
 	return fSettings->Decorator();
 }
 
+
+rgb_color
+DesktopSettings::DesktopColor() const
+{
+	return fSettings->DesktopColor();
+}
+
 //	#pragma mark - write access
 
 
@@ -1049,5 +1078,12 @@ status_t
 LockedDesktopSettings::SetDecorator(const char* name)
 {
 	return fSettings->SetDecorator(name);
+}
+
+
+void
+LockedDesktopSettings::SetDesktopColor(rgb_color color)
+{
+	fSettings->SetDesktopColor(color);
 }
 

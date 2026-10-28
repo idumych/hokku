@@ -110,6 +110,11 @@ struct general_ui_info general_info;
 
 menu_info *_menu_info_ptr_;
 static bool sUseDarkSystemColors = false;
+// The colours saved in the appearance settings (by Appearance or
+// set_ui_colors()), read when the interface kit starts; an entry that was
+// never saved is left to the defaults.
+static rgb_color sSavedColors[kColorWhichCount];
+static bool sSavedColorSet[kColorWhichCount];
 static std::vector<BControlLook*> sRetiredControlLooks;
 
 typedef BControlLook* (*instantiate_control_look_func)(image_id id);
@@ -565,6 +570,19 @@ linux_build_key_map(key_map** map, char** key_buffer,
 } // namespace
 #endif
 
+
+
+static void
+LoadSavedColors()
+{
+	DesktopSettings settings;
+	for (int32 index = 0; index < kColorWhichCount; index++) {
+		rgb_color color = settings.UIColor(index_to_color_which(index));
+		sSavedColors[index] = color;
+		// unsaved entries load as B_TRANSPARENT_COLOR
+		sSavedColorSet[index] = color.alpha != 0;
+	}
+}
 
 
 static void
@@ -1614,8 +1632,12 @@ ui_color(color_which which)
 		return make_color(0, 0, 0);
 	}
 
-	return sUseDarkSystemColors ? _kDefaultColorsDark[index]
-		: _kDefaultColors[index];
+	// a dark control look brings its own colours
+	if (sUseDarkSystemColors)
+		return _kDefaultColorsDark[index];
+	if (sSavedColorSet[index])
+		return sSavedColors[index];
+	return _kDefaultColors[index];
 }
 
 
@@ -1672,6 +1694,15 @@ set_ui_color(const color_which &which, const rgb_color &color)
 
 	if (ui_color(which) == color)
 		return;
+
+	// Saved for apps started from now on, and used in this one. Haiku
+	// also redraws running apps; Hokku's controls don't all follow a
+	// change yet (see InvalidateApplicationWindows() above).
+	LockedDesktopSettings settings;
+	settings.SetUIColor(which, color);
+	sSavedColors[index] = color;
+	sSavedColorSet[index] = true;
+	UpdateCachedSystemColors();
 }
 
 
@@ -1680,6 +1711,13 @@ set_ui_colors(const BMessage* colors)
 {
 	if (colors == NULL)
 		return;
+
+	{
+		LockedDesktopSettings settings;
+		settings.SetUIColors(*colors);
+	}
+	LoadSavedColors();
+	UpdateCachedSystemColors();
 }
 
 
@@ -1745,7 +1783,6 @@ _init_interface_kit_()
 				sControlLookAddon = B_BAD_IMAGE_ID;
 				fprintf(stderr, "Failed to instantiate ControlLook add-on from %s\n", path.String());
 			}
-			printf("ControlLook add-on loaded from %s\n", path.String());
 			BString controlLookName(path.String());
 			// A bit of a hack to determine if the add-on is a dark variant, but it allows us
 			// to support both light and dark variants without needing a separate API for it.
@@ -1775,6 +1812,7 @@ _init_interface_kit_()
 	if (status != B_OK)
 		return status;
 
+	LoadSavedColors();
 	UpdateCachedSystemColors();
 	general_info.color_frame = true;
 
