@@ -701,6 +701,14 @@ BMenuBar::_Track(int32* action, int32 startIndex, bool showMenu)
 			} while (newWhere == where && newButtons == buttons
 				&& fState == MENU_STATE_TRACKING);
 
+			if (newWhere != where && newButtons != buttons) {
+				// Moved and pressed at once (a tap): item is still the one
+				// under the old position. Look at the new one first, maybe
+				// over the open menu; the press is seen on the next pass.
+				where = newWhere;
+				continue;
+			}
+
 			if (newButtons != 0 && _IsStickyMode()) {
 				if (item == NULL || (item->Submenu() != NULL
 						&& item->Submenu()->Window() != NULL)) {

@@ -228,6 +228,17 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 
 ### Wayland
 
+- **Touch screens work.** Wayland gives touch to apps as touch, never as a mouse, and only
+  window frames handled it, so a finger did nothing in an app. Now the first finger on a
+  window is the left mouse button, as a tablet is on Haiku: the pointer goes to it,
+  presses, follows it and releases when it lifts. Dragged from one menu into a submenu, it
+  reaches the submenu where the compositor really put it (flipped or slid at the screen's
+  edge), not where the app asked for it. `HOKKU_TOUCH_DEBUG=1` prints what touch does.
+  Tested with KWin's fake input and on a touch screen in Plasma.
+- **A tap or click on a menu item with a submenu opens it.** Menu tracking judged a press
+  by where the pointer was before it moved, so a finger landing on an item (a move and a
+  press at once) counted as a click outside and closed the menu; and releasing on an item
+  with a submenu closed the menu instead of opening the submenu, as Haiku does.
 - **Wayland: menus are placed by the compositor.** Wayland doesn't tell an app where its
   windows are, and `BScreen` there covers one output, so `BMenu` moved pop-ups by a wrong
   amount trying to keep them on screen: with two monitors, a `BMenuField`'s pop-up on one of

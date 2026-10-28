@@ -2159,6 +2159,11 @@ BMenu::_Track(int* action, long start)
 		UnlockLooper();
 	}
 
+	// A sticky submenu entered with the button already down (a finger
+	// tapped straight into it) takes that press as its click.
+	if (_IsStickyMode() && buttons != 0)
+		fStickyPressDetected = true;
+
 	bool releasedOnce = buttons == 0;
 	while (fState != MENU_STATE_CLOSED) {
 		if (_CustomTrackingWantsToQuit())
@@ -2297,7 +2302,8 @@ BMenu::_Track(int* action, long start)
 				&& !(item != NULL && item->Submenu() != NULL
 					&& item->Submenu()->Window() == NULL)
 				&& fState == MENU_STATE_TRACKING
-				&& !fStickyPressDetected);			if (newLocation != location || newButtons != buttons) {
+				&& !fStickyPressDetected);			bool moved = newLocation != location;
+			if (moved || newButtons != buttons) {
 					if (_IsStickyMode() && newButtons != 0 && buttons == 0)
 						fStickyPressDetected = true;
 				
@@ -2308,8 +2314,11 @@ BMenu::_Track(int* action, long start)
 				buttons = newButtons;
 			}
 
-			// Also update state if sticky press was detected (even without mouse movement)
-			if (releasedOnce || fStickyPressDetected)
+			// Also update state if sticky press was detected (even without
+			// mouse movement). If the pointer moved, item is still the one
+			// under the old position: a tap's move and press come together,
+			// so leave it to the next pass, which hits the new position.
+			if ((releasedOnce || fStickyPressDetected) && !moved)
 				_UpdateStateClose(item, location, buttons, fStickyPressDetected);
 		}
 	}
@@ -2538,6 +2547,18 @@ BMenu::_UpdateStateClose(BMenuItem* item, const BPoint& where,
 			fExtraRect = NULL;
 				// Setting this to NULL will prevent this code
 				// to be executed next time
+		} else if (item != NULL && item->Submenu() != NULL) {
+			// Released on an item with a submenu: open it and stay open, as
+			// Haiku does; a click (or a tap) there means "show me".
+			if (LockLooper()) {
+				if (item != fSelected)
+					_SelectItem(item, false);
+				if (item->Submenu()->Window() == NULL)
+					_SelectItem(item, true);
+				UnlockLooper();
+			}
+			_SetStickyMode(true);
+			fStickyPressDetected = false;
 		} else if (item != NULL) {
 			// In sticky mode, only invoke if we've detected a button press
 			// In non-sticky mode, always invoke on release over item
