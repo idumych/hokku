@@ -17,6 +17,7 @@ srcs_wayland = [
     'shared/cairo-util.c',
     'shared/file-util.c',
     'shared/frame.c',
+    'shared/gonx-frame.c',
 ]
 
 srcs_wayland = files(srcs_wayland)

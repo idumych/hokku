@@ -221,7 +221,8 @@ DecorInfo::ModificationTime() const
 bool
 DecorInfo::CheckForChanges(bool& deleted)
 {
-	if (InitCheck() != B_OK)
+	// the built-in decorators never change
+	if (InitCheck() != B_OK || IsDefault() || fPath == "Gonx")
 		return false;
 
 	BEntry entry(fPath.String());
@@ -290,13 +291,27 @@ DecorInfo::_Init(bool isUpdate)
 		find_directory(B_SYSTEM_SERVERS_DIRECTORY, &path);
 		path.Append("app_server");
 		entry.SetTo(path.Path(), true);
-		if (!entry.Exists()) {
-			fprintf(stderr, "Server MIA the world has become its slave! "
-				"Call the CIA!\n");
+		// Cosmoe has no app_server binary; the date stays unknown
+		if (!entry.Exists())
 			return;
-		}
 
 		entry.GetModificationTime(&fModificationTime);
+		return;
+	}
+
+	if (fPath == "Gonx") {
+		// Cosmoe: built into the backends, like the Default decorator
+		fName = "Gonx";
+		fAuthors = "Hokku contributors, after Cotito's Gonx concept";
+		fShortDescription = "The Gonx BeOS concept look: a yellow tab and "
+			"flap, buttons on a shelf, a blue-grey frame.";
+		fLongDescription = "";
+		fLicenseURL = "https://opensource.org/licenses/MIT";
+		fLicenseName = "MIT";
+		fSupportURL = "https://github.com/idumych/hokku";
+		fVersion = 0.1;
+		fModificationTime = 0;
+		fInitStatus = B_OK;
 		return;
 	}
 
@@ -371,6 +386,13 @@ DecorInfoUtility::DecorInfoUtility(bool scanNow)
 	}
 
 	fList.AddItem(info);
+
+	// Cosmoe has no decorator add-ons; Gonx is built in like Default
+	DecorInfo* gonx = new(std::nothrow) DecorInfo("Gonx");
+	if (gonx != NULL && gonx->InitCheck() == B_OK)
+		fList.AddItem(gonx);
+	else
+		delete gonx;
 
 	if (scanNow)
 		ScanDecorators();

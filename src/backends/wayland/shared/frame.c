@@ -35,6 +35,7 @@
 
 #include "cairo-util.h"
 #include "file-util.h"
+#include "gonx-frame.h"
 
 enum frame_button_flags {
 	FRAME_BUTTON_ALIGN_RIGHT = 0x1,
@@ -106,7 +107,45 @@ struct frame {
 	struct wl_list buttons;
 	struct wl_list pointers;
 	struct wl_list touches;
+
+	/* set when the frame is drawn as Gonx instead of the theme */
+	const struct gonx_style *gonx;
+	uint32_t gonx_look;
+	struct gonx_layout gonx_layout;
 };
+
+/* window_look values from BWindow */
+enum {
+	GONX_TITLED_LOOK = 1,
+	GONX_FLOATING_LOOK = 7,
+	GONX_DOCUMENT_LOOK = 11,
+	GONX_LEFT_TITLED_LOOK = 25
+};
+
+static void
+frame_refresh_geometry(struct frame *frame);
+
+static int
+frame_gonx_small(struct frame *frame)
+{
+	return frame->gonx_look == GONX_FLOATING_LOOK
+		|| frame->gonx_look == GONX_LEFT_TITLED_LOOK;
+}
+
+static int
+frame_gonx_button_index(struct frame_button *button)
+{
+	switch (button->status_effect) {
+	case FRAME_STATUS_CLOSE:
+		return GONX_CLOSE;
+	case FRAME_STATUS_MAXIMIZE:
+		return GONX_ZOOM;
+	case FRAME_STATUS_MINIMIZE:
+		return GONX_MINIMIZE;
+	default:
+		return -1;
+	}
+}
 
 static struct frame_button *
 frame_button_create_from_surface(struct frame *frame, cairo_surface_t *icon,
@@ -133,6 +172,10 @@ static enum theme_location
 frame_get_pointer_location(struct frame *frame, int x, int y)
 {
 	uint32_t themeFlags = 0;
+
+	if (frame->gonx)
+		return gonx_frame_location(&frame->gonx_layout, x, y);
+
 	if (frame->flags & FRAME_FLAG_MAXIMIZED)
 		themeFlags |= THEME_FRAME_MAXIMIZED;
 	if (frame->flags & FRAME_FLAG_NO_RESIZE)
@@ -511,6 +554,12 @@ frame_border_sizes(struct frame *frame, int32_t *top, int32_t *bottom,
 {
 	struct theme *t = frame->theme;
 
+	if (frame->gonx) {
+		gonx_frame_sizes(frame->gonx, frame_gonx_small(frame), top, bottom,
+				 left, right);
+		return;
+	}
+
 	/* Top may have a titlebar */
 	if (frame->title || !wl_list_empty(&frame->buttons))
 		*top = t->titlebar_height;
@@ -530,7 +579,8 @@ frame_decoration_sizes(struct frame *frame, int32_t *top, int32_t *bottom,
 
 	frame_border_sizes(frame, top, bottom, left, right);
 
-	if (frame->flags & FRAME_FLAG_MAXIMIZED)
+	/* the Gonx frame has no drop shadow */
+	if (frame->flags & FRAME_FLAG_MAXIMIZED || frame->gonx)
 		return;
 
 	/* Not maximized, add shadows */
@@ -563,6 +613,82 @@ frame_height(struct frame *frame)
 }
 
 static void
+frame_refresh_gonx_geometry(struct frame *frame)
+{
+	struct gonx_layout *layout = &frame->gonx_layout;
+	struct frame_button *button;
+
+	memset(layout, 0, sizeof *layout);
+	layout->width = frame->width;
+	layout->height = frame->height;
+	layout->small = frame_gonx_small(frame);
+	layout->document = frame->gonx_look == GONX_DOCUMENT_LOOK;
+	layout->resizable = !(frame->flags & FRAME_FLAG_NO_RESIZE);
+	wl_list_for_each(button, &frame->buttons, link) {
+		int index = frame_gonx_button_index(button);
+		if (index >= 0)
+			layout->has_button[index] = 1;
+	}
+
+	gonx_frame_layout(layout, frame->gonx, frame->title);
+
+	frame->interior.x = layout->content.left;
+	frame->interior.y = layout->content.top;
+	frame->interior.width = layout->content.right - layout->content.left + 1;
+	frame->interior.height = layout->content.bottom - layout->content.top + 1;
+	frame->shadow_margin = 0;
+	frame->opaque_margin = 0;
+
+	wl_list_for_each(button, &frame->buttons, link) {
+		int index = frame_gonx_button_index(button);
+		if (index < 0) {
+			/* no window menu button */
+			button->allocation.width = 0;
+			button->allocation.height = 0;
+			continue;
+		}
+		const struct gonx_rect *r = &layout->button[index];
+		button->allocation.x = r->left;
+		button->allocation.y = r->top;
+		button->allocation.width = r->right - r->left + 1;
+		button->allocation.height = r->bottom - r->top + 1;
+	}
+
+	frame->title_rect.x = layout->title.left;
+	frame->title_rect.y = layout->title.top;
+	frame->title_rect.width = layout->title.right - layout->title.left + 1;
+	frame->title_rect.height = layout->title.bottom - layout->title.top + 1;
+
+	frame->geometry_dirty = 0;
+}
+
+void
+frame_set_gonx(struct frame *frame, const struct gonx_style *style,
+	       uint32_t look)
+{
+	frame->gonx = style;
+	frame->gonx_look = look;
+	frame->geometry_dirty = 1;
+	frame->status |= FRAME_STATUS_REPAINT;
+}
+
+int
+frame_is_gonx(struct frame *frame)
+{
+	return frame->gonx != NULL;
+}
+
+void
+frame_gonx_input_rects(struct frame *frame,
+		       void (*add)(void *data, int x, int y, int width,
+				   int height),
+		       void *data)
+{
+	frame_refresh_geometry(frame);
+	gonx_frame_input_rects(&frame->gonx_layout, add, data);
+}
+
+static void
 frame_refresh_geometry(struct frame *frame)
 {
 	struct frame_button *button;
@@ -572,6 +698,11 @@ frame_refresh_geometry(struct frame *frame)
 
 	if (!frame->geometry_dirty)
 		return;
+
+	if (frame->gonx) {
+		frame_refresh_gonx_geometry(frame);
+		return;
+	}
 
 	if (frame->title || !wl_list_empty(&frame->buttons))
 		titlebar_height = t->titlebar_height;
@@ -678,6 +809,18 @@ frame_opaque_rect(struct frame *frame, int32_t *x, int32_t *y,
 		  int32_t *width, int32_t *height)
 {
 	frame_refresh_geometry(frame);
+
+	if (frame->gonx) {
+		if (x)
+			*x = frame->interior.x;
+		if (y)
+			*y = frame->interior.y;
+		if (width)
+			*width = frame->interior.width;
+		if (height)
+			*height = frame->interior.height;
+		return;
+	}
 
 	if (x)
 		*x = frame->opaque_margin;
@@ -1050,6 +1193,17 @@ frame_tablet_tool_motion(struct frame *frame, void *data, int x, int y)
 }
 
 void
+frame_repaint_overlay(struct frame *frame, cairo_t *cr)
+{
+	if (!frame->gonx)
+		return;
+
+	frame_refresh_geometry(frame);
+	gonx_frame_paint_overlay(cr, &frame->gonx_layout,
+				 (frame->flags & FRAME_FLAG_ACTIVE) != 0);
+}
+
+void
 frame_repaint(struct frame *frame, cairo_t *cr)
 {
 	struct frame_button *button;
@@ -1065,6 +1219,20 @@ frame_repaint(struct frame *frame, cairo_t *cr)
 
 	if (frame->flags & FRAME_FLAG_NO_SHADOW)
 		flags |= THEME_FRAME_NO_SHADOW;
+
+	if (frame->gonx) {
+		int pressed[GONX_BUTTON_COUNT] = { 0, 0, 0 };
+		wl_list_for_each(button, &frame->buttons, link) {
+			int index = frame_gonx_button_index(button);
+			if (index >= 0)
+				pressed[index] = button->press_count > 0
+					&& button->hover_count > 0;
+		}
+		gonx_frame_paint(cr, &frame->gonx_layout, frame->gonx, frame->title,
+				 (frame->flags & FRAME_FLAG_ACTIVE) != 0, pressed);
+		frame_status_clear(frame, FRAME_STATUS_REPAINT);
+		return;
+	}
 
 	cairo_save(cr);
 	theme_render_frame(frame->theme, cr, frame->width, frame->height,

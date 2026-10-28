@@ -6,8 +6,10 @@
  */
 
 #include "CosmoeBackend.h"
+#include "CosmoeBackendAPI.h"
 #include <Rect.h>
 #include <errno.h>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -20,6 +22,7 @@
 // Include Wayland window header
 extern "C" {
 #include "../../libs/wayland/window.h"
+#include "shared/gonx-frame.h"
 // Forward declare C functions from window.c
 void widget_set_buffer_scale(struct widget *widget, int32_t scale);
 void widget_set_display_scale_percent(struct widget *widget, int32_t scale_percent);
@@ -294,6 +297,35 @@ public:
 	virtual void DisplaySetPort(backend_display_t display, int32_t sender_port_id, int32_t receiver_port_id)
 	{
 		display_set_port((struct display*)display, sender_port_id, receiver_port_id);
+	}
+
+	virtual status_t DisplaySetDecorator(backend_display_t display,
+		const ::cosmoe_decorator_style* style)
+	{
+		if (display == NULL)
+			return B_BAD_VALUE;
+
+		// "Default" is the theme's frame; Gonx is the only other built-in one
+		if (style == NULL || strcmp(style->name, "Gonx") != 0) {
+			display_set_gonx_style((struct display*)display, NULL);
+			return style == NULL || strcmp(style->name, "Default") == 0
+				? B_OK : B_NAME_NOT_FOUND;
+		}
+
+		struct gonx_style gonx;
+		memset(&gonx, 0, sizeof(gonx));
+		memcpy(gonx.tab, style->tab, sizeof(gonx.tab));
+		memcpy(gonx.tab_inactive, style->tab_inactive,
+			sizeof(gonx.tab_inactive));
+		memcpy(gonx.text, style->text, sizeof(gonx.text));
+		memcpy(gonx.text_inactive, style->text_inactive,
+			sizeof(gonx.text_inactive));
+		snprintf(gonx.title_font, sizeof(gonx.title_font), "%s",
+			style->title_font);
+		snprintf(gonx.small_title_font, sizeof(gonx.small_title_font), "%s",
+			style->small_title_font);
+		display_set_gonx_style((struct display*)display, &gonx);
+		return B_OK;
 	}
 
 	// Cursor management

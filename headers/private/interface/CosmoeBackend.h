@@ -20,6 +20,7 @@ class BRect;
 struct cosmoe_backend_app_info;
 struct cosmoe_backend_window_info;
 struct cosmoe_native_menu_item;
+struct cosmoe_decorator_style;
 
 namespace BPrivate {
 	class CosmoeBackend;
@@ -399,6 +400,16 @@ public:
 		(void)variant;
 		(void)options;
 		(void)model;
+		return B_UNSUPPORTED;
+	}
+
+	// Window decorator for frames the backend draws itself (see
+	// cosmoe_display_set_decorator()).
+	virtual status_t DisplaySetDecorator(backend_display_t display,
+		const ::cosmoe_decorator_style* style)
+	{
+		(void)display;
+		(void)style;
 		return B_UNSUPPORTED;
 	}
 

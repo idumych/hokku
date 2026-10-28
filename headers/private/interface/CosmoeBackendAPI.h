@@ -130,6 +130,22 @@ status_t cosmoe_display_read_screen(cosmoe_display_t display, int32_t x,
 	int32_t y, int32_t width, int32_t height, void* bits, int32_t bytesPerRow);
 void cosmoe_display_set_port(cosmoe_display_t display, int32_t sender_port_id, int32_t receiver_port_id);
 
+// Window decorator for client-side frames. name is "Default" or a built-in
+// decorator such as "Gonx"; the colours and fonts come from the system's
+// settings. Applies to windows created afterwards.
+typedef struct cosmoe_decorator_style {
+	char name[64];
+	uint8_t tab[3];
+	uint8_t tab_inactive[3];
+	uint8_t text[3];
+	uint8_t text_inactive[3];
+	char title_font[128];		// Pango description, e.g. "Noto Sans Bold 11px"
+	char small_title_font[128];	// for floating windows
+} cosmoe_decorator_style;
+
+status_t cosmoe_display_set_decorator(cosmoe_display_t display,
+	const cosmoe_decorator_style* style);
+
 // Cursor management
 int32_t cosmoe_display_convert_cursor(int32_t beCursorID);
 int32_t cosmoe_display_create_custom_cursor(const uint8_t* bits,

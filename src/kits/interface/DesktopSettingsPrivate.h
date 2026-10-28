@@ -82,6 +82,8 @@ public:
 
 			status_t			SetControlLook(const char* path);
 			const BString&		ControlLook() const;
+			status_t			SetDecorator(const char* name);
+			const BString&		Decorator() const;
 
 private:
 			void				_SetDefaults();
@@ -106,6 +108,7 @@ private:
 			int32				fWorkspacesRows;
 			BMessage			fWorkspaceMessages[kMaxWorkspaces];
 			BString				fControlLook;
+			BString				fDecorator;
 
 			server_read_only_memory	fShared;
 };

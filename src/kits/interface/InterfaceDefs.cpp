@@ -81,6 +81,7 @@
 #include <input_event_codes_compat.h>
 #include <input_globals.h>
 #include <BackendInputState.h>
+#include <DecoratorPrivate.h>
 #include <InterfacePrivate.h>
 #include <MenuPrivate.h>
 #include <WidthBuffer.h>
@@ -1837,7 +1838,11 @@ namespace BPrivate {
 bool
 get_decorator(BString& path)
 {
-	path.SetTo("Built-in Cosmoe Decorator");
+	DesktopSettings settings;
+
+	path = settings.Decorator();
+	if (path.Length() == 0)
+		path = "Default";
 	return true;
 }
 
@@ -1850,7 +1855,80 @@ get_decorator(BString& path)
 status_t
 set_decorator(const BString& path)
 {
-	return B_UNSUPPORTED;
+	// The decorators are built into the backends: "Default" (the backend's
+	// own frame) and "Gonx".
+	BString name;
+	if (path.ICompare("Default") == 0)
+		name = "Default";
+	else if (path.ICompare("Gonx") == 0)
+		name = "Gonx";
+	else
+		return B_NAME_NOT_FOUND;
+
+	status_t status;
+	{
+		LockedDesktopSettings settings;
+		status = settings.SetDecorator(name.String());
+	}
+	if (status != B_OK)
+		return status;
+
+	// other applications pick it up when they start
+	if (be_app != NULL && be_app->Display() != NULL)
+		apply_decorator(be_app->Display());
+	return B_OK;
+}
+
+
+static void
+set_rgb(uint8_t out[3], rgb_color color)
+{
+	out[0] = color.red;
+	out[1] = color.green;
+	out[2] = color.blue;
+}
+
+
+//! A Pango font description of \a font, sized in pixels as on Haiku.
+static void
+describe_font(char* out, size_t size, const BFont& font)
+{
+	font_family family;
+	font_style style;
+	font.GetFamilyAndStyle(&family, &style);
+
+	// Pango doesn't know "Regular" as a style
+	const bool regular = strcasecmp(style, "Regular") == 0
+		|| strcasecmp(style, "Roman") == 0 || strcasecmp(style, "Book") == 0;
+	snprintf(out, size, "%s%s%s %gpx", family, regular ? "" : " ",
+		regular ? "" : style, font.Size());
+}
+
+
+status_t
+apply_decorator(void* display)
+{
+	if (display == NULL)
+		return B_BAD_VALUE;
+
+	BString name;
+	get_decorator(name);
+
+	cosmoe_decorator_style style;
+	memset(&style, 0, sizeof(style));
+	snprintf(style.name, sizeof(style.name), "%s", name.String());
+	set_rgb(style.tab, ui_color(B_WINDOW_TAB_COLOR));
+	set_rgb(style.tab_inactive, ui_color(B_WINDOW_INACTIVE_TAB_COLOR));
+	set_rgb(style.text, ui_color(B_WINDOW_TEXT_COLOR));
+	set_rgb(style.text_inactive, ui_color(B_WINDOW_INACTIVE_TEXT_COLOR));
+
+	// bold titles, plain on the small tabs of floating windows, as the
+	// app_server decorators do
+	describe_font(style.title_font, sizeof(style.title_font), *be_bold_font);
+	describe_font(style.small_title_font, sizeof(style.small_title_font),
+		*be_plain_font);
+
+	return cosmoe_display_set_decorator(display, &style);
 }
 
 

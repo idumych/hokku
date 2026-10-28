@@ -309,6 +309,10 @@ DesktopSettingsPrivate::_Load()
 				fControlLook = controlLook;
 			}
 
+			const char* decorator;
+			if (settings.FindString("decorator", &decorator) == B_OK)
+				fDecorator = decorator;
+
 			// colors
 			for (int32 i = 0; i < kColorWhichCount; i++) {
 				char colorName[12];
@@ -460,6 +464,7 @@ DesktopSettingsPrivate::Save(uint32 mask)
 			settings.AddInt32("min knob size", fScrollBarInfo.min_knob_size);
 
 			settings.AddString("control look", fControlLook);
+			settings.AddString("decorator", fDecorator);
 
 			for (int32 i = 0; i < kColorWhichCount; i++) {
 				char colorName[12];
@@ -759,6 +764,21 @@ DesktopSettingsPrivate::ControlLook() const
 }
 
 
+status_t
+DesktopSettingsPrivate::SetDecorator(const char* name)
+{
+	fDecorator = name;
+	return Save(kAppearanceSettings);
+}
+
+
+const BString&
+DesktopSettingsPrivate::Decorator() const
+{
+	return fDecorator;
+}
+
+
 void
 DesktopSettingsPrivate::_ValidateWorkspacesLayout(int32& columns,
 	int32& rows) const
@@ -904,6 +924,13 @@ DesktopSettings::ControlLook() const
 	return fSettings->ControlLook();
 }
 
+
+const BString&
+DesktopSettings::Decorator() const
+{
+	return fSettings->Decorator();
+}
+
 //	#pragma mark - write access
 
 
@@ -1015,5 +1042,12 @@ status_t
 LockedDesktopSettings::SetControlLook(const char* path)
 {
 	return fSettings->SetControlLook(path);
+}
+
+
+status_t
+LockedDesktopSettings::SetDecorator(const char* name)
+{
+	return fSettings->SetDecorator(name);
 }
 
