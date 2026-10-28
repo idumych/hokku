@@ -61,6 +61,13 @@ Tested in a Plasma 6 Wayland session (next to IVPN's and the CachyOS update noti
 icons), on X11 and on sway. The screenshots show a scripted test item, on sway with the
 Gonx look.
 
+The Deskbar menu has the desktop's applications too: **Linux applications** lists every
+`.desktop` file in the XDG data folders that the desktop itself would show (honouring
+`NoDisplay`, `Hidden`, `OnlyShowIn`/`NotShowIn` and `TryExec`, with your own files
+overriding the system's), in submenus by freedesktop main category, with their icons.
+Choosing one starts it through GIO as the desktop's launcher does. The list is read again
+when an applications folder changes.
+
 It needed four fixes in the kits, which every app gets:
 
 - **`BShelf` works again.** Cosmoe had replaced Haiku's `BShelf` with empty stubs
@@ -107,8 +114,9 @@ and an alert in the Gonx border.
 - **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
   draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
   Renku add-on; `setcontrollook` can choose it on its own.
-- **Deskbar.** The menu button shows a small Gonx tab with "Hokku" on it instead of the
-  Cosmoe rocket (`src/apps/deskbar/gonx-logo.py` draws it).
+- **Deskbar and About.** The Deskbar's menu button shows a small Gonx tab with "Hokku" on
+  it instead of the Cosmoe rocket, and AboutSystem shows it large
+  (`src/apps/deskbar/gonx-logo.py` draws it).
 - **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
   Hokku now keeps (see Desktop integration below). The fonts are Noto Sans at 9 and 11 points.
 
@@ -233,6 +241,13 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 
 ### Desktop integration
 
+- **The Deskbar menu is never empty.** It names its folder by an absolute path, so a moved
+  or staged install (an AppImage, say) and a run from the build folder got a menu with
+  nothing in it, not even About or Shutdown. A moved install now finds the menu beside
+  `menu_entries`, whose links to the apps are relative, and without one the menu shows its
+  standard items and your own Deskbar folder.
+- **About this system says Hokku**, with what Hokku adds, Cosmoe and Haiku credited, and
+  the Linux kernel's release where the kernel's build date was.
 - **Notifications without a shell.** `BNotification::Send()` ran `system("notify-send \"<title>\"
   \"<content>\"")`, so a title or content with quotes or `$(...)` (a chat line, a file name
   from the network) ran commands, and the window waited for `notify-send`. Both are now
