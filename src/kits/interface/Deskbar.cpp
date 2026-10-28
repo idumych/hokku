@@ -45,18 +45,15 @@ get_deskbar_frame(BRect* frame)
 	request.AddSpecifier("Frame");
 	request.AddSpecifier("Window", (int32)0);
 
-#if 0
-	// This hangs Tracker for some reason
-	BMessage reply;
-	result = deskbar.SendMessage(&request, &reply);
-	if (result == B_OK)
-		result = reply.FindRect("result", frame);
-#else
+	// This used to wait for the reply forever and hung Tracker (each app
+	// waiting on the other while starting, presumably): now a Deskbar that
+	// doesn't answer in time just gives no frame.
 	if (frame != NULL)
 		*frame = BRect();
-
-	result = B_ERROR;
-#endif
+	BMessage reply;
+	result = deskbar.SendMessage(&request, &reply, 500000, 500000);
+	if (result == B_OK && frame != NULL)
+		result = reply.FindRect("result", frame);
 
 	return result;
 }
