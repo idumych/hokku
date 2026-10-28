@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__linux__)
+#	include <sys/utsname.h>
+#endif
 
 #include <algorithm>
 #include <map>
@@ -61,6 +64,9 @@
 #include <WindowPrivate.h>
 
 #include <AppMisc.h>
+#include <DecoratorPrivate.h>
+#include <IconUtils.h>
+#include <InterfacePrivate.h>
 #include <AutoDeleter.h>
 #include <AutoDeleterPosix.h>
 #include <cpu_type.h>
@@ -428,6 +434,56 @@ AboutWindow::QuitRequested()
 //	#pragma mark - LogoView
 
 
+/*!	The Gonx look: its decorator or its control look, which gonx-theme sets
+	together.
+*/
+static bool
+gonx_look()
+{
+	BString decorator;
+	if (BPrivate::get_decorator(decorator) && decorator == "Gonx")
+		return true;
+
+	BString controlLook;
+	return BPrivate::get_control_look(controlLook)
+		&& controlLook.EndsWith("/GonxControlLook.so");
+}
+
+
+/*!	The Deskbar's Gonx menu button, a Gonx tab with "Hokku" on it, drawn
+	large: the tab is cut out of the vector icon, where it fills rows 41 to
+	58 of 100 and nearly the whole width.
+*/
+static BBitmap*
+gonx_logo()
+{
+	size_t size;
+	const void* data = be_app->AppResources()->LoadResource(
+		B_VECTOR_ICON_TYPE, "GonxLogo", &size);
+	if (data == NULL)
+		return NULL;
+
+	const float kSide = 224;
+	const float kMargin = 24;
+	BBitmap icon(BRect(0, 0, kSide - 1, kSide - 1), B_RGBA32);
+	if (icon.InitCheck() != B_OK
+		|| BIconUtils::GetVectorIcon((const uint8*)data, size, &icon) != B_OK)
+		return NULL;
+
+	BRect tab(floorf(kSide * 0.04f), floorf(kSide * 0.40f),
+		ceilf(kSide * 0.97f), ceilf(kSide * 0.59f));
+	BBitmap* logo = new BBitmap(
+		BRect(0, 0, tab.Width(), tab.Height() + 2 * kMargin), B_RGBA32);
+	if (logo->InitCheck() != B_OK) {
+		delete logo;
+		return NULL;
+	}
+	memset(logo->Bits(), 0, logo->BitsLength());
+	logo->ImportBits(&icon, tab.LeftTop(), BPoint(0, kMargin), tab.Size());
+	return logo;
+}
+
+
 LogoView::LogoView()
 	:
 	BView("logo", B_WILL_DRAW)
@@ -441,7 +497,10 @@ LogoView::LogoView()
 	else
 		fLogo = BTranslationUtils::GetBitmap(B_PNG_FORMAT, "logo_dark.png");
 #else
-	fLogo = BTranslationUtils::GetBitmap(B_PNG_FORMAT, "cosmoe-logo.png");
+	if (gonx_look())
+		fLogo = gonx_logo();
+	if (fLogo == NULL)
+		fLogo = BTranslationUtils::GetBitmap(B_PNG_FORMAT, "cosmoe-logo.png");
 #endif
 
 	// Set view color to panel background color when fLogo is NULL
@@ -487,7 +546,10 @@ LogoView::Draw(BRect updateRect)
 	SetLowColor(ui_color(B_DOCUMENT_BACKGROUND_COLOR));
 	FillRect(bounds, B_SOLID_LOW);
 
+	SetDrawingMode(B_OP_ALPHA);
+	SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
 	DrawBitmap(fLogo, BPoint((bounds.Width() - fLogo->Bounds().Width()) / 2, 0));
+	SetDrawingMode(B_OP_COPY);
 }
 
 
@@ -989,10 +1051,10 @@ SysInfoView::_GetOSVersion()
 	// add system revision to os version
 	const char* hrev = VERSION_NAME(COSMOE_VERSION);
 	if (hrev != NULL)
-		revision.SetToFormat(B_TRANSLATE_COMMENT("Cosmoe %s",
+		revision.SetToFormat(B_TRANSLATE_COMMENT("Hokku %s",
 			"Version: R1 or hrev99999"), hrev);
 	else
-		revision = B_TRANSLATE("Cosmoe");
+		revision = B_TRANSLATE("Hokku");
 
 	return revision;
 }
@@ -1151,6 +1213,14 @@ SysInfoView::_GetKernelDateTime(system_info* sysInfo)
 
 	BString buildDateTime;
 	buildDateTime << sysInfo->kernel_build_date << " " << sysInfo->kernel_build_time;
+#if defined(__linux__)
+	// Linux has no kernel build date here, only the release
+	struct utsname name;
+	if (uname(&name) == 0) {
+		kernelDateTime.SetToFormat("%s %s", name.sysname, name.release);
+		return kernelDateTime;
+	}
+#endif
 
 	time_t buildDateTimeStamp = parsedate(buildDateTime, -1);
 
@@ -1567,6 +1637,44 @@ AboutView::_CreateCreditsView()
 	if (year < 2008)
 		year = 2008;
 	BString text;
+
+	fCreditsView->SetFontAndColor(&font, B_FONT_ALL, &fHaikuGreenColor);
+	fCreditsView->Insert("Hokku\n");
+
+	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
+	fCreditsView->Insert(B_TRANSLATE("The Haiku API on Linux, built on "
+		"Cosmoe, for running Renku OS and Haiku apps as native Linux "
+		"programs.\n\n"));
+
+	BFont boldFont(be_bold_font);
+	fCreditsView->SetFontAndColor(&boldFont, B_FONT_ALL, &fTextColor);
+	fCreditsView->Insert(B_TRANSLATE("What Hokku adds:\n"));
+	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fTextColor);
+	const char* additions[] = {
+		B_TRANSLATE_MARK("Your desktop in the Deskbar: tray icons from KDE, "
+			"GTK, Qt and Electron apps, and the Linux applications menu"),
+		B_TRANSLATE_MARK("The Gonx look: window frames, controls, colours and "
+			"fonts from the BeOS concept"),
+		B_TRANSLATE_MARK("OpenGL through BGLView"),
+		B_TRANSLATE_MARK("Replicants and shelves that work"),
+		B_TRANSLATE_MARK("Drawing that follows Haiku's app_server"),
+		B_TRANSLATE_MARK("Wayland and X11 work, desktop integration (files, "
+			"links, notifications), node monitoring, networking"),
+	};
+	for (const char* addition : additions) {
+		fCreditsView->Insert("\xE2\x80\xA2 ");
+		fCreditsView->Insert(B_TRANSLATE_NOCOLLECT(addition));
+		fCreditsView->Insert("\n");
+	}
+	fCreditsView->Insert("\n");
+	fCreditsView->Insert(B_TRANSLATE("Made with AI assistance and tested "
+		"against real apps: Sheath, Folio, Gobe Productive, VLC Reborn and "
+		"LinShare.\n\n"));
+
+	fCreditsView->SetFontAndColor(be_plain_font, B_FONT_ALL, &fLinkColor);
+	fCreditsView->InsertHyperText(B_TRANSLATE("Visit Hokku on GitHub"),
+		new URLAction("https://github.com/idumych/hokku"));
+	fCreditsView->Insert("\n\n");
 
 	fCreditsView->SetFontAndColor(&font, B_FONT_ALL, &fHaikuGreenColor);
 	fCreditsView->Insert("Cosmoe\n");

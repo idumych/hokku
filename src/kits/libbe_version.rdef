@@ -7,8 +7,8 @@ resource app_version {
 
 	internal = 10,
 
-	short_info = "Cosmoe",
-	long_info = "©2001-2026 Haiku Inc., ©2001-2026 Bill Hayden"
+	short_info = "Hokku",
+	long_info = "©2001-2026 Haiku Inc., ©2001-2026 Bill Hayden, ©2026 Hokku contributors"
 };
 
 resource app_signature "application/x-vnd.Cosmoe-libbe" ;
