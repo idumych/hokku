@@ -4,6 +4,8 @@ Hokku is a fork of [Cosmoe](https://github.com/haydentech/cosmoe), the BeOS/Haik
 C++ library for Linux (X11 and Wayland), macOS and Windows. A *hokku* is the opening verse
 of a linked poem, the verse the haiku grew out of.
 
+![Hokku apps on sway with the Gonx look: Showcase's controls in front, an inactive StyledEdit window and a floating palette, on the Gonx desktop colour](docs/screenshots/gonx-theme.png)
+
 ## Why this fork exists
 
 - **AI-generated fixes have a home here.** Hokku incorporates fixes written with AI
@@ -22,169 +24,65 @@ Hokku follows upstream Cosmoe and merges its changes regularly. The library name
 and build (`meson`, `libbe.so` and friends) are unchanged, so anything that builds against
 Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
-## Changes from Cosmoe
+## Highlights
 
-- **Opening a menu doesn't read the menu bar unlocked.** To avoid a deadlock on Windows, a
-  menu bar unlocks its window while a menu opens, but opening the menu still read the menu
-  bar's position (`Bounds()`, `ConvertToScreen()`, `ScreenLocation()`) from the tracking
-  thread: a race, and a `debugger("Looper must be locked")` with a backtrace every time a
-  menu opened. Those reads now take the menu bar's window lock briefly.
-- **Quiet logs.** `system_beep()` wrote a terminal bell and `beep event "..." requested.` to
-  standard output for every event, and the resource reader printed `read_exactly: ...` and
-  `InitContainer: Caught Exception` when a file had no resources (a settings file opened
-  write-only, say), which Haiku handles silently. Both are gone.
-- **Notifications without a shell.** `BNotification::Send()` ran `system("notify-send \"<title>\"
-  \"<content>\"")`, so a title or content with quotes or `$(...)` (a chat line, a file name
-  from the network) ran commands, and the window waited for `notify-send`. Both are now
-  arguments to a detached `notify-send` (`osascript` on macOS), never seen by a shell.
-- **Pointer events don't walk an unlocked window.** The display thread looked up the view
-  under the pointer (for every motion, click, wheel and idle event) without the window's
-  lock, racing the window thread and calling `debugger("Looper must be locked")` on every
-  `BView::Bounds()`. It now takes the lock only if it is free; when the window is busy, the
-  window thread finds the view itself before dispatching. Waiting for the lock is still
-  avoided, so a modal `BAlert::Go()` can't deadlock against the display thread.
-- **`BRoster::Launch()` opens files, folders and URLs with the desktop.** Only Cosmoe apps
-  could be launched, so "open file", "show in folder" and clicked links did nothing. When no
-  Cosmoe app handles the document, URL (`application/x-vnd.Be.URL.*`, `text/x-email`) or the
-  `be:url`/refs of the launch message, it now runs `xdg-open`, detached, without the variables
-  an AppImage's AppRun set for the bundle.
-- **`debugger()` and the `<Debug.h>` helpers say something.** `debug_printf()` formatted its
-  text and threw it away, so `debugger()` calls (a locked-looper violation, say) were silent;
-  they now go to standard error, followed by a backtrace (Haiku would stop the app in its
-  debugger there). `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and `_setDebugFlag()`,
-  which Haiku declares and old Be code calls directly, exist now.
-- **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
-  screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
-  return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
-  of one past it.
-- **Node monitor code compiles unchanged.** Haiku code reads `msg->FindInt64("node", &ref.node)`
-  and `FindInt32("device", &ref.device)`; on Linux `ino_t` and `dev_t` are `unsigned long`, so
-  that didn't compile. `BMessage` now has those overloads. `BDirectory(const node_ref*)` and
-  `SetTo(const node_ref*)` exist too: they find the directory where `watch_node()` does (a
-  watch, or a `BNode`/`BEntry` the app has open).
-- **`BNetworkRoute` works on Linux.** `<NetworkRoute.h>` didn't compile (glibc has no
-  `route_entry`) and the class wasn't built, so apps asking for the default gateway (for
-  UPnP or NAT-PMP port mapping, say) didn't link. It now reads `/proc/net/route` and
-  `/proc/net/ipv6_route`; `GetDefaultRoute()`/`GetDefaultGateway()` return the default
-  route with the lowest metric, as the kernel uses. `BNetworkInterface` and
-  `BNetworkRoster` are still not there.
-- **Smaller AppImages: a build without the apps.** `-Denable_apps=false` leaves out
-  `src/apps` and `src/preferences` and installs only the catalogs of the libraries and
-  add-ons, so an app bundling Hokku doesn't carry Tracker, the preferences and the rest of
-  the bundled apps. The default is still to build everything.
-- **`BGLView` for OpenGL.** Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header
-  `<opengl/GLView.h>`, the same API as Haiku's): `LockGL()`, `UnlockGL()`, `SwapBuffers()`
-  and `GetGLProcAddress()`, from any thread, as on Haiku. It renders with EGL (Mesa's
-  surfaceless platform when there is one, otherwise the default display, so NVIDIA's driver
-  works too) into an off-screen buffer the size of the view; `SwapBuffers()` copies the frame
-  into a bitmap that the view draws, on X11 and Wayland alike. It's built when EGL and
-  `GL/gl.h` are found (Debian/Ubuntu: `libegl-dev libgl-dev`). `CopyPixelsIn()`/`Out()`,
-  overlays and `BGLScreen` aren't there yet. VLC Reborn's OpenGL video output uses it.
-- **Wayland: menus are placed by the compositor.** Wayland doesn't tell an app where its
-  windows are, and `BScreen` there covers one output, so `BMenu` moved pop-ups by a wrong
-  amount trying to keep them on screen: with two monitors, a `BMenuField`'s pop-up on one of
-  them opened far off to the side and was never seen. Menus now leave that to the
-  compositor, which may flip, slide and resize them, horizontally as well as vertically.
-- **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` now get every
-  pointer motion, in whatever window they live, as they do on Haiku. Tooltip windows rely on
-  this to close when the mouse moves; before, tooltips stayed on screen for good.
-- **Font styles chosen like Haiku.** Styles lighter than Book get `B_LIGHT_FACE`, Black and
-  Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
-  a face the canonical one wins. Before, every weight below Bold counted as regular and the
-  first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
-- **Underline and strikeout are drawn.** `B_UNDERSCORE_FACE` and `B_STRIKEOUT_FACE` stay in
-  the font's face and are drawn by `DrawString()`, so `BTextView` runs show them.
-- **`watch_node()` works.** It finds a path for the node (from an existing watch, or a node
-  or directory the app has open, as a `BEntry` or `BNode` does) and watches that. Node
-  monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
-  `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
-  fields. `name` is still a full path (see below).
-- **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
-  creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
-  (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
-- **Views moved by a layout are redrawn whole.** `Invalidate()` lists a view's children for
-  the update when it is called, but a layout pass could move them before the update ran: a
-  child that moved into the invalid area wasn't drawn, and one that moved within it only in
-  part. Windows that the window manager placed or sized differently from what they asked for
-  could show half-drawn buttons and remnants of earlier frames until resized. The update now
-  takes the children from their current frames.
-- **A resize can't leave a window's last drawing off screen.** Resizing recreates a window's
-  backing surface, dirty all over, without asking the backend to copy it; on X11 the backend's
-  own redraw for the resize could run first, with the old surface. The window then kept
-  showing its earlier content (a status line that had changed) until something else drew,
-  such as the mouse moving over it. The window now asks for a redraw when the surface changes.
-- **The text caret blinks under the backing-surface lock.** `InvertRect()`, which the caret
-  uses from `Pulse()` outside any update, drew into the window's backing surface without the
-  lock the backend holds while copying it to the screen, so a copy could catch the inversion
-  halfway. It now holds the lock while it draws and marks the area dirty.
-- **Wayland: no crash when a frameless window's view is replaced.** Destroying a window's
-  root widget (a frameless window's top view, such as an alert's) left the window's main
-  surface pointing at the freed widget, and a resize already queued for the window then used
-  it: the app crashed right after showing the window. The surface and the window now forget
-  the widget, and the places that use it check for none.
-- **Leaving a window is a `B_EXITED_VIEW`.** When the pointer leaves a window (X11
-  `LeaveNotify`, Wayland pointer leave), the view that was under it gets a `B_MOUSE_MOVED`
-  with `B_EXITED_VIEW`, as on Haiku, and no idle event follows. Before it heard nothing, so a
-  tooltip shown for it stayed on screen after the pointer had moved to another window.
-  (Tested on X11; the Wayland side hasn't been tried with a real pointer yet.)
-- **`B_OP_MIN` and `B_OP_MAX` compare brightness.** Like app_server, a pixel takes the
-  drawing's colour only where that is darker (MIN) or brighter (MAX) as a whole, judged by
-  brightness. Cairo's DARKEN and LIGHTEN, used before, compare each channel on its own, so a
-  gray wash over a red icon (how many BeOS apps grey out a disabled button) gave pink.
-- **Lines, rects and polygons sit on the pixels app_server uses.** Unless a view is
-  `B_SUBPIXEL_PRECISE`, coordinates are rounded down to whole pixels; an even pen size is
-  centred on the pixel edge, so a line of pen size 2 covers two whole rows instead of a
-  blurred three; lines thicker than 1 get the butt caps they ask for; and the points of a
-  filled polygon are pixel corners. Triangles, filled or not, go through pixel centers, as
-  in app_server.
-- **Patterns leave their low color out in `B_OP_OVER`.** A pattern's transparent pixels were
-  stored with their color but no alpha, which Cairo (premultiplied) adds to what's
-  underneath: a stipple filled over text painted the low color (often the 0x777477 of
-  `B_TRANSPARENT_32_BIT`) between its dots. The pattern's pixels are now premultiplied.
-- **8-bit and 32-bit bitmaps are transparent where Haiku's are.** Outside `B_OP_COPY`,
-  `B_TRANSPARENT_MAGIC_CMAP8` pixels of a `B_CMAP8` bitmap and `B_TRANSPARENT_MAGIC_RGBA32`
-  pixels of a `B_RGB32` bitmap are left out, and `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha
-  bytes. Before, icons drawn with `B_OP_OVER` showed a white box where they should be clear.
-- **A view bitmap's `Bits()` and its views' drawing stay in step.** On Haiku they are the same
-  memory; here a `B_BITMAP_ACCEPTS_VIEWS` bitmap's views draw into a separate surface. Every
-  `Bits()` call copied that surface over the bits, and `DrawBitmap()` drew the surface, so
-  pixels an app wrote through `Bits()` (a fill, a pasted image, a freshly cleared canvas) were
-  lost unless it locked the bitmap in between. The bitmap now tracks which copy changed: the
-  bits go to the surface on `Lock()` or before the bitmap is drawn, and come back only if the
-  views may have drawn. Test: `src/tests/kits/interface/bbitmap/BitmapBitsSyncTest`.
-- **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
-  last. A user translator now hides the system one of the same name instead of both loading.
-  If no translator loads at all, the directories searched are printed to stderr.
-  `BDirectory::GetNextRef()` reports errors and fills in the parent directory's device and
-  node, like `BEntry::GetRef()`.
-- **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
-  node). File panel titles and Open With show the leaf name. In app code, use
-  `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
-- **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
-  `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
-  the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
-  an app started. Colours and the desktop colour are now saved with the appearance settings
-  and fonts with the font settings, and apps started afterwards use them (running apps keep
-  theirs until restarted). A dark control look still brings its own colours.
-  `_set_system_font_()`, the private call Appearance and theme tools use on Haiku, exists.
-  Apps no longer print `ControlLook add-on loaded from ...` when they start.
-- **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
-  `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
-  finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
-  `/usr/local/lib`.
+### The desktop's tray icons, in the Deskbar
 
-- **The desktop's tray icons in the Deskbar.** `TrayBridge` (`src/apps/traybridge`) is a StatusNotifierWatcher and host on the session bus, like the Plasma and Xfce panels, and puts each tray icon in the Deskbar tray as a `TrayBridgeItem` replicant: KStatusNotifierItem, libappindicator/libayatana-appindicator, Qt and Electron tray icons (IVPN, Signal, Slack, Nextcloud...). Clicks, middle clicks, the wheel and the right-click menu (com.canonical.dbusmenu, with checkmarks, radio items, submenus and icons) go back to the app; icon, attention, overlay, tooltip and status changes come in live, and Passive items are hidden as Plasma hides them (`HOKKU_TRAY_SHOW_PASSIVE=1` shows them). Icons are looked up in the user's icon theme (KDE, GNOME or GTK setting, or `HOKKU_ICON_THEME`), PNG through cairo and SVG through librsvg when it's installed. Legacy XEmbed icons come through `xembedsniproxy` or `snixembed`, which TrayBridge starts when it finds one (`HOKKU_TRAY_XEMBED=0` to skip). Deskbar starts TrayBridge on Linux unless `HOKKU_TRAYBRIDGE=0`; if another watcher is already running, TrayBridge registers with it as a host instead. Deskbar is linked with `--export-dynamic` so `instantiate_object()` finds `TrayBridgeItem::Instantiate()` in it, and `AddIcon()` accepts a replicant whose add-on can't be found when Deskbar has the class itself. A restarted Deskbar tells the running TrayBridge to add its icons again. Tested with a scripted StatusNotifierItem under X11 (Xvfb), Wayland (headless sway) and a Plasma 6 Wayland session (through kded6's watcher, alongside IVPN's and cachy-update's icons): clicks, the wheel, menu choices including submenus, and dismissals (dbusmenu "clicked", "closed") all reach the app. In Plasma a menu closes when you click elsewhere; under sway it doesn't, since Cosmoe's menus don't take an xdg_popup grab.
+On Linux, Deskbar shows the tray icons of the desktop's other apps, as the Plasma and Xfce
+panels do: KDE and Qt apps, GTK apps using libappindicator or libayatana-appindicator,
+Electron apps (Signal, Slack...), VPN clients, update notifiers. Deskbar starts `TrayBridge`
+(`src/apps/traybridge`), a StatusNotifierItem host, which puts each icon in the tray as a
+replicant.
 
-- **`BShelf` works again, so Deskbar's tray holds replicants.** Cosmoe had replaced Haiku's `BShelf` with empty stubs (`AddReplicant()` always failed), apparently because its `<AutoLock.h>` include collides with `<Autolock.h>` on macOS's case-insensitive file system. Haiku's implementation is back, using `<AutoLocker.h>`. Along with it: `BView::RemoveChild()` repaints the area the view leaves (there's no app_server to do it), `BRoster::GetAppInfo()` and `IsRunning()` find running apps without windows through their registered messengers, `BMessenger::IsValid()` is true for a messenger into another running app (ports are per process), and `BDeskbar::AddItem()` returns Deskbar's error instead of `B_NAME_NOT_FOUND`.
+![Deskbar's tray on sway with the Gonx look: three tray icons and the tooltip of the mail icon](docs/screenshots/deskbar-tray-tooltip.png)
 
-## Gonx look
+![The mail icon's menu, sent by the app over D-Bus: icons, a checkmark, a disabled entry and a submenu of radio items](docs/screenshots/deskbar-menu.png)
+
+- **Clicks go back to the app.** A click activates it, a middle click is its secondary
+  action, the wheel scrolls (a volume icon's, say), and a right click opens the app's own
+  menu (`com.canonical.dbusmenu`) with its icons, checkmarks, radio items, submenus and
+  disabled entries. The app hears when the menu opens and closes, with a choice or without.
+- **Changes come in live:** icon, attention, overlay, tooltip and status. Passive icons are
+  hidden, as Plasma hides them; `HOKKU_TRAY_SHOW_PASSIVE=1` shows them.
+- **Icons look like the desktop's.** They come from the app's pixmaps or from the icon
+  theme: KDE's, GNOME's or GTK's setting, Breeze in a Plasma session that hasn't changed
+  it, or `HOKKU_ICON_THEME`. SVG icons are drawn with librsvg when it's installed, and KDE's
+  symbolic icons take the system colours, as Plasma gives them its own.
+- **It works next to another panel.** On a desktop that already has a tray (Plasma, Xfce),
+  TrayBridge registers with that desktop's StatusNotifierWatcher as one more host, so the
+  icons are in both trays. Elsewhere it is the watcher.
+- **Old XEmbed icons** (Wine, older GTK 2 and Java apps) come through `xembedsniproxy` or
+  `snixembed` when one is installed (`HOKKU_TRAY_XEMBED=0` to skip).
+- **Starting and restarting.** Deskbar starts TrayBridge unless `HOKKU_TRAYBRIDGE=0`. A
+  Deskbar started again finds TrayBridge still running, and it adds its icons to the new
+  tray.
+
+Tested in a Plasma 6 Wayland session (next to IVPN's and the CachyOS update notifier's
+icons), on X11 and on sway. The screenshots show a scripted test item, on sway with the
+Gonx look.
+
+It needed four fixes in the kits, which every app gets:
+
+- **`BShelf` works again.** Cosmoe had replaced Haiku's `BShelf` with empty stubs
+  (`AddReplicant()` always failed), so no shelf, the Deskbar's tray included, could hold a
+  replicant; the likely reason was that its `<AutoLock.h>` collides with `<Autolock.h>` on
+  macOS's case-insensitive file system. Haiku's implementation is back, using
+  `<AutoLocker.h>`.
+- **A removed view is repainted over.** With no app_server, nothing redrew the area a view
+  left when it was removed, so it stayed on screen; `BView::RemoveChild()` now invalidates
+  it.
+- **Apps without windows are seen.** `BRoster::GetAppInfo()` and `IsRunning()` find a
+  running app that has no window through the messenger every app registers, and
+  `BMessenger::IsValid()` is true for a messenger into another running app (ports are per
+  process here).
+- **`BDeskbar::AddItem()` returns Deskbar's error** instead of `B_NAME_NOT_FOUND`.
+
+### The Gonx look
 
 Hokku can take on the whole [Gonx](https://github.com/idumych/gonx) look, the BeOS concept
 theme made for Renku OS: its window frame, its controls, and its colours, fonts and desktop
 colour. Run `gonx-theme apply` to switch to it and `gonx-theme revert` to go back to what was
 there before; apps started afterwards use it.
-
-![Hokku apps on sway with the Gonx look: Showcase's controls in front, an inactive StyledEdit window and a floating palette, on the Gonx desktop colour](docs/screenshots/gonx-theme.png)
 
 The same apps before and after `gonx-theme apply` (left: Hokku's own look, with sway's title
 bars; right: Gonx):
@@ -210,18 +108,20 @@ and an alert in the Gonx border.
   draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
   Renku add-on; `setcontrollook` can choose it on its own.
 - **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
-  Hokku now keeps (see the changes above). The fonts are Noto Sans at 9 and 11 points.
+  Hokku now keeps (see Desktop integration below). The fonts are Noto Sans at 9 and 11 points.
 
-## Using it
+### OpenGL with `BGLView`
 
-Build it exactly like Cosmoe (below). The app templates in
-[beos-app-platforms](https://github.com/idumych/beos-app-platforms) build their AppImages
-(x86_64 and aarch64) against Hokku's `hokku` branch by default; an app's `haiku-app.env` can
-point `COSMOE_REPO` and `COSMOE_TAG` at another fork or tag. CI caches the build by the commit
-the branch points at, so a new Hokku commit is picked up on the next build.
-To bundle Hokku with one app, configure it without the apps
-(`meson setup builddir -Denable_apps=false`, or `meson configure builddir -Denable_apps=false`
-on an existing build directory).
+Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header `<opengl/GLView.h>`, the same
+API as Haiku's): `LockGL()`, `UnlockGL()`, `SwapBuffers()` and `GetGLProcAddress()`, from
+any thread, as on Haiku. It renders with EGL (Mesa's surfaceless platform when there is one,
+otherwise the default display, so NVIDIA's driver works too) into an off-screen buffer the
+size of the view; `SwapBuffers()` copies the frame into a bitmap that the view draws, on X11
+and Wayland alike. It's built when EGL and `GL/gl.h` are found (Debian/Ubuntu: `libegl-dev
+libgl-dev`). `CopyPixelsIn()`/`Out()`, overlays and `BGLScreen` aren't there yet. VLC
+Reborn's OpenGL video output uses it.
+
+### Apps built on Hokku
 
 Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare as HiShare):
 
@@ -229,7 +129,7 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 - [Folio](https://github.com/idumych/folio), a notebook with wiki links that follow renames.
 - [Gobe Productive](https://github.com/idumych/gobe-productive), the BeOS office suite
   ported from the original (a preview of its word processor). It is the largest so far,
-  and found the Wayland crash listed above: an alert as an app's first window.
+  and found the Wayland crash listed below: an alert as an app's first window.
 - [VLC Reborn](https://github.com/idumych/vlc-reborn), VLC media player with its BeOS
   interface back. It brought `BGLView` (for its OpenGL video output) and found the Wayland
   menu placement bug.
@@ -240,225 +140,284 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   helpers, and found the shell injection in notifications and the unlocked view lookups on
   the display thread (once `debugger()` printed).
 
-**Problems** found with Hokku are fixed here, as new commits on `hokku` listed above, with
-the smallest program that shows the bug used to test the fix. Please don't report them to
-upstream Cosmoe: it doesn't take AI-assisted work, and the bug may be one Hokku introduced
-or already fixed.
+## All changes from Cosmoe
 
----
+### Drawing
 
-*Upstream Cosmoe's README follows.*
+- **Font styles chosen like Haiku.** Styles lighter than Book get `B_LIGHT_FACE`, Black and
+  Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
+  a face the canonical one wins. Before, every weight below Bold counted as regular and the
+  first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
+- **Underline and strikeout are drawn.** `B_UNDERSCORE_FACE` and `B_STRIKEOUT_FACE` stay in
+  the font's face and are drawn by `DrawString()`, so `BTextView` runs show them.
+- **Views moved by a layout are redrawn whole.** `Invalidate()` lists a view's children for
+  the update when it is called, but a layout pass could move them before the update ran: a
+  child that moved into the invalid area wasn't drawn, and one that moved within it only in
+  part. Windows that the window manager placed or sized differently from what they asked for
+  could show half-drawn buttons and remnants of earlier frames until resized. The update now
+  takes the children from their current frames.
+- **A resize can't leave a window's last drawing off screen.** Resizing recreates a window's
+  backing surface, dirty all over, without asking the backend to copy it; on X11 the backend's
+  own redraw for the resize could run first, with the old surface. The window then kept
+  showing its earlier content (a status line that had changed) until something else drew,
+  such as the mouse moving over it. The window now asks for a redraw when the surface changes.
+- **The text caret blinks under the backing-surface lock.** `InvertRect()`, which the caret
+  uses from `Pulse()` outside any update, drew into the window's backing surface without the
+  lock the backend holds while copying it to the screen, so a copy could catch the inversion
+  halfway. It now holds the lock while it draws and marks the area dirty.
+- **`B_OP_MIN` and `B_OP_MAX` compare brightness.** Like app_server, a pixel takes the
+  drawing's colour only where that is darker (MIN) or brighter (MAX) as a whole, judged by
+  brightness. Cairo's DARKEN and LIGHTEN, used before, compare each channel on its own, so a
+  gray wash over a red icon (how many BeOS apps grey out a disabled button) gave pink.
+- **Lines, rects and polygons sit on the pixels app_server uses.** Unless a view is
+  `B_SUBPIXEL_PRECISE`, coordinates are rounded down to whole pixels; an even pen size is
+  centred on the pixel edge, so a line of pen size 2 covers two whole rows instead of a
+  blurred three; lines thicker than 1 get the butt caps they ask for; and the points of a
+  filled polygon are pixel corners. Triangles, filled or not, go through pixel centers, as
+  in app_server.
+- **Patterns leave their low color out in `B_OP_OVER`.** A pattern's transparent pixels were
+  stored with their color but no alpha, which Cairo (premultiplied) adds to what's
+  underneath: a stipple filled over text painted the low color (often the 0x777477 of
+  `B_TRANSPARENT_32_BIT`) between its dots. The pattern's pixels are now premultiplied.
+- **8-bit and 32-bit bitmaps are transparent where Haiku's are.** Outside `B_OP_COPY`,
+  `B_TRANSPARENT_MAGIC_CMAP8` pixels of a `B_CMAP8` bitmap and `B_TRANSPARENT_MAGIC_RGBA32`
+  pixels of a `B_RGB32` bitmap are left out, and `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha
+  bytes. Before, icons drawn with `B_OP_OVER` showed a white box where they should be clear.
+- **A view bitmap's `Bits()` and its views' drawing stay in step.** On Haiku they are the same
+  memory; here a `B_BITMAP_ACCEPTS_VIEWS` bitmap's views draw into a separate surface. Every
+  `Bits()` call copied that surface over the bits, and `DrawBitmap()` drew the surface, so
+  pixels an app wrote through `Bits()` (a fill, a pasted image, a freshly cleared canvas) were
+  lost unless it locked the bitmap in between. The bitmap now tracks which copy changed: the
+  bits go to the surface on `Lock()` or before the bitmap is drawn, and come back only if the
+  views may have drawn. Test: `src/tests/kits/interface/bbitmap/BitmapBitsSyncTest`.
 
-Welcome to Cosmoe!
-https://www.cosmoe.org
+### Windows, menus and input
 
-Questions?  Suggestions?  Want to contribute?
-[Join our Discord!](https://discord.gg/9ggmcsJaW)
+- **Opening a menu doesn't read the menu bar unlocked.** To avoid a deadlock on Windows, a
+  menu bar unlocks its window while a menu opens, but opening the menu still read the menu
+  bar's position (`Bounds()`, `ConvertToScreen()`, `ScreenLocation()`) from the tracking
+  thread: a race, and a `debugger("Looper must be locked")` with a backtrace every time a
+  menu opened. Those reads now take the menu bar's window lock briefly.
+- **Pointer events don't walk an unlocked window.** The display thread looked up the view
+  under the pointer (for every motion, click, wheel and idle event) without the window's
+  lock, racing the window thread and calling `debugger("Looper must be locked")` on every
+  `BView::Bounds()`. It now takes the lock only if it is free; when the window is busy, the
+  window thread finds the view itself before dispatching. Waiting for the lock is still
+  avoided, so a modal `BAlert::Go()` can't deadlock against the display thread.
+- **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` now get every
+  pointer motion, in whatever window they live, as they do on Haiku. Tooltip windows rely on
+  this to close when the mouse moves; before, tooltips stayed on screen for good.
+- **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
+  creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
+  (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
+- **Leaving a window is a `B_EXITED_VIEW`.** When the pointer leaves a window (X11
+  `LeaveNotify`, Wayland pointer leave), the view that was under it gets a `B_MOUSE_MOVED`
+  with `B_EXITED_VIEW`, as on Haiku, and no idle event follows. Before it heard nothing, so a
+  tooltip shown for it stayed on screen after the pointer had moved to another window.
+  (Tested on X11; the Wayland side hasn't been tried with a real pointer yet.)
 
-WHAT IS COSMOE
---------------
-Cosmoe is a C++ library that allows developers to build rich, easy-to-code apps using
-the elegant BeOS API.  You can target Linux (both X11 & Wayland), MacOS, Windows, and
-Haiku with one codebase.  When targeting MacOS, you can choose a Mac-native menubar or
-Cosmoe-native in-window menus with a simple compile-time flag.
+### Wayland
 
-Cosmoe descends from the Haiku operating system, which itself is an open-source
-re-implementation of BeOS.  Whereas Haiku is a standalone operating system, Cosmoe
-is a class library that runs on all major operating systems and windowing engines.
+- **Wayland: menus are placed by the compositor.** Wayland doesn't tell an app where its
+  windows are, and `BScreen` there covers one output, so `BMenu` moved pop-ups by a wrong
+  amount trying to keep them on screen: with two monitors, a `BMenuField`'s pop-up on one of
+  them opened far off to the side and was never seen. Menus now leave that to the
+  compositor, which may flip, slide and resize them, horizontally as well as vertically.
+- **Wayland: no crash when a frameless window's view is replaced.** Destroying a window's
+  root widget (a frameless window's top view, such as an alert's) left the window's main
+  surface pointing at the freed widget, and a resize already queued for the window then used
+  it: the app crashed right after showing the window. The surface and the window now forget
+  the widget, and the places that use it check for none.
 
-This project is beta-level software, but is rapidly approaching maturity.
-Come join in the project and make it great!
+### Desktop integration
 
+- **Notifications without a shell.** `BNotification::Send()` ran `system("notify-send \"<title>\"
+  \"<content>\"")`, so a title or content with quotes or `$(...)` (a chat line, a file name
+  from the network) ran commands, and the window waited for `notify-send`. Both are now
+  arguments to a detached `notify-send` (`osascript` on macOS), never seen by a shell.
+- **`BRoster::Launch()` opens files, folders and URLs with the desktop.** Only Cosmoe apps
+  could be launched, so "open file", "show in folder" and clicked links did nothing. When no
+  Cosmoe app handles the document, URL (`application/x-vnd.Be.URL.*`, `text/x-email`) or the
+  `be:url`/refs of the launch message, it now runs `xdg-open`, detached, without the variables
+  an AppImage's AppRun set for the bundle.
+- **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
+  screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
+  return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
+  of one past it.
+- **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
+  `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
+  the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
+  an app started. Colours and the desktop colour are now saved with the appearance settings
+  and fonts with the font settings, and apps started afterwards use them (running apps keep
+  theirs until restarted). A dark control look still brings its own colours.
+  `_set_system_font_()`, the private call Appearance and theme tools use on Haiku, exists.
+  Apps no longer print `ControlLook add-on loaded from ...` when they start.
 
-PREREQUISITES
--------------
-Your system must have the following installed:
+### Files, storage and network
 
-**Required:**
- - gcc or clang compilers
- - meson and ninja
- - bison and flex
- - libpng, libicu, libfreetype, libpango, libfontconfig, libglib development headers/libraries
- - For Linux: libwayland, libpixman, libxkbcommon, libxkbcommon-x11 and associated headers
+- **Node monitor code compiles unchanged.** Haiku code reads `msg->FindInt64("node", &ref.node)`
+  and `FindInt32("device", &ref.device)`; on Linux `ino_t` and `dev_t` are `unsigned long`, so
+  that didn't compile. `BMessage` now has those overloads. `BDirectory(const node_ref*)` and
+  `SetTo(const node_ref*)` exist too: they find the directory where `watch_node()` does (a
+  watch, or a `BNode`/`BEntry` the app has open).
+- **`watch_node()` works.** It finds a path for the node (from an existing watch, or a node
+  or directory the app has open, as a `BEntry` or `BNode` does) and watches that. Node
+  monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
+  `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
+  fields. `name` is still a full path (see below).
+- **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
+  node). File panel titles and Open With show the leaf name. In app code, use
+  `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
+- **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
+  last. A user translator now hides the system one of the same name instead of both loading.
+  If no translator loads at all, the directories searched are printed to stderr.
+  `BDirectory::GetNextRef()` reports errors and fills in the parent directory's device and
+  node, like `BEntry::GetRef()`.
+- **`BNetworkRoute` works on Linux.** `<NetworkRoute.h>` didn't compile (glibc has no
+  `route_entry`) and the class wasn't built, so apps asking for the default gateway (for
+  UPnP or NAT-PMP port mapping, say) didn't link. It now reads `/proc/net/route` and
+  `/proc/net/ipv6_route`; `GetDefaultRoute()`/`GetDefaultGateway()` return the default
+  route with the lowest metric, as the kernel uses. `BNetworkInterface` and
+  `BNetworkRoster` are still not there.
 
-**Optional, but recommended (for image format support):**
- - libjpeg (Linux) or jpeg-turbo (Mac)
- - libwebp
- - libtiff
- - libraw
- - libicns
- - If these are not installed, the jpeg, webp, tiff, raw, or icns image translators won't be available
+### Logs and debugging
 
-Cosmoe has been compiled and successfully tested under the following operating systems:
- - Ubuntu 24.04 and 26.04
- - Arch Linux
- - Fedora Core 40 through 44
- - macOS 14 and 15
- - WINE 9.0
- - Windows 11
+- **Quiet logs.** `system_beep()` wrote a terminal bell and `beep event "..." requested.` to
+  standard output for every event, and the resource reader printed `read_exactly: ...` and
+  `InitContainer: Caught Exception` when a file had no resources (a settings file opened
+  write-only, say), which Haiku handles silently. Both are gone.
+- **`debugger()` and the `<Debug.h>` helpers say something.** `debug_printf()` formatted its
+  text and threw it away, so `debugger()` calls (a locked-looper violation, say) were silent;
+  they now go to standard error, followed by a backtrace (Haiku would stop the app in its
+  debugger there). `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and `_setDebugFlag()`,
+  which Haiku declares and old Be code calls directly, exist now.
 
-### Linux Prerequisites
+### Build and install
 
-On Ubuntu/Debian systems, all prerequisites can be installed with:
+- **Smaller AppImages: a build without the apps.** `-Denable_apps=false` leaves out
+  `src/apps` and `src/preferences` and installs only the catalogs of the libraries and
+  add-ons, so an app bundling Hokku doesn't carry Tracker, the preferences and the rest of
+  the bundled apps. The default is still to build everything.
+- **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
+  `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
+  finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
+  `/usr/local/lib`.
+
+## Building
+
+Hokku's changes are made and tested on Linux. The macOS and Windows builds are upstream
+Cosmoe's; the steps below are upstream's, and Hokku isn't tried on those systems.
+
+### Linux
+
+You need gcc or clang, meson and ninja, bison and flex, and the development files of
+libpng, ICU, FreeType, Pango, fontconfig, GLib, Wayland, pixman, xkbcommon (with its X11
+part) and cairo. libjpeg, libwebp, libtiff, libraw and libicns are optional; without them
+the matching image translators aren't built. For SVG tray icons add librsvg, and for
+`BGLView` EGL and the OpenGL headers.
+
+Ubuntu and Debian:
 
 ```bash
-sudo apt install gcc g++ flex bison libpng-dev libjpeg-dev libwebp-dev libtiff-dev libraw-dev libicns-dev libicu-dev libfreetype6-dev libpango1.0-dev libpixman-1-dev libxkbcommon-dev libwayland-dev pkg-config meson libxkbcommon-x11-dev libxcursor-dev libxrandr-dev libfuse3-dev libx11-xcb-dev
+sudo apt install gcc g++ flex bison libpng-dev libjpeg-dev libwebp-dev libtiff-dev libraw-dev libicns-dev libicu-dev libfreetype6-dev libpango1.0-dev libpixman-1-dev libxkbcommon-dev libwayland-dev pkg-config meson libxkbcommon-x11-dev libxcursor-dev libxrandr-dev libfuse3-dev libx11-xcb-dev librsvg2-dev libegl-dev libgl-dev
 ```
 
-Under Fedora/Redhat, all prerequisites can be installed with:
+Fedora:
 
 ```bash
-sudo dnf install gcc g++ flex bison libpng-devel libjpeg-devel libwebp-devel libtiff-devel libraw-devel libicns-devel libicu-devel freetype-devel pango-devel libxkbcommon-devel wayland-devel meson libxkbcommon-x11-devel libXcursor-devel libXrandr-devel fuse3-devel libX11-devel
+sudo dnf install gcc g++ flex bison libpng-devel libjpeg-devel libwebp-devel libtiff-devel libraw-devel libicns-devel libicu-devel freetype-devel pango-devel libxkbcommon-devel wayland-devel meson libxkbcommon-x11-devel libXcursor-devel libXrandr-devel fuse3-devel libX11-devel librsvg2-devel mesa-libEGL-devel mesa-libGL-devel
 ```
 
-Under Arch Linux, all prerequisites can be installed with:
+Arch Linux:
+
 ```bash
-sudo pacman -S python meson pkg-config libwebp libtiff libraw libicns gcc binutils make flex bison
+sudo pacman -S python meson pkg-config libwebp libtiff libraw libicns gcc binutils make flex bison librsvg
 ```
 
-### macOS Prerequisites
-
-On macOS, install prerequisites using [Homebrew](https://brew.sh/):
+Then:
 
 ```bash
-# Install Xcode Command Line Tools (if not already installed)
-xcode-select --install
+make
+make install
+```
 
-# Install Homebrew (if not already installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+The build goes into `builddir`, and programs are installed to `/usr/local/bin`. To bundle
+Hokku with one app, leave the apps out (`meson setup builddir -Denable_apps=false`, or
+`meson configure builddir -Denable_apps=false` on an existing build directory).
 
-# Install build dependencies
+For the tray, `xembedsniproxy` (part of Plasma) or `snixembed` brings in XEmbed icons; both
+are optional.
+
+### macOS
+
+Install the Xcode command line tools (`xcode-select --install`) and
+[Homebrew](https://brew.sh/), then:
+
+```bash
 brew install meson ninja pkg-config cairo pango libpng jpeg-turbo webp icu4c freetype fontconfig glib
-```
-
-### Windows Prerequisites
-
-The Windows version is cross-compiled on Linux or WSL using MinGW64 MXE, and can
-run in Windows or WINE.
-
-1. In WSL, install prerequisites and link python
-
-```bash
-sudo apt install automake autoconf libtool ruby unzip lzip gperf autopoint 7zip intltool libtool-bin python3-mako libssl-dev libpcre2-dev
-sudo ln -s /usr/bin/python3 /usr/local/bin/python
-```
-
-2. Clone MXE:
-
-```bash
-git clone https://github.com/mxe/mxe.git ~/mxe
-```
-
-3. Build required MXE packages:
-
-```bash
-cd ~/mxe
-make MXE_TARGETS=x86_64-w64-mingw32.shared \
-     gcc cairo pango fontconfig freetype icu4c libpng jpeg libwebp
-```
-
-
-LINUX BUILD
------------
-Cosmoe is built and installed with a standard...
-```bash
-make
-make install
-``` 
-
-The build objects are placed in "builddir" if you need them.
-
-Programs are installed to `/usr/local/bin`.
-
-
-MAC BUILD
----------
-
-The Mac build and install is also performed with ```make``` and ```make install```.
-
-Since the build requires a case-sensitive volume, ```make``` creates a suitable disk image and
-does the compilation there.  You may notice this volume mounted in the Finder.
-
-Command-line programs are installed to `/usr/local/bin` and graphical programs are installed to
-`/usr/local/Applications`.  Fonts are installed to `~/Library/Fonts/Cosmoe`.
-
-
-WINDOWS BUILD
--------------
-
-The Windows build is a bit more involved.  It is cross-compiled in WSL or Linux using [MXE (M cross environment)](https://mxe.cc/).
-
-You need an installed Linux build on the build machine first, since that provides some needed build tools.
-After that you can build the Windows version:
-
-```bash
 make
 make install
 ```
 
-Edit Cosmoe's cross-compilation file `cross-mxe.ini` to ensure it accurately represents your MXE paths
+The build needs a case-sensitive volume, so `make` creates a disk image and builds there
+(you may see it mounted in the Finder). Command-line programs go to `/usr/local/bin`,
+graphical programs to `/usr/local/Applications` and fonts to `~/Library/Fonts/Cosmoe`.
 
-```bash
-make windows
-```
+### Windows
 
-On Windows, apps are not installed yet, and the exe's and dll's must be collected
-into a test folder after building:
-```bash
-./collect-windows-binaries.sh
-```
+The Windows version is cross-compiled on Linux or WSL with
+[MXE](https://mxe.cc/), and runs on Windows or under Wine.
 
-RUNNING COSMOE APPS
--------------------
-Apps may be started from the commandline or double-clicked in your desktop environment.
+1. Install MXE's prerequisites (in WSL, also link `python`):
 
-Several sample Cosmoe apps are built by this distribution, including:
-- Showcase
-- AboutSystem
-- Terminal
-- StyledEdit
-- Mandelbrot
-- FontDemo
-- Gradients
-- Deskbar
-- Clock
-- Pulse
-- ShowImage
-- DeskCalc
-- Pairs
-- DriveUsage
-- CharacterMap
-- Icon-O-Matic
-- Sudoku
-- Tracker
+   ```bash
+   sudo apt install automake autoconf libtool ruby unzip lzip gperf autopoint 7zip intltool libtool-bin python3-mako libssl-dev libpcre2-dev
+   sudo ln -s /usr/bin/python3 /usr/local/bin/python
+   ```
 
-Note that not all of them work perfectly at the moment.  I've listed them roughly
-in the order of their stability and conformance to their behavior on Haiku.
-Showcase (formerly Guido) is my testbed for implementing new BeOS API
-functionality, so it's by far the best example of what Cosmoe can accomplish
-as a UI library.
+2. Get MXE and build the packages Hokku needs:
 
-You can even try out Cosmoe as a complete desktop (as shown in the image at the
-top)...  Make sure you have labwc installed, then run ./start_cosmoe_desktop.sh
+   ```bash
+   git clone https://github.com/mxe/mxe.git ~/mxe
+   cd ~/mxe
+   make MXE_TARGETS=x86_64-w64-mingw32.shared \
+        gcc cairo pango fontconfig freetype icu4c libpng jpeg libwebp
+   ```
 
+3. Build and install the Linux version first (`make`, `make install`): it provides some of
+   the build tools.
+4. Check that `cross-mxe.ini` has your MXE paths, then run `make windows`.
+5. Apps aren't installed on Windows yet: `./collect-windows-binaries.sh` gathers the
+   executables and DLLs into a test folder.
 
-PROBLEMS
---------
-Cosmoe is a work in progress.  If Cosmoe fails to compile for you, or
-an app crashes or displays incorrect behavior, please file an issue at gitlab.
+## Running the apps
 
-Please see the TODO file for a list of issues and possible workarounds.
+Apps start from the command line or from your desktop's launcher. The build includes
+Showcase (the testbed for new API work, and the best example of what the library can do),
+AboutSystem, Terminal, StyledEdit, Mandelbrot, FontDemo, Gradients, Deskbar, Clock, Pulse,
+ShowImage, DeskCalc, Pairs, DriveUsage, CharacterMap, Icon-O-Matic, Sudoku and Tracker. Not
+all of them behave exactly as on Haiku yet.
 
+For a whole BeOS-style desktop (Tracker and Deskbar) without logging out, install labwc
+and run `./start_cosmoe_desktop.sh`. The API reference is the
+[Haiku Book](https://www.haiku-os.org/docs/api/) and the BeBook.
 
-API DOCUMENTATION
------------------
-Since Cosmoe strives to conform to the Be API, the best API documentation to use is the
-BeBook, available at several sites online.
+## Using it in your app
 
-https://www.haiku-os.org/legacy-docs/bebook
+The app templates in [beos-app-platforms](https://github.com/idumych/beos-app-platforms)
+build their AppImages (x86_64 and aarch64) against Hokku's `hokku` branch by default; an
+app's `haiku-app.env` can point `COSMOE_REPO` and `COSMOE_TAG` at another fork or tag. CI
+caches the build by the commit the branch points at, so a new Hokku commit is picked up on
+the next build.
 
+## Problems
 
-Acknowledgements
-----------------
-Thank you to the Haiku team for their work over the years that helped make this possible.
-Cosmoe apps compile and run on Haiku too!
+Problems found with Hokku are fixed here, as new commits on `hokku`, with the smallest
+program that shows the bug used to test the fix. Please don't report them to upstream
+Cosmoe: it doesn't take AI-assisted work, and the bug may be one Hokku introduced or already
+fixed.
+
+## Thanks
+
+To Bill Hayden and the Cosmoe contributors, who brought the Haiku API to other systems, and
+to the Haiku project, whose work made both possible.
