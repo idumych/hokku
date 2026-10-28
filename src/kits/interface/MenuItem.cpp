@@ -763,8 +763,9 @@ BMenuItem::_DrawShortcutSymbol(bool submenus)
 	BFont font;
 	menu->GetFont(&font);
 	BPoint where = ContentLocation();
-	// Start from the right and walk our way back
-	where.x = fBounds.right - font.Size();
+	// Start from the right and walk our way back, leaving a margin: a wide
+	// character (W, M) is about as wide as the font size
+	where.x = fBounds.right - font.Size() - ceilf(font.Size() / 3);
 
 	// Leave space for the submenu arrow if any item in the menu has a submenu
 	if (submenus)

@@ -2844,7 +2844,9 @@ BMenu::_ComputeColumnLayout(int32 index, bool bestFit, bool moveItems,
 		item->GetContentSize(&width, &height);
 
 		if (item->fModifiers && item->fShortcutChar) {
-			width += font.Size();
+			// the shortcut character, and a margin before the menu's edge
+			// (as BMenuItem::_DrawShortcutSymbol() draws it)
+			width += font.Size() + ceilf(font.Size() / 3);
 			if ((item->fModifiers & B_COMMAND_KEY) != 0)
 				command = true;
 
