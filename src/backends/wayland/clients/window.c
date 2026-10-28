@@ -4501,8 +4501,12 @@ pointer_handle_button(void *data, struct wl_pointer *pointer, uint32_t serial,
 							  input->pointer_sx,
 							  input->pointer_sy,
 							  &lx, &ly);
+		TOUCH_DEBUG("pointer release at %.1f,%.1f: in %p at %.1f,%.1f (grab in %p)\n",
+			    input->pointer_sx, input->pointer_sy, (void *)under,
+			    lx, ly, (void *)widget->window);
 		if (under != widget->window) {
 			struct widget *target = window_find_widget(under, lx, ly);
+			TOUCH_DEBUG("pointer release goes to %p\n", (void *)target);
 			if (target) {
 				input->sx = lx;
 				input->sy = ly;
