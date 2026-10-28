@@ -84,6 +84,32 @@ It needed four fixes in the kits, which every app gets:
   process here).
 - **`BDeskbar::AddItem()` returns Deskbar's error** instead of `B_NAME_NOT_FOUND`.
 
+### Notifications, the Haiku way
+
+Haiku's `notification_server` is here, with its Notifications preferences. The Deskbar
+starts it on Linux (`HOKKU_NOTIFICATIONS=0` leaves it off), and notifications appear as on
+Haiku, beside the Deskbar: grouped by app under a header with a close button, with icons,
+progress bars, and the important type marked; they time out, and update in place when sent
+again with the same ID.
+
+- **Hokku apps:** `BNotification::Send()` goes to it when it runs, as on Haiku, and to the
+  desktop's notifications (`notify-send`) when it doesn't.
+- **The desktop's apps:** it serves `org.freedesktop.Notifications` on the session bus
+  when no other notification server does, as on a desktop of Hokku apps; under Plasma or
+  GNOME their own popups keep the desktop's apps (it takes over if they ever stop). A
+  Linux app's icon, image or icon name is its icon, critical urgency is the important
+  type, a progress hint is a progress bar, a replacement ID updates the notification, a
+  click is the app's default action, and the app hears why a notification closed
+  (expired, dismissed, or closed by the app). Haiku notifications have no buttons, so
+  actions other than the default one aren't offered.
+- **The preferences** (Notifications, in the Deskbar's Preferences): turn notifications
+  on or off, their width, timeout and position, and mute any app. Changes apply at once.
+  Every app that sent one is listed, the desktop's apps too, which Haiku's list (apps
+  added from a file panel) couldn't hold.
+
+On Wayland, where windows can't place themselves, the notification window is a corner
+panel that keeps the distance to its corner it is moved to (see Wayland below).
+
 ### The Gonx look
 
 Hokku can take on the whole [Gonx](https://github.com/idumych/gonx) look, the BeOS concept
@@ -228,6 +254,10 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 
 ### Wayland
 
+- **A panel can sit away from its corner.** Wayland windows can't place themselves, so a
+  corner panel (a layer-shell surface) always sat in its corner. One with the private
+  `kWindowPanelOffsetFlag` turns `MoveTo()` into margins from that corner, worked out
+  from the screen `BScreen` reports, so the notification window sits beside the Deskbar.
 - **Touch screens work.** Wayland gives touch to apps as touch, never as a mouse, and only
   window frames handled it, so a finger did nothing in an app. Now the first finger on a
   window drives the mouse, as a tablet does on Haiku: a tap is a left click, a finger that
@@ -259,6 +289,9 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 
 ### Desktop integration
 
+- **`BDeskbar::Frame()` answers.** It asked the Deskbar for its frame without a timeout,
+  which hung Tracker, so it had been switched off and always returned an empty rectangle;
+  it asks again now, giving up after half a second.
 - **The Deskbar menu is never empty.** It names its folder by an absolute path, so a moved
   or staged install (an AppImage, say) and a run from the build folder got a menu with
   nothing in it, not even About or Shutdown. A moved install now finds the menu beside
