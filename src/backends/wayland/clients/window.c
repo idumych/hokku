@@ -706,9 +706,12 @@ struct window {
 	int x, y;
 	uint32_t cosmoe_flags;
 	uint32_t panel_placement;
-	/* layer-shell margins of a corner panel that keeps its offset */
+	/* layer-shell margins of a corner panel that keeps its offset, worked
+	 * out again from where it was moved to whenever its size changes */
 	int32_t panel_margin_top, panel_margin_right;
 	int32_t panel_margin_bottom, panel_margin_left;
+	int panel_offset_set;
+	int32_t panel_offset_x, panel_offset_y;
 	uint32_t look;
 	uint32_t feel;
 	int desktop_mode;
@@ -3947,6 +3950,12 @@ window_frame_enable_client_side_decorations(struct window *window)
 	if (frame == NULL || frame->frame != NULL || window->custom)
 		return 0;
 
+	/* A panel or the desktop is a layer-shell surface: never framed. With
+	 * a frame, its size went into the window's, which the panel's size
+	 * limits then took back, over and over. */
+	if (window_uses_panel(window) || window->desktop_mode)
+		return 0;
+
 	frame->frame = frame_create(window->display->theme, 0, 0,
 	                            window_frame_buttons(window), title, NULL);
 	if (!frame->frame)
@@ -6516,6 +6525,9 @@ window_get_panel_metrics(struct window *window, uint32_t *anchor, int *exclusive
 	}
 }
 
+static void window_update_panel_margins(struct window *window,
+	uint32_t width, uint32_t height);
+
 static void
 window_apply_panel_state(struct window *window)
 {
@@ -6528,6 +6540,7 @@ window_apply_panel_state(struct window *window)
 		return;
 
 	window_get_panel_metrics(window, &anchor, &exclusive, &width, &height);
+	window_update_panel_margins(window, width, height);
 	zwlr_layer_surface_v1_set_anchor(window->layer_surface, anchor);
 	zwlr_layer_surface_v1_set_exclusive_zone(window->layer_surface, exclusive);
 	zwlr_layer_surface_v1_set_margin(window->layer_surface,
@@ -6538,20 +6551,20 @@ window_apply_panel_state(struct window *window)
 	zwlr_layer_surface_v1_set_size(window->layer_surface, width, height);
 }
 
-/* Wayland windows can't place themselves, so a corner panel sits in its
- * corner. One that asked to keep its offset (the notification window,
- * beside the Deskbar) is moved by margins from that corner instead, worked
- * out from where it is moved to on the screen BScreen reports. */
-void
-window_set_panel_offset(struct window *window, int32_t x, int32_t y)
+/* The margins that keep a corner panel where it was moved to, for its
+ * size now: a right or bottom margin depends on the width or height, which
+ * can change after the move (the notification window grows with each
+ * notification). */
+static void
+window_update_panel_margins(struct window *window, uint32_t width,
+	uint32_t height)
 {
 	struct rectangle screen;
 	struct output *output;
-	uint32_t anchor, width, height;
-	int exclusive, scale = 1;
-	int32_t right, bottom;
+	int scale = 1;
+	int32_t x, y, right, bottom;
 
-	if (window == NULL || !window_uses_panel(window)
+	if (!window->panel_offset_set
 	    || (window->cosmoe_flags & COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG) == 0)
 		return;
 
@@ -6562,7 +6575,8 @@ window_set_panel_offset(struct window *window, int32_t x, int32_t y)
 	if (screen.width <= 0 || screen.height <= 0)
 		return;
 
-	window_get_panel_metrics(window, &anchor, &exclusive, &width, &height);
+	x = window->panel_offset_x;
+	y = window->panel_offset_y;
 	right = screen.width / scale - (x + (int32_t)width);
 	bottom = screen.height / scale - (y + (int32_t)height);
 
@@ -6598,6 +6612,22 @@ window_set_panel_offset(struct window *window, int32_t x, int32_t y)
 		window->panel_margin_bottom = 0;
 	if (window->panel_margin_left < 0)
 		window->panel_margin_left = 0;
+}
+
+/* Wayland windows can't place themselves, so a corner panel sits in its
+ * corner. One that asked to keep its offset (the notification window,
+ * beside the Deskbar) is moved by margins from that corner instead, worked
+ * out from where it is moved to on the screen BScreen reports. */
+void
+window_set_panel_offset(struct window *window, int32_t x, int32_t y)
+{
+	if (window == NULL || !window_uses_panel(window)
+	    || (window->cosmoe_flags & COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG) == 0)
+		return;
+
+	window->panel_offset_set = 1;
+	window->panel_offset_x = x;
+	window->panel_offset_y = y;
 
 	if (window->layer_surface != NULL) {
 		window_apply_panel_state(window);
@@ -6669,6 +6699,21 @@ layer_surface_handle_configure(void *data,
 		return;
 
 	zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+
+	/* The compositor decides only the sides we leave to it (0: an edge
+	 * panel's length, the desktop). A size we set ourselves is just echoed,
+	 * and the echo of an earlier request would undo a resize made since. */
+	if (!window->desktop_mode) {
+		uint32_t anchor, ownWidth, ownHeight;
+		int exclusive;
+
+		window_get_panel_metrics(window, &anchor, &exclusive, &ownWidth,
+			&ownHeight);
+		if (ownWidth > 0)
+			width = ownWidth;
+		if (ownHeight > 0)
+			height = ownHeight;
+	}
 
 	if (width > 0 && height > 0)
 		window_configure_resize(window, (int)width, (int)height);
