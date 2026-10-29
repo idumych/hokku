@@ -270,6 +270,13 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 - **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` now get every
   pointer motion, in whatever window they live, as they do on Haiku. Tooltip windows rely on
   this to close when the mouse moves; before, tooltips stayed on screen for good.
+- **Every thread has its own ID.** `find_thread(NULL)` returned `B_NAME_NOT_FOUND` for any
+  thread not started by `spawn_thread()`, such as a `BMessageRunner`'s, so all of them
+  shared one ID. A `BLocker` tells its owner by that ID, so one such thread took a lock
+  another held as its own and changed a window's message queue at the same time. The queue
+  broke, the window stopped taking messages, and the Terminal stopped showing what was
+  typed. Each of those threads now gets an ID of its own, outside
+  the range `spawn_thread()` hands out.
 - **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
   creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
   (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.

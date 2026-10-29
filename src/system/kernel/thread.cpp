@@ -609,6 +609,25 @@ _get_next_thread_info(team_id teamID, int32 *_cookie, thread_info *info,
 }
 
 
+/*!	A thread not started by spawn_thread() (a BMessageRunner's, a library's)
+	has no slot in the thread table, but it still needs an ID of its own:
+	BLocker tells its owner by find_thread(NULL), and if all such threads
+	shared one ID, one of them would take a lock another holds as its own and
+	enter what that lock guards beside it. The IDs come after the table's and
+	are never handed out twice; no other thread function knows them.
+*/
+static thread_id
+anonymous_thread_id()
+{
+	static int32 sNextAnonymousID = MAX_THREADS;
+	static thread_local thread_id sAnonymousID = -1;
+
+	if (sAnonymousID < 0)
+		sAnonymousID = atomic_add(&sNextAnonymousID, 1);
+	return sAnonymousID;
+}
+
+
 thread_id
 find_thread(const char* name)
 {
@@ -656,6 +675,9 @@ _find_thread(const char* name, team_id team)
 		}
 	}
 	pthread_mutex_unlock(&thread_sync->mutex);
+
+	if (name == NULL)
+		return anonymous_thread_id();
 
 	return B_NAME_NOT_FOUND;
 }
