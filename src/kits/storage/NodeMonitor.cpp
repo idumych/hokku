@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <new>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -162,6 +163,10 @@ static std::unordered_map<std::string, node_monitor_watch*> sNodeMonitorWatchesB
 static std::unordered_map<int, parent_monitor_watch*> sParentMonitorWatchesByWD;
 static std::unordered_map<std::string, parent_monitor_watch*> sParentMonitorWatchesByPath;
 static std::unordered_map<uint32_t, pending_move> sPendingMoves;
+// Watch descriptor and child name of files written since they were last
+// closed: inotify sends IN_CLOSE_WRITE when any file opened for writing is
+// closed, even if nothing was written.
+static std::set<std::pair<int, std::string> > sWrittenNodes;
 static std::unordered_map<uint32_t, pending_self_move> sPendingSelfMoves;
 
 
@@ -650,6 +655,29 @@ process_parent_inotify_event(const struct inotify_event* event)
 }
 
 
+/*!	Whether \a event is only an IN_CLOSE_WRITE for a file nothing was written
+	to (\a name is the child's, or empty for the watched node itself).
+*/
+static bool
+is_close_without_write(const struct inotify_event* event,
+	const std::string& name)
+{
+	std::pair<int, std::string> key(event->wd, name);
+	bool unwritten = false;
+
+	pthread_mutex_lock(&sNodeMonitorLock);
+	if ((event->mask & IN_MODIFY) != 0)
+		sWrittenNodes.insert(key);
+	if ((event->mask & IN_CLOSE_WRITE) != 0) {
+		unwritten = sWrittenNodes.erase(key) == 0
+			&& (event->mask & (IN_MODIFY | IN_ATTRIB)) == 0;
+	}
+	pthread_mutex_unlock(&sNodeMonitorLock);
+
+	return unwritten;
+}
+
+
 static void
 process_inotify_event(const struct inotify_event* event)
 {
@@ -749,6 +777,9 @@ process_inotify_event(const struct inotify_event* event)
 		}
 
 		if ((event->mask & (IN_ATTRIB | IN_MODIFY | IN_CLOSE_WRITE)) != 0) {
+			if (is_close_without_write(event, name))
+				return;
+
 			node_monitor_child child;
 			if (stat_child(watch.path, name.c_str(), child) != B_OK) {
 				auto childIt = watch.children.find(name);
@@ -802,6 +833,9 @@ process_inotify_event(const struct inotify_event* event)
 	}
 
 	if ((event->mask & (IN_MODIFY | IN_CLOSE_WRITE)) != 0) {
+		if (is_close_without_write(event, std::string()))
+			return;
+
 		for (const node_monitor_target& target : watch.targets) {
 			send_stat_changed(target, watch,
 				B_STAT_SIZE | B_STAT_MODIFICATION_TIME);

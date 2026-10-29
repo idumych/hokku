@@ -378,6 +378,9 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   `recent_folders` (one `signature<TAB>path` per line, the newest first), and survive a
   restart. Folders opened in Tracker and documents opened in an app show up in the Deskbar.
   Recent applications are still not kept.
+- **Opening a file is not a change.** A file opened for writing and closed without writing
+  sent `B_STAT_CHANGED`, so StyledEdit said a file "was modified by another application"
+  when anything (the Deskbar's recent documents, say) had only opened it. Only writes do now.
 - **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
   node). File panel titles and Open With show the leaf name. In app code, use
   `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
