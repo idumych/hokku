@@ -326,6 +326,12 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   off, sat over the Deskbar, and an empty frame showed behind them. Panels and the desktop
   are never framed now.
 
+- **Wayland: the desktop and the Deskbar come back after a text console.** A layer-shell
+  surface belongs to an output, and labwc removes the outputs while the session is switched
+  to a text console (and adds new ones on the way back), so the Tracker desktop and the
+  Deskbar never came back. A layer surface whose output is gone, or that the compositor
+  closes, is now made again when an output appears, as if the window were hidden and shown.
+
 ### Desktop integration
 
 - **`BDeskbar::Frame()` answers.** It asked the Deskbar for its frame without a timeout,

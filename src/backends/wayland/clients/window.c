@@ -108,6 +108,8 @@ static uint32_t window_panel_placement_from_flags(uint32_t flags);
 static void window_apply_panel_state(struct window *window);
 static void window_apply_desktop_state(struct window *window);
 static void window_destroy_layer_surface(struct window *window);
+void window_show(struct window *window);
+void window_hide(struct window *window);
 static void window_apply_decoration_mode(struct window *window);
 static void window_sync_parent(struct window *window);
 static void display_notify_screen_change(struct display *display,
@@ -747,6 +749,10 @@ struct window {
 
 	struct surface *main_surface;
 	struct zwlr_layer_surface_v1 *layer_surface;
+	/* configured: it has been configured, so it was shown; lost: the
+	 * compositor dropped it with its output, to make again on another */
+	int layer_surface_configured;
+	int layer_surface_lost;
 	struct xdg_surface *xdg_surface;
 	struct xdg_toplevel *xdg_toplevel;
 	struct zxdg_toplevel_decoration_v1 *xdg_toplevel_decoration;
@@ -6661,6 +6667,26 @@ window_destroy_layer_surface(struct window *window)
 
 	zwlr_layer_surface_v1_destroy(window->layer_surface);
 	window->layer_surface = NULL;
+	window->layer_surface_configured = 0;
+}
+
+/* A layer surface lives on one output and goes with it: labwc removes
+ * every output while the session is switched to a text console, and adds
+ * new ones on the way back. The desktop and the Deskbar make theirs again,
+ * as a window that is hidden and shown. */
+static void
+window_restore_layer_surface(struct window *window)
+{
+	if (!window->layer_surface_lost)
+		return;
+
+	window->layer_surface_lost = 0;
+	if (window->hidden)
+		return;
+
+	window_hide(window);
+	window_show(window);
+	window->redraw_needed = 1;
 }
 
 static void
@@ -6699,6 +6725,7 @@ layer_surface_handle_configure(void *data,
 		return;
 
 	zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
+	window->layer_surface_configured = 1;
 
 	/* The compositor decides only the sides we leave to it (0: an edge
 	 * panel's length, the desktop). A size we set ourselves is just echoed,
@@ -6733,7 +6760,15 @@ layer_surface_handle_closed(void *data,
 	if (window == NULL || window->layer_surface != layer_surface)
 		return;
 
-	window_close(window);
+	/* Closed before it was ever shown: the compositor won't have it */
+	if (!window->layer_surface_configured) {
+		window_close(window);
+		return;
+	}
+
+	window->layer_surface_lost = 1;
+	if (!wl_list_empty(&window->display->output_list))
+		window_restore_layer_surface(window);
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
@@ -8941,6 +8976,13 @@ display_handle_done(void *data,
 	display_notify_screen_change(display, output);
 	if (display->output_configure_handler)
 		(*display->output_configure_handler)(output, display->user_data);
+
+	{
+		struct window *window, *tmp;
+
+		wl_list_for_each_safe(window, tmp, &display->window_list, link)
+			window_restore_layer_surface(window);
+	}
 }
 
 static void
@@ -9048,7 +9090,22 @@ display_destroy_output(struct display *d, uint32_t id)
 			 * this output.
 			 */
 			wl_list_for_each(window, &d->window_list, link) {
+				bool wasOnOutput = false;
+				struct window_output *windowOutput;
+
+				wl_list_for_each(windowOutput,
+					&window->window_output_list, link) {
+					if (windowOutput->output == output)
+						wasOnOutput = true;
+				}
+
 				surface_leave(window, NULL, output->output);
+
+				/* No closed event comes for a layer surface
+				 * whose output is gone */
+				if (wasOnOutput && window->layer_surface != NULL
+				    && wl_list_empty(&window->window_output_list))
+					window->layer_surface_lost = 1;
 			}
 
 			output_destroy(output);
