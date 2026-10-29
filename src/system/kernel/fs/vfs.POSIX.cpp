@@ -49,12 +49,6 @@ using namespace std;
 // Forward declaration of platform-independent helper (defined in kernel_interface.cpp)
 status_t convertErrno(int result);
 
-struct DIR_STRUCT
-{
-	int fd;
-};
-
-
 namespace {
 
 // Use function-local statics to avoid static init order problems
@@ -181,19 +175,12 @@ resolve_open_path(int fd, const char* path, char* resolved, size_t resolvedSize)
 }
 
 
-/* Open a directory stream on a fd.  */
+/* Open a directory stream on a fd; the stream then owns the fd.  */
 DIR* opendirfd(int fd)
 {
-	DIR* dir = opendir("/");
-
-	// Inject our fd into the private structure, now that the DIR*
-	// is all set up for us.  If an OS does not have an int representing
-	// the file descriptor as the first argument, things could get ugly.
-	// Any BSD (including OS X) or Linux should be OK.
-	if (dir)
-		((DIR_STRUCT*)dir)->fd = fd;
-
-	return dir;
+	// Not opendir("/") with the fd swapped in: the descriptor opendir()
+	// opened was never closed, one leaked per call.
+	return fdopendir(fd);
 }
 
 
@@ -734,9 +721,7 @@ BPrivate::Storage::dup_dir(int dir, int &result)
 status_t
 BPrivate::Storage::close_dir( int dir )
 {
-	// init a DIR structure
-	DIR* dirDir = opendirfd(dir);
-	return (::closedir(dirDir) == -1) ? errno : B_OK;
+	return (::close(dir) == -1) ? errno : B_OK;
 }
 
 //------------------------------------------------------------------------------

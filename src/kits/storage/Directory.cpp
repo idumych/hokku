@@ -113,10 +113,6 @@ BDirectory::~BDirectory()
 	// an object of the base class after the destructor of the derived class
 	// has been executed.
 
-	// Cosmoe
-	if (fDir)
-		::closedir(fDir);
-
 	close_fd();
 }
 
@@ -680,10 +676,13 @@ void BDirectory::_ErectorDirectory6() {}
 void
 BDirectory::close_fd()
 {
-	if (fDirFd >= 0) {
+	// Cosmoe: fDirFd is fDir's descriptor, closed along with the stream
+	if (fDir != NULL) {
+		::closedir(fDir);
+		fDir = NULL;
+	} else if (fDirFd >= 0)
 		BPrivate::Storage::close_dir(fDirFd);
-		fDirFd = -1;
-	}
+	fDirFd = -1;
 	BNode::close_fd();
 }
 
