@@ -10,13 +10,17 @@
 
 #include <Roster.h>
 
+#include <algorithm>
 #include <ctype.h>
+#include <fcntl.h>
 #include <mutex>
 #include <new>
 #include <vector>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <strings.h>
+#include <sys/file.h>
 #include <unistd.h>
 #ifdef __linux__
 #	include <sys/wait.h>
@@ -419,12 +423,203 @@ resolve_xdg_desktop_app(const char* signature, entry_ref* appRef,
 
 const BRoster* be_roster;
 
-// In-process storage for recent documents and folders
+// Recent apps are kept in-process; recent documents and folders are kept
+// in files every app shares (Haiku's registrar keeps them for all apps).
 static std::mutex sRecentListsMutex;
-static BList sRecentDocuments;
-static BList sRecentFolders;
 static BList sRecentApps;
 static const int32 kMaxRecentItems = 10;
+
+static const char* const kRecentDocumentsList = "recent_documents";
+static const char* const kRecentFoldersList = "recent_folders";
+static const int32 kMaxRecentEntries = 100;
+	// per list; callers ask for fewer, and an entry is kept per app using it
+
+
+namespace {
+
+struct RecentEntry {
+	std::string signature;
+	std::string path;
+};
+
+
+/*!	Opens the recent list \a name in the user's settings, locked: shared
+	for reading, exclusively for writing. Returns its fd, or -1.
+	Each line is "signature<TAB>path", the most recent first.
+*/
+int
+open_recent_list(const char* name, bool forWriting)
+{
+	BPath path;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &path, forWriting) != B_OK
+		|| path.Append("roster") != B_OK)
+		return -1;
+	if (forWriting)
+		create_directory(path.Path(), 0755);
+	if (path.Append(name) != B_OK)
+		return -1;
+
+	int fd = forWriting
+		? open(path.Path(), O_RDWR | O_CREAT | O_CLOEXEC, 0644)
+		: open(path.Path(), O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	if (flock(fd, forWriting ? LOCK_EX : LOCK_SH) != 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+
+void
+read_recent_list(int fd, std::vector<RecentEntry>& entries)
+{
+	std::string data;
+	char buffer[4096];
+	ssize_t bytes;
+	while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)
+		data.append(buffer, bytes);
+
+	size_t start = 0;
+	while (start < data.size()) {
+		size_t end = data.find('\n', start);
+		if (end == std::string::npos)
+			end = data.size();
+		size_t tab = data.find('\t', start);
+		if (tab != std::string::npos && tab + 1 < end) {
+			entries.push_back({data.substr(start, tab - start),
+				data.substr(tab + 1, end - tab - 1)});
+		}
+		start = end + 1;
+	}
+}
+
+
+void
+write_recent_list(int fd, const std::vector<RecentEntry>& entries)
+{
+	std::string data;
+	for (const RecentEntry& entry : entries)
+		data += entry.signature + '\t' + entry.path + '\n';
+
+	if (lseek(fd, 0, SEEK_SET) != 0 || ftruncate(fd, 0) != 0)
+		return;
+	size_t written = 0;
+	while (written < data.size()) {
+		ssize_t bytes = write(fd, data.data() + written,
+			data.size() - written);
+		if (bytes <= 0)
+			return;
+		written += bytes;
+	}
+}
+
+
+//!	Puts \a ref first in the list, for the app with \a signature.
+void
+add_recent_entry(const char* name, const entry_ref* ref,
+	const char* signature)
+{
+	BPath path(ref);
+	if (path.InitCheck() != B_OK || strchr(path.Path(), '\n') != NULL)
+		return;
+
+	// As on Haiku, no signature means the calling app's
+	if (signature == NULL && be_app != NULL)
+		signature = be_app->Signature();
+	RecentEntry added = {signature != NULL ? signature : "", path.Path()};
+	if (added.signature.find_first_of("\t\n") != std::string::npos)
+		added.signature.clear();
+
+	int fd = open_recent_list(name, true);
+	if (fd < 0)
+		return;
+
+	std::vector<RecentEntry> entries;
+	read_recent_list(fd, entries);
+	for (size_t i = 0; i < entries.size(); i++) {
+		if (entries[i].path == added.path
+			&& strcasecmp(entries[i].signature.c_str(),
+				added.signature.c_str()) == 0) {
+			entries.erase(entries.begin() + i);
+			break;
+		}
+	}
+	entries.insert(entries.begin(), added);
+	if (entries.size() > (size_t)kMaxRecentEntries)
+		entries.resize(kMaxRecentEntries);
+
+	write_recent_list(fd, entries);
+	close(fd);
+}
+
+
+/*!	The entries of the list that still exist, the most recent first, each
+	once; only those the app with \a signature used, if it isn't \c NULL.
+*/
+void
+get_recent_refs(const char* name, const char* signature,
+	std::vector<entry_ref>& refs)
+{
+	int fd = open_recent_list(name, false);
+	if (fd < 0)
+		return;
+	std::vector<RecentEntry> entries;
+	read_recent_list(fd, entries);
+	close(fd);
+
+	std::vector<std::string> seen;
+	for (const RecentEntry& entry : entries) {
+		if (signature != NULL
+			&& strcasecmp(entry.signature.c_str(), signature) != 0)
+			continue;
+		if (std::find(seen.begin(), seen.end(), entry.path) != seen.end())
+			continue;
+		seen.push_back(entry.path);
+
+		entry_ref ref;
+		if (get_ref_for_path(entry.path.c_str(), &ref) != B_OK
+			|| !BEntry(&ref).Exists())
+			continue;
+		refs.push_back(ref);
+	}
+}
+
+
+//!	Replaces the list with the refs in \a archive's field \a field.
+void
+load_recent_list(const char* name, const BMessage& archive,
+	const char* field)
+{
+	int fd = open_recent_list(name, true);
+	if (fd < 0)
+		return;
+
+	std::vector<RecentEntry> entries;
+	entry_ref ref;
+	for (int32 i = 0; archive.FindRef(field, i, &ref) == B_OK
+			&& entries.size() < (size_t)kMaxRecentEntries; i++) {
+		BPath path(&ref);
+		if (path.InitCheck() == B_OK && strchr(path.Path(), '\n') == NULL)
+			entries.push_back({"", path.Path()});
+	}
+	write_recent_list(fd, entries);
+	close(fd);
+}
+
+
+void
+clear_recent_list(const char* name)
+{
+	int fd = open_recent_list(name, true);
+	if (fd < 0)
+		return;
+	ftruncate(fd, 0);
+	close(fd);
+}
+
+}	// namespace
 
 struct app_watcher_entry {
 	BMessenger target;
@@ -1927,39 +2122,8 @@ void
 BRoster::GetRecentDocuments(BMessage* refList, int32 maxCount,
 	const char* fileType, const char* signature) const
 {
-	if (refList == NULL)
-		return;
-
-	if (maxCount <= 0)
-		return;
-
-	refList->MakeEmpty();
-
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-	int32 added = 0;
-	for (int32 i = 0; i < sRecentDocuments.CountItems() && added < maxCount; i++) {
-		entry_ref* ref = (entry_ref*)sRecentDocuments.ItemAt(i);
-		if (ref == NULL)
-			continue;
-
-		// Filter by file type if specified
-		if (fileType != NULL) {
-			BNode node(ref);
-			BNodeInfo nodeInfo(&node);
-			char type[B_MIME_TYPE_LENGTH];
-			if (nodeInfo.GetType(type) != B_OK
-				|| strcasecmp(type, fileType) != 0) {
-				continue;
-			}
-		}
-
-		// Filter by signature if specified (not implemented - would need metadata)
-		// For now we ignore the signature parameter
-
-		if (refList->AddRef("refs", ref) == B_OK)
-			added++;
-	}
+	GetRecentDocuments(refList, maxCount, &fileType, fileType != NULL ? 1 : 0,
+		signature);
 }
 
 
@@ -1976,18 +2140,15 @@ BRoster::GetRecentDocuments(BMessage* refList, int32 maxCount,
 
 	refList->MakeEmpty();
 
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
+	std::vector<entry_ref> refs;
+	get_recent_refs(kRecentDocumentsList, signature, refs);
 
 	int32 added = 0;
-	for (int32 i = 0; i < sRecentDocuments.CountItems() && added < maxCount; i++) {
-		entry_ref* ref = (entry_ref*)sRecentDocuments.ItemAt(i);
-		if (ref == NULL)
-			continue;
-
+	for (size_t i = 0; i < refs.size() && added < maxCount; i++) {
 		// Filter by file types if specified
 		bool matchesType = (fileTypes == NULL || fileTypesCount == 0);
-		if (!matchesType && fileTypes != NULL) {
-			BNode node(ref);
+		if (!matchesType) {
+			BNode node(&refs[i]);
 			BNodeInfo nodeInfo(&node);
 			char type[B_MIME_TYPE_LENGTH];
 			if (nodeInfo.GetType(type) == B_OK) {
@@ -2000,12 +2161,7 @@ BRoster::GetRecentDocuments(BMessage* refList, int32 maxCount,
 			}
 		}
 
-		if (!matchesType)
-			continue;
-
-		// Filter by signature if specified (not implemented - would need metadata)
-
-		if (refList->AddRef("refs", ref) == B_OK)
+		if (matchesType && refList->AddRef("refs", &refs[i]) == B_OK)
 			added++;
 	}
 }
@@ -2023,18 +2179,12 @@ BRoster::GetRecentFolders(BMessage* refList, int32 maxCount,
 
 	refList->MakeEmpty();
 
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
+	std::vector<entry_ref> refs;
+	get_recent_refs(kRecentFoldersList, signature, refs);
 
 	int32 added = 0;
-	for (int32 i = 0; i < sRecentFolders.CountItems() && added < maxCount; i++) {
-		entry_ref* ref = (entry_ref*)sRecentFolders.ItemAt(i);
-		if (ref == NULL)
-			continue;
-
-		// Filter by signature if specified (not implemented - would need metadata)
-		// For now we ignore the signature parameter
-
-		if (refList->AddRef("refs", ref) == B_OK)
+	for (size_t i = 0; i < refs.size() && added < maxCount; i++) {
+		if (refList->AddRef("refs", &refs[i]) == B_OK)
 			added++;
 	}
 }
@@ -2062,32 +2212,7 @@ BRoster::AddToRecentDocuments(const entry_ref* document,
 	if (document == NULL)
 		return;
 
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-	// Check if this document is already in the list
-	for (int32 i = 0; i < sRecentDocuments.CountItems(); i++) {
-		entry_ref* ref = (entry_ref*)sRecentDocuments.ItemAt(i);
-		if (ref != NULL && *ref == *document) {
-			// Already in list, move to front
-			sRecentDocuments.RemoveItem(i);
-			sRecentDocuments.AddItem(ref, 0);
-			return;
-		}
-	}
-
-	// Create a new entry_ref and add to front of list
-	entry_ref* newRef = new (std::nothrow) entry_ref(*document);
-	if (newRef == NULL)
-		return;
-
-	sRecentDocuments.AddItem(newRef, 0);
-
-	// Trim list if too large
-	while (sRecentDocuments.CountItems() > kMaxRecentItems) {
-		entry_ref* oldRef = (entry_ref*)sRecentDocuments.RemoveItem(
-			sRecentDocuments.CountItems() - 1);
-		delete oldRef;
-	}
+	add_recent_entry(kRecentDocumentsList, document, signature);
 }
 
 
@@ -2098,32 +2223,7 @@ BRoster::AddToRecentFolders(const entry_ref* folder,
 	if (folder == NULL)
 		return;
 
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-	// Check if this folder is already in the list
-	for (int32 i = 0; i < sRecentFolders.CountItems(); i++) {
-		entry_ref* ref = (entry_ref*)sRecentFolders.ItemAt(i);
-		if (ref != NULL && *ref == *folder) {
-			// Already in list, move to front
-			sRecentFolders.RemoveItem(i);
-			sRecentFolders.AddItem(ref, 0);
-			return;
-		}
-	}
-
-	// Create a new entry_ref and add to front of list
-	entry_ref* newRef = new (std::nothrow) entry_ref(*folder);
-	if (newRef == NULL)
-		return;
-
-	sRecentFolders.AddItem(newRef, 0);
-
-	// Trim list if too large
-	while (sRecentFolders.CountItems() > kMaxRecentItems) {
-		entry_ref* oldRef = (entry_ref*)sRecentFolders.RemoveItem(
-			sRecentFolders.CountItems() - 1);
-		delete oldRef;
-	}
+	add_recent_entry(kRecentFoldersList, folder, signature);
 }
 
 //	#pragma mark - Private or reserved
@@ -3054,14 +3154,7 @@ BRoster::_InitMessenger()
 void
 BRoster::_ClearRecentDocuments() const
 {
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-	// Delete all entry_refs
-	for (int32 i = 0; i < sRecentDocuments.CountItems(); i++) {
-		entry_ref* ref = (entry_ref*)sRecentDocuments.ItemAt(i);
-		delete ref;
-	}
-	sRecentDocuments.MakeEmpty();
+	clear_recent_list(kRecentDocumentsList);
 }
 
 
@@ -3069,14 +3162,7 @@ BRoster::_ClearRecentDocuments() const
 void
 BRoster::_ClearRecentFolders() const
 {
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-	// Delete all entry_refs
-	for (int32 i = 0; i < sRecentFolders.CountItems(); i++) {
-		entry_ref* ref = (entry_ref*)sRecentFolders.ItemAt(i);
-		delete ref;
-	}
-	sRecentFolders.MakeEmpty();
+	clear_recent_list(kRecentFoldersList);
 }
 
 
@@ -3119,34 +3205,15 @@ BRoster::_LoadRecentLists(const char* filename) const
 	std::lock_guard<std::mutex> lock(sRecentListsMutex);
 
 	// Clear existing lists
-	for (int32 i = 0; i < sRecentDocuments.CountItems(); i++)
-		delete (entry_ref*)sRecentDocuments.ItemAt(i);
-	sRecentDocuments.MakeEmpty();
-
-	for (int32 i = 0; i < sRecentFolders.CountItems(); i++)
-		delete (entry_ref*)sRecentFolders.ItemAt(i);
-	sRecentFolders.MakeEmpty();
+	load_recent_list(kRecentDocumentsList, archive, "documents");
+	load_recent_list(kRecentFoldersList, archive, "folders");
 
 	for (int32 i = 0; i < sRecentApps.CountItems(); i++)
 		delete (entry_ref*)sRecentApps.ItemAt(i);
 	sRecentApps.MakeEmpty();
 
-	// Load documents
-	entry_ref ref;
-	for (int32 i = 0; archive.FindRef("documents", i, &ref) == B_OK; i++) {
-		entry_ref* newRef = new (std::nothrow) entry_ref(ref);
-		if (newRef != NULL)
-			sRecentDocuments.AddItem(newRef);
-	}
-
-	// Load folders
-	for (int32 i = 0; archive.FindRef("folders", i, &ref) == B_OK; i++) {
-		entry_ref* newRef = new (std::nothrow) entry_ref(ref);
-		if (newRef != NULL)
-			sRecentFolders.AddItem(newRef);
-	}
-
 	// Load apps
+	entry_ref ref;
 	for (int32 i = 0; archive.FindRef("apps", i, &ref) == B_OK; i++) {
 		entry_ref* newRef = new (std::nothrow) entry_ref(ref);
 		if (newRef != NULL)
@@ -3168,22 +3235,17 @@ BRoster::_SaveRecentLists(const char* filename) const
 
 	BMessage archive;
 
+	std::vector<entry_ref> refs;
+	get_recent_refs(kRecentDocumentsList, NULL, refs);
+	for (size_t i = 0; i < refs.size(); i++)
+		archive.AddRef("documents", &refs[i]);
+	refs.clear();
+	get_recent_refs(kRecentFoldersList, NULL, refs);
+	for (size_t i = 0; i < refs.size(); i++)
+		archive.AddRef("folders", &refs[i]);
+
 	{
 		std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-		// Save documents
-		for (int32 i = 0; i < sRecentDocuments.CountItems(); i++) {
-			entry_ref* ref = (entry_ref*)sRecentDocuments.ItemAt(i);
-			if (ref != NULL)
-				archive.AddRef("documents", ref);
-		}
-
-		// Save folders
-		for (int32 i = 0; i < sRecentFolders.CountItems(); i++) {
-			entry_ref* ref = (entry_ref*)sRecentFolders.ItemAt(i);
-			if (ref != NULL)
-				archive.AddRef("folders", ref);
-		}
 
 		// Save apps
 		for (int32 i = 0; i < sRecentApps.CountItems(); i++) {

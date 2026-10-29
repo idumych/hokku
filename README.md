@@ -372,6 +372,12 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
   `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
   fields. `name` is still a full path (see below).
+- **Recent documents and folders are shared.** Each app kept its own lists in memory, so the
+  Deskbar's Recent documents and Recent folders were always empty. As Haiku's registrar
+  does, they are now kept for all apps, in `~/.config/cosmoe/roster/recent_documents` and
+  `recent_folders` (one `signature<TAB>path` per line, the newest first), and survive a
+  restart. Folders opened in Tracker and documents opened in an app show up in the Deskbar.
+  Recent applications are still not kept.
 - **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
   node). File panel titles and Open With show the leaf name. In app code, use
   `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
