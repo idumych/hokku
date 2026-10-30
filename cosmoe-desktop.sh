@@ -33,12 +33,19 @@ bootstrap_mime_database() {
             rpm -ql cosmoe cosmoe-apps cosmoe-desktop 2>/dev/null
         }
     elif command -v pacman >/dev/null 2>&1; then
-        # Arch packages are named hokku or cosmoe; find whichever owns libbe.
+        # Arch packages are named hokku or cosmoe, or from the AUR hokku-git
+        # (hokku-apps-git…); find whichever owns libbe.
         base_package="$(pacman -Qqo /usr/lib/libbe.so 2>/dev/null || true)"
         [ -n "$base_package" ] || return 0
         package_version="$(pacman -Q "$base_package" 2>/dev/null | cut -d' ' -f2 || true)"
+        package_suffix=""
+        case "$base_package" in
+            *-git) package_suffix=-git; base_package="${base_package%-git}" ;;
+        esac
         package_files() {
-            pacman -Qlq $(pacman -Qq "$base_package" "$base_package-apps" "$base_package-desktop" 2>/dev/null)
+            pacman -Qlq $(pacman -Qq "$base_package$package_suffix" \
+                "$base_package-apps$package_suffix" \
+                "$base_package-desktop$package_suffix" 2>/dev/null)
         }
     else
         return 0

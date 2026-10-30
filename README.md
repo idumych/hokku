@@ -319,6 +319,13 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   Windows). A menu of folder contents that took more than one pass to fill (the Deskbar's,
   on a slow or cold machine) then asked the unlocked parent where the mouse was, and printed
   "Looper must be locked". It locks the parent for that now.
+- **Shortcut characters fit in menus.** A shortcut's character was drawn flush against the
+  menu's right edge, so wide ones (W, M) were cut off; a third of the font size is left
+  after it.
+- **A keymap without a configured layout.** With no layout set and no `setxkbmap` (a
+  Wayland-only system), `get_key_map()` failed and left its outputs untouched, and Tracker
+  crashed on startup reading them. It builds the keymap from xkbcommon's defaults
+  (`XKB_DEFAULT_*`, else us), as the compositor does.
 - **Leaving a window is a `B_EXITED_VIEW`.** When the pointer leaves a window (X11
   `LeaveNotify`, Wayland pointer leave), the view that was under it gets a `B_MOUSE_MOVED`
   with `B_EXITED_VIEW`, as on Haiku, and no idle event follows. Before it heard nothing, so a
@@ -385,6 +392,18 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 
 ### Desktop integration
 
+- **The desktop session on Arch, and on real GPUs.** `cosmoe-desktop.sh` builds the first
+  login's MIME database from pacman packages too (`hokku` or `cosmoe` and their `-apps` and
+  `-desktop`, or the AUR's `-git` ones), not only from dpkg and rpm, and from their files
+  only: package lists name directories, and scanning `/usr` took minutes. The system
+  database is layered under the user's, so the types the apps claim keep their icons. It
+  finds polkit-gnome's agent where Arch and Fedora put it, starts mako only when Hokku's
+  notifications are off (`HOKKU_NOTIFICATIONS=0`), and uses the pixman renderer and software
+  cursors, a VirtualBox workaround, only under VirtualBox.
+- **`BRoster::GetAppList()` lists each app once.** On Wayland the display also lists
+  windowed apps under a team < 0, so apps showed up twice (and `hey` couldn't reach the
+  second). Apps are listed by their real team, and the display's only for apps that didn't
+  register (Linux apps).
 - **`BDeskbar::Frame()` answers.** It asked the Deskbar for its frame without a timeout,
   which hung Tracker, so it had been switched off and always returned an empty rectangle;
   it asks again now, giving up after half a second.
@@ -490,7 +509,8 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 - **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
   `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
   finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
-  `/usr/local/lib`.
+  `/usr/local/lib`, and the apps' MIME entries record where they're installed, not their
+  path under `DESTDIR` (with that, `BRoster::FindApp()` couldn't find them from a package).
 - **Installed apps are typed as apps.** Each app is typed while it's installed, but the
   system MIME database was installed after the apps, so on a machine without one (a package
   build) `mimeset` typed them all `application/octet-stream`: the Deskbar then took an app
