@@ -38,36 +38,37 @@ if [ ! -d "$mime_db_path" ] || [ ! -w "$mime_db_path" ]; then
     fi
 fi
 
+run_mimeset() {
+    case "$(uname -s)" in
+        Darwin)
+            DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
+                "$mimeset_path" "$@"
+            ;;
+        *)
+            LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
+                "$mimeset_path" "$@"
+            ;;
+    esac
+}
+
 # Type the app from the system MIME database being installed (installed before
 # the apps), not the user's or the one already on the system: without its ELF
 # executable rule, an app is typed application/octet-stream and taken for a
-# document.
-case "$(uname -s)" in
-    Darwin)
-        DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
-            "$mimeset_path" -f --mimedb "$mime_db_path" "$dest_path"
-        ;;
-    *)
-        LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-            "$mimeset_path" -f --mimedb "$mime_db_path" "$dest_path"
-        ;;
-esac
+# document. A failure doesn't stop the install: ext4 holds at most 4 KiB of
+# attributes per file, less than an app with a large icon needs (Chart).
+if ! run_mimeset -f --mimedb "$mime_db_path" "$dest_path"; then
+    echo "install_with_mimeset: $app_name left untyped (its attributes don't fit on this file system?)" >&2
+fi
 
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/cosmoe-mimeset.XXXXXX")"
 
 # The system database under the new entries: the types the app claims are then
 # copied from it, instead of created empty, which would replace the system
 # entries (descriptions, sniffer rules, icons) when copied over them below.
-case "$(uname -s)" in
-    Darwin)
-        DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
-            "$mimeset_path" -a --mimedb "$tmpdir" --mimedb "$mime_db_path" "$dest_path"
-        ;;
-    *)
-        LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-            "$mimeset_path" -a --mimedb "$tmpdir" --mimedb "$mime_db_path" "$dest_path"
-        ;;
-esac
+if ! run_mimeset -a --mimedb "$tmpdir" --mimedb "$mime_db_path" "$dest_path"; then
+    echo "install_with_mimeset: skipping MIME registration for $app_name" >&2
+    exit 0
+fi
 
 mkdir -p "$mime_db_path"
 cp -a "$tmpdir/." "$mime_db_path/"
