@@ -49,6 +49,7 @@
 #include <Query.h>
 #include <RegistrarDefs.h>
 #include <String.h>
+#include <StringList.h>
 #include <SymLink.h>
 #include <Volume.h>
 #include <VolumeRoster.h>
@@ -1809,20 +1810,42 @@ BRoster::GetAppList(BList* teamIDList) const
 
 	const int32 kMaxTeams = 1024;
 	team_id teams[kMaxTeams];
+
+	// Every app that registered its messenger, as Haiku's registrar knows
+	// every app: these have a real team and port, windows or not.
+	int32 remoteCount = BPrivate::GetRemoteAppTeams(teams, kMaxTeams);
+	BStringList remoteSignatures;
+	for (int32 i = 0; i < remoteCount; i++) {
+		teamIDList->AddItem((void*)(addr_t)teams[i]);
+		app_info info;
+		if (BPrivate::FindRemoteAppMessenger(NULL, teams[i], &info) == B_OK)
+			remoteSignatures.Add(info.signature);
+	}
+
+	// The display's apps with ordinary windows. Where it can't tell their
+	// process (Wayland), it gives them teams < 0, which no messenger can
+	// reach; skip those for an app already listed by its real team, whose
+	// windows get_token_list() finds by signature.
 	int32 count = cosmoe_display_get_app_list(display, teams, kMaxTeams);
 	if (count > kMaxTeams)
 		count = kMaxTeams;
 
-	for (int32 i = 0; i < count; i++)
-		teamIDList->AddItem((void*)(addr_t)teams[i]);
-
-	// The display only knows apps with ordinary windows. Apps without them
-	// (servers, panels such as the Deskbar) are found by the messenger every
-	// BApplication registers, as Haiku's registrar knows every app.
-	count = BPrivate::GetRemoteAppTeams(teams, kMaxTeams);
 	for (int32 i = 0; i < count; i++) {
-		if (!teamIDList->HasItem((void*)(addr_t)teams[i]))
-			teamIDList->AddItem((void*)(addr_t)teams[i]);
+		if (teamIDList->HasItem((void*)(addr_t)teams[i]))
+			continue;
+		app_info info;
+		if (teams[i] < 0 && find_backend_app_info(teams[i], &info) == B_OK
+			&& info.signature[0] != '\0') {
+			bool registered = false;
+			for (int32 j = 0; j < remoteSignatures.CountStrings()
+					&& !registered; j++) {
+				registered = remoteSignatures.StringAt(j).ICompare(
+					info.signature) == 0;
+			}
+			if (registered)
+				continue;
+		}
+		teamIDList->AddItem((void*)(addr_t)teams[i]);
 	}
 }
 
