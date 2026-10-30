@@ -95,7 +95,6 @@ TeapotWindow::TeapotWindow(BRect rect, const char* name, window_type wt,
 	menu->AddItem(item = new BMenuItem(B_TRANSLATE("Limit FPS to refresh rate"),
 		new BMessage(kMsgLimitFps)));
 	item->SetTarget(fObjectView);
-	item->SetMarked(true);
 
 	BMenu *subMenu;
 	menuBar->AddItem(menu = new BMenu(B_TRANSLATE("Lights")));
