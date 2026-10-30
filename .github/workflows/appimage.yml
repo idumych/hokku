@@ -1,0 +1,75 @@
+name: AppImage
+
+# GLTeapot as an AppImage for any x86_64 or aarch64 Linux desktop, built on Ubuntu 24.04 so
+# it runs on that glibc or newer. One job per architecture, each native (ubuntu-24.04 /
+# ubuntu-24.04-arm), each starting the AppImage it built under X11 (Xvfb) and Wayland
+# (headless sway). Run it by hand: gh workflow run appimage.yml --ref <branch>
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  appimage:
+    name: ${{ matrix.app }} (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [GLTeapot]
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential meson ninja-build pkg-config flex bison curl file \
+            libcairo2-dev libpng-dev libjpeg-dev libwebp-dev libtiff-dev \
+            zlib1g-dev libicu-dev libpango1.0-dev libicns-dev libraw-dev \
+            libpixman-1-dev libfontconfig1-dev libglib2.0-dev libssl-dev \
+            libx11-dev libx11-xcb-dev libxcursor-dev libxrandr-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            wayland-protocols libegl-dev libgl-dev libfuse3-dev
+
+      - name: Build AppImage
+        run: |
+          sh packaging/appimage/build-appimage.sh ${{ matrix.app }}
+          F=$(ls ${{ matrix.app }}-*-${{ matrix.arch }}.AppImage)
+          file "$F"
+          echo "APPIMAGE=$F" >> "$GITHUB_ENV"
+
+      - name: Smoke-test tools
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive timeout 300 apt-get install -y --no-install-recommends \
+            sway grim xvfb openbox imagemagick xdotool libgl1-mesa-dri libegl-mesa0
+
+      - name: X11 smoke test (Xvfb)
+        timeout-minutes: 5
+        run: sh packaging/appimage/x11-smoke.sh "$APPIMAGE" x11-smoke
+
+      - name: Wayland smoke test (headless sway)
+        timeout-minutes: 5
+        run: sh packaging/appimage/wayland-smoke.sh "$APPIMAGE" wayland-smoke
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.app }}-${{ matrix.arch }}
+          path: |
+            x11-smoke/
+            wayland-smoke/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-AppImage-${{ matrix.arch }}
+          path: ${{ env.APPIMAGE }}

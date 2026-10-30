@@ -69,3 +69,6 @@ rpm/build/RPMS
 rpm/build/SOURCES
 rpm/build/SRPMS
 rpm/packages
+# AppImages (packaging/appimage)
+/obj/
+*.AppImage
