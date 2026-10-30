@@ -84,7 +84,10 @@ jobs:
           path: builddir
 
       - name: Run kernel tests
-        run: ./run_kernel_tests.sh
+        run: |
+          # artifacts lose the executable bit
+          find builddir/src/tests/system/kernel -maxdepth 1 -type f -exec chmod +x {} +
+          ./run_kernel_tests.sh
 
 
   unit_tests:
