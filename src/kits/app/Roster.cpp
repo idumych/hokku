@@ -423,14 +423,11 @@ resolve_xdg_desktop_app(const char* signature, entry_ref* appRef,
 
 const BRoster* be_roster;
 
-// Recent apps are kept in-process; recent documents and folders are kept
-// in files every app shares (Haiku's registrar keeps them for all apps).
-static std::mutex sRecentListsMutex;
-static BList sRecentApps;
-static const int32 kMaxRecentItems = 10;
-
+// Recent documents, folders and apps are kept in files every app shares
+// (Haiku's registrar keeps them for all apps).
 static const char* const kRecentDocumentsList = "recent_documents";
 static const char* const kRecentFoldersList = "recent_folders";
+static const char* const kRecentAppsList = "recent_apps";
 static const int32 kMaxRecentEntries = 100;
 	// per list; callers ask for fewer, and an entry is kept per app using it
 
@@ -617,6 +614,65 @@ clear_recent_list(const char* name)
 		return;
 	ftruncate(fd, 0);
 	close(fd);
+}
+
+
+/*!	Whether the app with \a signature at \a ref may run, given its launch
+	\a flags and the instances already running: \c B_ALREADY_RUNNING if
+	it's single or exclusive launch and one is.
+*/
+status_t
+check_launch_conflict(const char* signature, const entry_ref* ref,
+	uint32 flags, team_id* otherTeam)
+{
+	app_info conflictingApp = app_info();
+
+	uint32 launchFlags = flags & B_LAUNCH_MASK;
+	if (launchFlags != B_SINGLE_LAUNCH && launchFlags != B_EXCLUSIVE_LAUNCH)
+		return B_OK;
+
+	if (signature == NULL || signature[0] == '\0')
+		return B_OK;
+
+	status_t status = BPrivate::FindRemoteAppMessenger(signature, -1, &conflictingApp);
+	if (status != B_OK)
+		return B_OK;
+
+	if (otherTeam != NULL)
+		*otherTeam = conflictingApp.team;
+
+	if (launchFlags == B_EXCLUSIVE_LAUNCH)
+		return B_ALREADY_RUNNING;
+
+	app_info runningInfo;
+	status = BRoster().GetRunningAppInfo(conflictingApp.team, &runningInfo);
+	if (status != B_OK)
+		return B_ALREADY_RUNNING;
+
+	return runningInfo.ref == *ref ? B_ALREADY_RUNNING : B_OK;
+}
+
+
+/*!	Puts the app with \a signature at \a ref first in the recent apps,
+	unless it's a background app, Tracker or Deskbar (as on Haiku), or an
+	executable without a signature of its own (a command line tool).
+*/
+void
+add_recent_app(const char* signature, const entry_ref* ref, uint32 flags)
+{
+	if (signature == NULL || ref == NULL || (flags & B_BACKGROUND_APP) != 0
+		|| strcasecmp(signature, "application/x-vnd.Be-TRAK") == 0
+		|| strcasecmp(signature, "application/x-vnd.Be-TSKB") == 0)
+		return;
+
+	BFile file(ref, B_READ_ONLY);
+	BAppFileInfo info(&file);
+	char fileSignature[B_MIME_TYPE_LENGTH];
+	if (info.GetSignature(fileSignature) != B_OK
+		|| strcasecmp(fileSignature, signature) != 0)
+		return;
+
+	add_recent_entry(kRecentAppsList, ref, signature);
 }
 
 }	// namespace
@@ -2201,7 +2257,14 @@ BRoster::GetRecentApps(BMessage* refList, int32 maxCount) const
 
 	refList->MakeEmpty();
 
-	// TODO
+	std::vector<entry_ref> refs;
+	get_recent_refs(kRecentAppsList, NULL, refs);
+
+	int32 added = 0;
+	for (size_t i = 0; i < refs.size() && added < maxCount; i++) {
+		if (refList->AddRef("refs", &refs[i]) == B_OK)
+			added++;
+	}
 }
 
 
@@ -2327,6 +2390,9 @@ BRoster::_Suspend(bool confirm) const
 void
 BRoster::_AddToRecentApps(const char* signature) const
 {
+	entry_ref ref;
+	if (signature != NULL && FindApp(signature, &ref) == B_OK)
+		add_recent_app(signature, &ref, B_REG_DEFAULT_APP_FLAGS);
 }
 
 
@@ -2380,31 +2446,10 @@ BRoster::_AddApplication(const char* signature, const entry_ref* ref,
 	uint32 flags, team_id team, thread_id thread, port_id port,
 	bool fullRegistration, uint32* pToken, team_id* otherTeam) const
 {
-	app_info conflictingApp = app_info();
-
-	uint32 launchFlags = flags & B_LAUNCH_MASK;
-	if (launchFlags != B_SINGLE_LAUNCH && launchFlags != B_EXCLUSIVE_LAUNCH)
-		return B_OK;
-
-	if (signature == NULL || signature[0] == '\0')
-		return B_OK;
-
-	status_t status = BPrivate::FindRemoteAppMessenger(signature, -1, &conflictingApp);
-	if (status != B_OK)
-		return B_OK;
-
-	if (otherTeam != NULL)
-		*otherTeam = conflictingApp.team;
-
-	if (launchFlags == B_EXCLUSIVE_LAUNCH)
-		return B_ALREADY_RUNNING;
-
-	app_info runningInfo;
-	status = BRoster().GetRunningAppInfo(conflictingApp.team, &runningInfo);
-	if (status != B_OK)
-		return B_ALREADY_RUNNING;
-
-	return runningInfo.ref == *ref ? B_ALREADY_RUNNING : B_OK;
+	status_t status = check_launch_conflict(signature, ref, flags, otherTeam);
+	if (status == B_OK && fullRegistration)
+		add_recent_app(signature, ref, flags);
+	return status;
 }
 
 
@@ -3170,14 +3215,7 @@ BRoster::_ClearRecentFolders() const
 void
 BRoster::_ClearRecentApps() const
 {
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-	// Delete all entry_refs
-	for (int32 i = 0; i < sRecentApps.CountItems(); i++) {
-		entry_ref* ref = (entry_ref*)sRecentApps.ItemAt(i);
-		delete ref;
-	}
-	sRecentApps.MakeEmpty();
+	clear_recent_list(kRecentAppsList);
 }
 
 
@@ -3202,23 +3240,10 @@ BRoster::_LoadRecentLists(const char* filename) const
 	if (archive.Unflatten(&file) != B_OK)
 		return;
 
-	std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
 	// Clear existing lists
 	load_recent_list(kRecentDocumentsList, archive, "documents");
 	load_recent_list(kRecentFoldersList, archive, "folders");
-
-	for (int32 i = 0; i < sRecentApps.CountItems(); i++)
-		delete (entry_ref*)sRecentApps.ItemAt(i);
-	sRecentApps.MakeEmpty();
-
-	// Load apps
-	entry_ref ref;
-	for (int32 i = 0; archive.FindRef("apps", i, &ref) == B_OK; i++) {
-		entry_ref* newRef = new (std::nothrow) entry_ref(ref);
-		if (newRef != NULL)
-			sRecentApps.AddItem(newRef);
-	}
+	load_recent_list(kRecentAppsList, archive, "apps");
 }
 
 
@@ -3243,17 +3268,10 @@ BRoster::_SaveRecentLists(const char* filename) const
 	get_recent_refs(kRecentFoldersList, NULL, refs);
 	for (size_t i = 0; i < refs.size(); i++)
 		archive.AddRef("folders", &refs[i]);
-
-	{
-		std::lock_guard<std::mutex> lock(sRecentListsMutex);
-
-		// Save apps
-		for (int32 i = 0; i < sRecentApps.CountItems(); i++) {
-			entry_ref* ref = (entry_ref*)sRecentApps.ItemAt(i);
-			if (ref != NULL)
-				archive.AddRef("apps", ref);
-		}
-	}
+	refs.clear();
+	get_recent_refs(kRecentAppsList, NULL, refs);
+	for (size_t i = 0; i < refs.size(); i++)
+		archive.AddRef("apps", &refs[i]);
 
 	BFile file(filename, B_WRITE_ONLY | B_CREATE_FILE | B_ERASE_FILE);
 	if (file.InitCheck() == B_OK)

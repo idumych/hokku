@@ -390,7 +390,9 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   does, they are now kept for all apps, in `~/.config/cosmoe/roster/recent_documents` and
   `recent_folders` (one `signature<TAB>path` per line, the newest first), and survive a
   restart. Folders opened in Tracker and documents opened in an app show up in the Deskbar.
-  Recent applications are still not kept.
+  Recent applications are kept the same way, in `recent_apps`: apps are added when they
+  start, except background apps, Tracker and the Deskbar (as on Haiku) and command line
+  tools (executables without a signature of their own).
 - **Opening a file is not a change.** A file opened for writing and closed without writing
   sent `B_STAT_CHANGED`, so StyledEdit said a file "was modified by another application"
   when anything (the Deskbar's recent documents, say) had only opened it. Only writes do now.
