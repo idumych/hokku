@@ -4053,6 +4053,7 @@ BWindow::MoveTo(float x, float y)
 				fLink->Attach<void*>(fTopView);
 				fLink->Attach<int32_t>(Bounds().IntegerWidth());
 				fLink->Attach<int32_t>(Bounds().IntegerHeight());
+				fLink->Attach<bool>((fFlags & kWindowPopupGrabFlag) != 0);
 				fLink->Flush();
 			}
 			// Complete the show (registers callbacks, resizes)
@@ -4974,6 +4975,7 @@ BWindow::_InitData(BRect frame, const char* title, window_look look,
 		fLink->Attach<void*>(fTopView);
 		fLink->Attach<int32_t>(fFrame.IntegerWidth());
 		fLink->Attach<int32_t>(fFrame.IntegerHeight());
+		fLink->Attach<bool>((fFlags & kWindowPopupGrabFlag) != 0);
 		fLink->Flush();
 		STRACE(("Created popup backend window token=%d at %d,%d (scale %d%%) with parent token=%d\n",
 			(int)fWindowToken, popupX, popupY, scalePercent, (int)parentToken));
@@ -6363,6 +6365,18 @@ BWindow::_PropagateMessageToChildViews(BMessage* message)
 			PostMessage(message, view);
 	}
 }
+
+/*!	Makes \a popUp, a kMenuWindowFeel window, a popup of \a parent: set
+	before it's shown, it opens where MoveTo() puts it beside the parent
+	(which on Wayland is the only place a window can say where it goes).
+*/
+void
+BPrivate::set_popup_window_parent(BWindow* popUp, BWindow* parent)
+{
+	if (popUp != NULL)
+		popUp->_SetParentWindow(parent);
+}
+
 
 void
 BWindow::_SetParentWindow(BWindow* parent)

@@ -179,6 +179,7 @@ private:
 			status_t				_CacheWindowIcon(WindowIconCache* winCache);
 
 			void					_StartTrayBridge();
+			void					_AddBrightnessItem();
 			void					_StartNotificationServer();
 			void					_StartService(const char* signature,
 										const char* executable);

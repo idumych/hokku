@@ -29,6 +29,7 @@ class BView;
 
 namespace BPrivate {
 	class ToolTipWindow;
+	void set_popup_window_parent(BWindow* popUp, BWindow* parent);
 }
 
 
@@ -322,6 +323,8 @@ private:
 	friend class BWindowStack;
 
 	friend void _set_menu_sem_(BWindow* w, sem_id sem);
+	friend void BPrivate::set_popup_window_parent(BWindow* popUp,
+		BWindow* parent);
 	friend status_t _safe_get_server_token_(const BLooper*, int32*);
 
 								BWindow(BRect frame, int32 bitmapToken);

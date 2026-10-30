@@ -62,6 +62,9 @@ enum {
 	COSMOE_PRIVATE_WINDOW_PANEL_PLACEMENT_MASK = 0x0e000000,
 	/* a corner panel moved (MoveTo()) keeps that distance to its corner */
 	COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG = 0x10000000,
+	/* a popup (kMenuWindowFeel) that holds ordinary views: it takes the
+	 * pointer and keyboard, and is closed when the user clicks elsewhere */
+	COSMOE_PRIVATE_WINDOW_POPUP_GRAB_FLAG = 0x20000000,
 };
 
 enum {

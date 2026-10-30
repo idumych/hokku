@@ -61,6 +61,24 @@ Tested in a Plasma 6 Wayland session (next to IVPN's and the CachyOS update noti
 icons), on X11 and on sway. The screenshots show a scripted test item, on sway with the
 Gonx look.
 
+### Screen brightness, in the Deskbar
+
+On a Linux machine with a backlight (a laptop), the Deskbar's tray has a brightness control
+(`src/apps/deskbar/BrightnessItem.cpp`): a click on the sun opens a slider beside it, the
+mouse wheel over the sun steps the brightness by 5%, and its tooltip tells the level. It
+sets the backlight through logind (`SetBrightness`), so no root or udev rule is needed, and
+reads it from `/sys/class/backlight`, choosing the firmware (ACPI) device over a platform
+driver's over the GPU's raw one, as systemd does. It never goes below 1%, so the screen
+can't go black. Without a backlight (a desktop with an external monitor) there is no
+control.
+
+The slider is a popup window, which is new: a `kMenuWindowFeel` window with
+`kWindowPopupGrabFlag`, made a popup of its parent with
+`BPrivate::set_popup_window_parent()` (`WindowPrivate.h`), opens where it's moved beside the
+parent, takes the pointer and keyboard (an explicit `xdg_popup` grab on Wayland) and is sent
+`B_QUIT_REQUESTED` when the user clicks elsewhere. On X11 it isn't grabbed: a click on the
+sun or Escape closes it.
+
 The Deskbar menu has the desktop's applications too: **Linux applications** lists every
 `.desktop` file in the XDG data folders that the desktop itself would show (honouring
 `NoDisplay`, `Hidden`, `OnlyShowIn`/`NotShowIn` and `TryExec`, with your own files

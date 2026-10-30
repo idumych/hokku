@@ -471,10 +471,11 @@ window_uses_client_side_decorations(struct window *window);
 /* Create a popup window at the given screen coordinates. The position will
 	be used when creating xdg_popup to anchor the popup at the requested
 	location. If parent_window is provided, creates an xdg_popup; otherwise
-	creates an xdg_toplevel. */
+	creates an xdg_toplevel. With grab, it takes an explicit grab (a popup
+	holding ordinary views) and its window is closed when it's dismissed. */
 struct window *
 window_popup_create(struct display *display, struct window *parent_window, int x, int y,
-		     int width, int height);
+		     int width, int height, int grab);
 
 void
 window_set_parent(struct window *window, struct window *parent_window);

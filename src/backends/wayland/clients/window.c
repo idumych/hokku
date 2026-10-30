@@ -766,6 +766,8 @@ struct window {
 	struct popup_callback_data *popup_callback_data;
 	struct wl_seat *popup_grab_seat;
 	uint32_t popup_grab_serial;
+	/* holds ordinary views: grabbed, and closed when dismissed */
+	int popup_explicit_grab;
 
 	struct window *parent;
 	struct window *last_parent;
@@ -8187,7 +8189,7 @@ window_create_custom(struct display *display)
 
 struct window *
 window_popup_create(struct display *display, struct window *parent_window, int x, int y,
-		    int width, int height)
+		    int width, int height, int grab)
 {
 	struct window *window;
 	struct xdg_positioner *positioner;
@@ -8354,6 +8356,10 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	 * older serial is accepted by Mutter but can trigger a Wayland protocol
 	 * disconnect on Weston. Keep the propagated seat/serial for bookkeeping,
 	 * but only the top-level popup/menu should establish the explicit grab. */
+	if (grab && grab_seat != NULL && parent_window->xdg_popup == NULL) {
+		xdg_popup_grab(window->xdg_popup, grab_seat, grab_serial);
+		window->popup_explicit_grab = 1;
+	}
 
 	{
 		struct popup_callback_data *popup_callback_data =
@@ -8712,6 +8718,16 @@ xdg_popup_handle_popup_done(void *data, struct xdg_popup *xdg_popup)
 	if (menu != NULL && menu->window == window && menu->input != NULL) {
 		input_ungrab(menu->input);
 		menu_destroy(menu);
+		return;
+	}
+
+	/* A popup holding ordinary views is closed, as its window would be.
+	 * popup_done can come twice; window_close() on a close already pending
+	 * would end the display's loop. */
+	if (window->popup_explicit_grab) {
+		if (!window->hidden && window->close_handler != NULL
+			&& window->close_task.run == NULL)
+			window_close(window);
 		return;
 	}
 

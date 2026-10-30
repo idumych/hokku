@@ -75,6 +75,7 @@ All rights reserved.
 #include "BarView.h"
 #include "BarWindow.h"
 #if defined(__linux__)
+#	include "BrightnessItem.h"
 #	include "LinuxAppsMenu.h"
 #endif
 #include "DeskbarUtils.h"
@@ -295,6 +296,33 @@ TBarApp::TBarApp()
 
 	_StartTrayBridge();
 	_StartNotificationServer();
+	_AddBrightnessItem();
+}
+
+
+/*!	On Linux machines with a backlight (laptops), put the brightness control
+	in the tray. Shelf items aren't saved, so it's added at every start.
+*/
+void
+TBarApp::_AddBrightnessItem()
+{
+#if defined(__linux__)
+	if (!BrightnessItem::HasBacklight())
+		return;
+
+	BSize size = be_control_look->ComposeIconSize(B_MINI_ICON);
+	BrightnessItem item(BRect(0, 0, size.width, size.height));
+	BMessage* archive = new BMessage();
+	int32 id;
+	if (item.Archive(archive) != B_OK || !fBarWindow->Lock()) {
+		delete archive;
+		return;
+	}
+	if (fBarView->AddItem(archive, B_DESKBAR_TRAY, &id) != B_OK)
+		delete archive;
+		// the shelf owns it once added
+	fBarWindow->Unlock();
+#endif
 }
 
 

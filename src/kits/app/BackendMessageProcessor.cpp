@@ -483,6 +483,7 @@ BackendMessageProcessor::ProcessMessages(CosmoeBackend* backend,
 			void* topView;
 			int32_t width;
 			int32_t height;
+			bool grab;
 
 			if (link.Read<void*>(&display_ptr) == B_OK
 				&& link.Read<int32_t>(&token) == B_OK
@@ -493,11 +494,12 @@ BackendMessageProcessor::ProcessMessages(CosmoeBackend* backend,
 				&& link.ReadString(&appId) == B_OK
 				&& link.Read<void*>(&topView) == B_OK
 				&& link.Read<int32_t>(&width) == B_OK
-				&& link.Read<int32_t>(&height) == B_OK) {
+				&& link.Read<int32_t>(&height) == B_OK
+				&& link.Read<bool>(&grab) == B_OK) {
 
 				backend_window_t window = backend->WindowPopupCreate(
 					(backend_display_t)display_ptr, token, parent_token,
-					popup_x, popup_y, width, height, data);
+					popup_x, popup_y, width, height, grab, data);
 
 				if (window != NULL) {
 					if (appId != NULL)
