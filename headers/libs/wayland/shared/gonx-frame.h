@@ -101,6 +101,11 @@ void
 gonx_frame_paint_overlay(cairo_t *cr, const struct gonx_layout *layout,
 			 const struct gonx_style *style, int active);
 
+/* Whether (x, y) is on a part of the frame that lies over the content and
+ * takes the pointer there: a document window's resize knob. */
+int
+gonx_frame_overlay_contains(const struct gonx_layout *layout, int x, int y);
+
 /* A THEME_LOCATION_* value for the point (x, y). */
 int
 gonx_frame_location(const struct gonx_layout *layout, int x, int y);

@@ -687,6 +687,16 @@ frame_is_gonx(struct frame *frame)
 	return frame->gonx != NULL;
 }
 
+int
+frame_overlay_contains(struct frame *frame, int x, int y)
+{
+	if (!frame->gonx)
+		return 0;
+
+	frame_refresh_geometry(frame);
+	return gonx_frame_overlay_contains(&frame->gonx_layout, x, y);
+}
+
 void
 frame_gonx_input_rects(struct frame *frame,
 		       void (*add)(void *data, int x, int y, int width,

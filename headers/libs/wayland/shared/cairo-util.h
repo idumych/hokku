@@ -266,6 +266,12 @@ frame_set_gonx(struct frame *frame, const struct gonx_style *style,
 int
 frame_is_gonx(struct frame *frame);
 
+/* Whether (x, y) is on a part of a Gonx or Haiku frame drawn over the
+ * content (a document window's resize knob), which takes the pointer from
+ * the content there. */
+int
+frame_overlay_contains(struct frame *frame, int x, int y);
+
 /* Draws what a Gonx frame paints over the content's edge; call after the
  * content has drawn. */
 void

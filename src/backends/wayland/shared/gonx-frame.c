@@ -1273,6 +1273,10 @@ gonx_frame_paint_overlay(cairo_t *cr, const struct gonx_layout *l,
 int
 gonx_frame_location(const struct gonx_layout *l, int x, int y)
 {
+	/* a document window's knob lies over the content */
+	if (gonx_frame_overlay_contains(l, x, y))
+		return THEME_LOCATION_RESIZING_BOTTOM_RIGHT;
+
 	if (contains(&l->content, x, y))
 		return THEME_LOCATION_CLIENT_AREA;
 
@@ -1305,6 +1309,13 @@ gonx_frame_location(const struct gonx_layout *l, int x, int y)
 	if (y > l->content.bottom)
 		return THEME_LOCATION_RESIZING_BOTTOM;
 	return THEME_LOCATION_RESIZING_TOP;
+}
+
+
+int
+gonx_frame_overlay_contains(const struct gonx_layout *l, int x, int y)
+{
+	return l->document && l->resizable && contains(&l->resize, x, y);
 }
 
 

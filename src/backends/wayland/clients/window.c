@@ -2677,6 +2677,12 @@ widget_find_widget(struct widget *widget, int32_t x, int32_t y)
 	struct widget *child, *target;
 	int alloc_x, alloc_y, width, height;
 	double scale;
+	struct window_frame *frame = widget->window->frame;
+
+	/* the frame's resize knob lies over its child, the content */
+	if (frame != NULL && widget == frame->widget && frame->frame != NULL
+	    && frame_overlay_contains(frame->frame, x, y))
+		return widget;
 
 	wl_list_for_each(child, &widget->child_list, link) {
 		target = widget_find_widget(child, x, y);
