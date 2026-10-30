@@ -223,6 +223,13 @@ session hands the theme's Qt style to Qt apps (`QT_STYLE_OVERRIDE`, from qt6ct's
 keeps GTK's scroll bars beside the content (`GTK_OVERLAY_SCROLLING=0`); Qt apps pick up a new
 style when they start, and GTK 4/libadwaita apps keep their own look.
 
+Haiku's look and Gonx on Hokku OS: Appearance's Themes tab, Network Connections (GTK 3) and
+Kvantum Manager (Qt), all switched together.
+
+![Haiku's look: Appearance's Themes tab with Haiku in use in a yellow Haiku tab, Network Connections (GTK) and Kvantum Manager (Qt) in Haiku's grey controls, on Haiku's blue desktop](docs/screenshots/theme-haiku.png)
+
+![Gonx: the same three windows in the Gonx look, on the Gonx desktop, with the Hokku tab on the Deskbar](docs/screenshots/theme-gonx.png)
+
 Hokku ships Haiku and Gonx in `/usr/share/cosmoe/themes`. *Save current look* keeps what is in
 use as a theme of your own in `~/.config/cosmoe/themes`; each theme is a folder with a
 `theme.ini` (see `src/preferences/appearance/Theme.h`) and the files it names. Running apps take
