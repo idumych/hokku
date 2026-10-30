@@ -54,10 +54,9 @@ run_mimeset() {
 # Type the app from the system MIME database being installed (installed before
 # the apps), not the user's or the one already on the system: without its ELF
 # executable rule, an app is typed application/octet-stream and taken for a
-# document. A failure doesn't stop the install: ext4 holds at most 4 KiB of
-# attributes per file, less than an app with a large icon needs (Chart).
+# document. A failure doesn't stop the install.
 if ! run_mimeset -f --mimedb "$mime_db_path" "$dest_path"; then
-    echo "install_with_mimeset: $app_name left untyped (its attributes don't fit on this file system?)" >&2
+    echo "install_with_mimeset: mimeset failed on $app_name" >&2
 fi
 
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/cosmoe-mimeset.XXXXXX")"

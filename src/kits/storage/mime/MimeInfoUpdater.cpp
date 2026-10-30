@@ -30,22 +30,47 @@
 static const char *kAppFlagsAttribute = "BEOS:APP_FLAGS";
 
 
+// The app file info attributes are copies of the app's resources, which
+// BAppFileInfo reads when an attribute is missing. ext4 keeps at most 4 KiB of
+// attributes per file, less than an app with large icons needs, and a write
+// that doesn't fit fails with B_BAD_VALUE: leave that copy out (removing an
+// older one, which would be stale) so the rest are still written.
+static status_t
+skip_if_full(status_t err, BNode &node, const char *attribute)
+{
+	if (err != B_BAD_VALUE)
+		return err;
+	node.RemoveAttr(attribute);
+	return B_OK;
+}
+
+
+static BString
+icon_attribute(const char *prefix, const char *type, const char *ownName)
+{
+	BString name(prefix);
+	name += type != NULL ? type : ownName;
+	return name;
+}
+
+
 static status_t
 update_icon(BAppFileInfo &appFileInfoRead, BAppFileInfo &appFileInfoWrite,
-	const char *type, BBitmap &icon, icon_size iconSize)
+	BNode &node, const char *type, BBitmap &icon, icon_size iconSize)
 {
 	status_t err = appFileInfoRead.GetIconForType(type, &icon, iconSize);
 	if (err == B_OK)
 		err = appFileInfoWrite.SetIconForType(type, &icon, iconSize, false);
 	else if (err == B_ENTRY_NOT_FOUND)
 		err = appFileInfoWrite.SetIconForType(type, NULL, iconSize, false);
-	return err;
+	return skip_if_full(err, node, icon_attribute(
+		iconSize == B_MINI_ICON ? "BEOS:M:" : "BEOS:L:", type, "STD_ICON"));
 }
 
 
 static status_t
 update_icon(BAppFileInfo &appFileInfoRead, BAppFileInfo &appFileInfoWrite,
-	const char *type)
+	BNode &node, const char *type)
 {
 	uint8* data = NULL;
 	size_t size = 0;
@@ -58,7 +83,7 @@ update_icon(BAppFileInfo &appFileInfoRead, BAppFileInfo &appFileInfoWrite,
 
 	free(data);
 
-	return err;
+	return skip_if_full(err, node, icon_attribute("BEOS:", type, "ICON"));
 }
 
 
@@ -157,6 +182,7 @@ MimeInfoUpdater::Do(const entry_ref& entry, bool* _entryIsDir)
 			err = appFileInfoWrite.SetCatalogEntry(catalogEntry);
 		else if (err == B_ENTRY_NOT_FOUND)
 			err = appFileInfoWrite.SetCatalogEntry(NULL);
+		err = skip_if_full(err, file, "SYS:NAME");
 		if (err != B_OK)
 			return err;
 
@@ -182,11 +208,12 @@ MimeInfoUpdater::Do(const entry_ref& entry, bool* _entryIsDir)
 			hasSupportedTypes = true;
 		} else if (err == B_ENTRY_NOT_FOUND)
 			err = appFileInfoWrite.SetSupportedTypes(NULL, false, false);
+		err = skip_if_full(err, file, "BEOS:FILE_TYPES");
 		if (err != B_OK)
 			return err;
 
 		// vector icon
-		err = update_icon(appFileInfoRead, appFileInfoWrite, NULL);
+		err = update_icon(appFileInfoRead, appFileInfoWrite, file, NULL);
 		if (err != B_OK)
 			return err;
 
@@ -195,8 +222,8 @@ MimeInfoUpdater::Do(const entry_ref& entry, bool* _entryIsDir)
 			B_CMAP8);
 		if (smallIcon.InitCheck() != B_OK)
 			return smallIcon.InitCheck();
-		err = update_icon(appFileInfoRead, appFileInfoWrite, NULL, smallIcon,
-			B_MINI_ICON);
+		err = update_icon(appFileInfoRead, appFileInfoWrite, file, NULL,
+			smallIcon, B_MINI_ICON);
 		if (err != B_OK)
 			return err;
 
@@ -205,8 +232,8 @@ MimeInfoUpdater::Do(const entry_ref& entry, bool* _entryIsDir)
 			B_CMAP8);
 		if (largeIcon.InitCheck() != B_OK)
 			return largeIcon.InitCheck();
-		err = update_icon(appFileInfoRead, appFileInfoWrite, NULL, largeIcon,
-			B_LARGE_ICON);
+		err = update_icon(appFileInfoRead, appFileInfoWrite, file, NULL,
+			largeIcon, B_LARGE_ICON);
 		if (err != B_OK)
 			return err;
 
@@ -221,6 +248,7 @@ MimeInfoUpdater::Do(const entry_ref& entry, bool* _entryIsDir)
 				err = appFileInfoWrite.SetVersionInfo(&versionInfo, kind);
 			else if (err == B_ENTRY_NOT_FOUND)
 				err = appFileInfoWrite.SetVersionInfo(NULL, kind);
+			err = skip_if_full(err, file, "BEOS:APP_VERSION");
 			if (err != B_OK)
 				return err;
 		}
@@ -232,19 +260,19 @@ MimeInfoUpdater::Do(const entry_ref& entry, bool* _entryIsDir)
 				 supportedTypes.FindString("types", i, &supportedType) == B_OK;
 				 i++) {
 				// vector icon
-				err = update_icon(appFileInfoRead, appFileInfoWrite,
+				err = update_icon(appFileInfoRead, appFileInfoWrite, file,
 					supportedType);
 				if (err != B_OK)
 					return err;
 
 				// small icon
-				err = update_icon(appFileInfoRead, appFileInfoWrite,
+				err = update_icon(appFileInfoRead, appFileInfoWrite, file,
 					supportedType, smallIcon, B_MINI_ICON);
 				if (err != B_OK)
 					return err;
 
 				// large icon
-				err = update_icon(appFileInfoRead, appFileInfoWrite,
+				err = update_icon(appFileInfoRead, appFileInfoWrite, file,
 					supportedType, largeIcon, B_LARGE_ICON);
 				if (err != B_OK)
 					return err;
