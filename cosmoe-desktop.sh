@@ -89,9 +89,15 @@ startup_script="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/cosmoe-labwc-startup.XXXXXX")
 cat >"$startup_script" <<'EOF'
 #!/bin/sh
 
-if [ -x /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 ]; then
-    /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 &
-fi
+# polkit-gnome's agent: Debian's path, then Arch's and Fedora's
+for agent in /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1 \
+             /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 \
+             /usr/libexec/polkit-gnome-authentication-agent-1; do
+    if [ -x "$agent" ]; then
+        "$agent" &
+        break
+    fi
+done
 
 xdg-desktop-portal -r &
 xdg-desktop-portal-wlr -r &
