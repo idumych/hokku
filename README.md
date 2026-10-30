@@ -121,11 +121,12 @@ again with the same ID.
   buttons: `AddAction(label, message[, target])` adds one, and clicking it sends the
   message to the target (the app by default) and closes the notification;
   `CountActions()`, `ActionLabelAt()`, `ActionMessageAt()` and `ActionTargetAt()` read
-  them. The class keeps its size: the actions live outside it, in its reserved room. The
-  same API is proposed to Renku OS
-  ([RenkuOS/Source#233](https://github.com/RenkuOS/Source/pull/233)); until it lands
-  there, an app that also builds for Renku or Haiku puts these calls under
-  `#ifdef APP_COSMOE`, with an `OnClick*()` launch as the fallback.
+  them. The class keeps its size: the actions live outside it, in its reserved room. Renku
+  OS has the same API
+  ([RenkuOS/Source#233](https://github.com/RenkuOS/Source/pull/233), merged); its
+  notification_server doesn't show the buttons yet, and Haiku has neither, so an app that
+  also builds for Haiku puts these calls under `#ifdef APP_COSMOE`, with an `OnClick*()`
+  launch as the fallback.
 - **The desktop's apps:** it serves `org.freedesktop.Notifications` on the session bus
   when no other notification server does, as on a desktop of Hokku apps; under Plasma or
   GNOME their own popups keep the desktop's apps (it takes over if they ever stop). A
