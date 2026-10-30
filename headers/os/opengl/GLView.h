@@ -26,6 +26,7 @@
 
 #ifdef __cplusplus
 
+#include <DirectWindow.h>
 #include <View.h>
 
 struct gl_view_private;
@@ -50,6 +51,10 @@ public:
 
 	// Mesa's GLenum is uint, not ulong
 			void			ErrorCallback(unsigned long errorCode);
+
+	// The frame is always drawn through the view: there's no direct mode
+			void			DirectConnected(direct_buffer_info* info);
+			void			EnableDirectMode(bool enabled);
 
 	virtual	void			Draw(BRect updateRect);
 	virtual	void			AttachedToWindow();

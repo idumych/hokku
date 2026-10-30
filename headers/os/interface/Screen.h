@@ -36,6 +36,9 @@ public:
 
 			const color_map*	ColorMap();
 
+			status_t			WaitForRetrace();
+			status_t			WaitForRetrace(bigtime_t timeout);
+
 			status_t			GetBitmap(BBitmap** _bitmap,
 									bool drawCursor = true,
 									BRect* frame = NULL);

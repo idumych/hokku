@@ -27,6 +27,7 @@ app_dirs = [
     'deskcalc',
     'diskusage',
     'fontdemo',
+    'glteapot',
     'gradients',
     'showcase',
     'gui-torture',
@@ -305,6 +306,9 @@ deskbar_demos_menu = [
     'Pulse',
     'Sudoku',
 ]
+if glteapot_enabled
+    deskbar_demos_menu += ['GLTeapot']
+endif
 
 deskbar_preferences_menu = [
     'Appearance',

@@ -181,8 +181,10 @@ any thread, as on Haiku. It renders with EGL (Mesa's surfaceless platform when t
 otherwise the default display, so NVIDIA's driver works too) into an off-screen buffer the
 size of the view; `SwapBuffers()` copies the frame into a bitmap that the view draws, on X11
 and Wayland alike. It's built when EGL and `GL/gl.h` are found (Debian/Ubuntu: `libegl-dev
-libgl-dev`). `CopyPixelsIn()`/`Out()`, overlays and `BGLScreen` aren't there yet. VLC
-Reborn's OpenGL video output uses it.
+libgl-dev`). `DirectConnected()` and `EnableDirectMode()` exist for `BDirectWindow` code
+and do nothing: frames always go through the view. `CopyPixelsIn()`/`Out()`, overlays and
+`BGLScreen` aren't there yet. VLC Reborn's OpenGL video output uses it, and so does
+GLTeapot, Haiku's OpenGL demo, which Hokku now includes (Deskbar: Demos).
 
 ### Apps built on Hokku
 
@@ -364,6 +366,9 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
   return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
   of one past it.
+- **`BScreen::WaitForRetrace()`.** It was missing. The display server doesn't tell apps
+  when the screen refreshes, so it waits for the next tick of a 60 Hz clock, which paces an
+  animation as a retrace would (GLTeapot's "Limit FPS to refresh rate").
 - **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
   `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
   the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
@@ -532,8 +537,8 @@ The Windows version is cross-compiled on Linux or WSL with
 Apps start from the command line or from your desktop's launcher. The build includes
 Showcase (the testbed for new API work, and the best example of what the library can do),
 AboutSystem, Terminal, StyledEdit, Mandelbrot, FontDemo, Gradients, Deskbar, Clock, Pulse,
-ShowImage, DeskCalc, Pairs, DriveUsage, CharacterMap, Icon-O-Matic, Sudoku and Tracker. Not
-all of them behave exactly as on Haiku yet.
+ShowImage, DeskCalc, Pairs, DriveUsage, CharacterMap, Icon-O-Matic, Sudoku, GLTeapot (with
+OpenGL) and Tracker. Not all of them behave exactly as on Haiku yet.
 
 For a whole BeOS-style desktop (Tracker and Deskbar) without logging out, install labwc
 and run `./start_cosmoe_desktop.sh`. The API reference is the

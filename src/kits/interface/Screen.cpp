@@ -90,6 +90,41 @@ BScreen::Frame()
 }
 
 
+/*!	\brief Waits until the screen's next vertical retrace.
+	Hokku: the display server doesn't tell apps when it refreshes, so this
+	waits for the next tick of a 60 Hz clock, which paces an animation as a
+	retrace would.
+*/
+status_t
+BScreen::WaitForRetrace()
+{
+	return WaitForRetrace(B_INFINITE_TIMEOUT);
+}
+
+
+/*!	\brief Waits until the screen's next vertical retrace, or \a timeout.
+	\return \c B_OK, or \c B_TIMED_OUT (\c B_WOULD_BLOCK for no timeout)
+		if the retrace didn't come in time.
+*/
+status_t
+BScreen::WaitForRetrace(bigtime_t timeout)
+{
+	static const bigtime_t kFrameDuration = 1000000 / 60;
+
+	bigtime_t now = system_time();
+	bigtime_t retrace = (now / kFrameDuration + 1) * kFrameDuration;
+	if (timeout <= 0)
+		return B_WOULD_BLOCK;
+	if (timeout < retrace - now) {
+		snooze(timeout);
+		return B_TIMED_OUT;
+	}
+
+	snooze_until(retrace, B_SYSTEM_TIMEBASE);
+	return B_OK;
+}
+
+
 /*!	\brief Allocates a B_RGB32 bitmap and copies the screen (or \a frame
 		of it) into it. The caller owns the bitmap.
 	Hokku: X11 only; Wayland doesn't let a client read the screen and

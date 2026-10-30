@@ -328,6 +328,24 @@ BGLView::ErrorCallback(unsigned long errorCode)
 }
 
 
+/*!	For a BDirectWindow's DirectConnected(). On Haiku a view in direct mode
+	draws straight into the frame buffer; here frames are always drawn
+	through the view, so there's nothing to do.
+*/
+void
+BGLView::DirectConnected(direct_buffer_info* info)
+{
+	(void)info;
+}
+
+
+void
+BGLView::EnableDirectMode(bool enabled)
+{
+	(void)enabled;
+}
+
+
 void
 BGLView::Draw(BRect updateRect)
 {
