@@ -8,6 +8,8 @@ app_name="$3"
 exec_name="$4"
 icon_name="$5"
 categories="$6"
+# Desktops to list it in (OnlyShowIn), when it belongs to Hokku's own
+only_show_in="${7:-}"
 
 destdir="${DESTDIR:-}"
 applications_dir="${destdir}${prefix}/share/applications"
@@ -27,6 +29,10 @@ Categories=${categories}
 StartupNotify=true
 StartupWMClass=${desktop_id}
 EOF
+
+if [ -n "${only_show_in}" ]; then
+	echo "OnlyShowIn=${only_show_in}" >> "${desktop_file}"
+fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then
 	update-desktop-database "${applications_dir}" 2>/dev/null || true

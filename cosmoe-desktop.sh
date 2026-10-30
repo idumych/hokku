@@ -79,6 +79,41 @@ bootstrap_mime_database() {
 # database. Recreate application metadata in the user's writable database.
 bootstrap_mime_database
 
+# The system keyboard layout. Installers and localectl set-x11-keymap record it
+# for X11 and the console, which labwc and Hokku don't read; both honour
+# XKB_DEFAULT_*, so export it from there (~/.config/labwc/environment still
+# overrides it). Without this the session is always us.
+xkb_option() {
+    sed -n "s/^[[:space:]]*Option[[:space:]]*\"$1\"[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        /etc/X11/xorg.conf.d/00-keyboard.conf 2>/dev/null | head -n 1 || true
+}
+# KEY="value" files: Debian's /etc/default/keyboard, systemd's /etc/vconsole.conf
+shell_option() {
+    sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" "$1" 2>/dev/null | head -n 1 || true
+}
+if [ -z "${XKB_DEFAULT_LAYOUT:-}" ]; then
+    layout="$(xkb_option XkbLayout)"
+    if [ -n "$layout" ]; then
+        variant="$(xkb_option XkbVariant)"
+        model="$(xkb_option XkbModel)"
+        options="$(xkb_option XkbOptions)"
+    else
+        for keyboard_file in /etc/default/keyboard /etc/vconsole.conf; do
+            layout="$(shell_option "$keyboard_file" XKBLAYOUT)"
+            [ -z "$layout" ] || break
+        done
+        variant="$(shell_option "$keyboard_file" XKBVARIANT)"
+        model="$(shell_option "$keyboard_file" XKBMODEL)"
+        options="$(shell_option "$keyboard_file" XKBOPTIONS)"
+    fi
+    if [ -n "$layout" ]; then
+        export XKB_DEFAULT_LAYOUT="$layout"
+        [ -z "$variant" ] || export XKB_DEFAULT_VARIANT="$variant"
+        [ -z "$model" ] || export XKB_DEFAULT_MODEL="$model"
+        [ -z "$options" ] || export XKB_DEFAULT_OPTIONS="$options"
+    fi
+fi
+
 # VirtualBox's VMSVGA driver can accept pointer events while failing to display
 # wlroots hardware cursors. Use software cursors and pixmap renderer to avoid this,
 # but only there: elsewhere the pixman renderer leaves the GPU unused.

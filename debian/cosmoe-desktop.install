@@ -12,3 +12,4 @@ usr/share/icons/hicolor/*/apps/deskbarpreferences.png
 usr/share/icons/hicolor/*/apps/tracker.png
 usr/share/icons/hicolor/*/apps/trackerpreferences.png
 usr/share/wayland-sessions/cosmoe.desktop
+usr/share/xdg-desktop-portal/cosmoe-portals.conf

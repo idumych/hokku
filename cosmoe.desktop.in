@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Cosmoe Desktop
-Comment=Cosmoe Desktop
+Name=Hokku
+Comment=The Be/Haiku desktop: Tracker and Deskbar on labwc
 Exec=@COSMOE_DESKTOP_EXEC@
 Type=Application
-DesktopNames=Cosmoe
+DesktopNames=cosmoe

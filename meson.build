@@ -922,6 +922,12 @@ if is_linux
         install_dir: get_option('bindir'),
         install_mode: 'rwxr-xr-x',
     )
+
+    # Which portal backends the session uses, also next to another desktop's
+    install_data(
+        'cosmoe-portals.conf',
+        install_dir: get_option('datadir') / 'xdg-desktop-portal',
+    )
 endif
 
 # vicn2icns - Convert VICN resources to macOS .icns format (macOS only)

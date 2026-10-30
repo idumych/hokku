@@ -392,6 +392,14 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 
 ### Desktop integration
 
+- **Hokku next to another desktop.** Installed beside Plasma, GNOME or any other desktop,
+  Hokku is one more choice on the login screen, named "Hokku". The other desktop's menus
+  don't list the parts of Hokku's own desktop (Tracker, Deskbar and the preferences that
+  only Hokku's desktop uses: `OnlyShowIn=cosmoe`), while Hokku's apps stay listed
+  everywhere and claim no file types. The session takes the system keyboard layout (from
+  `localectl`'s X11 setting, Debian's `/etc/default/keyboard` or `/etc/vconsole.conf`)
+  instead of always us, and `cosmoe-portals.conf` picks its portal backends: wlroots' for
+  screenshots and screen sharing, GTK's or KDE's for the rest, whichever is installed.
 - **The desktop session on Arch, and on real GPUs.** `cosmoe-desktop.sh` builds the first
   login's MIME database from pacman packages too (`hokku` or `cosmoe` and their `-apps` and
   `-desktop`, or the AUR's `-git` ones), not only from dpkg and rpm, and from their files

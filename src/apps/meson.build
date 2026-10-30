@@ -67,6 +67,8 @@ foreach app_dir : app_dirs
     app_target_name = ''
     linux_desktop_id = ''
     linux_desktop_categories = ''
+    # 'cosmoe;' for parts of Hokku's desktop, which other desktops shouldn't list
+    linux_desktop_only_show_in = ''
 
     subdir(app_dir)
 
@@ -212,7 +214,8 @@ foreach app_dir : app_dirs
             app_name,
             app_name,
             app_name.to_lower(),
-            linux_desktop_categories)
+            linux_desktop_categories,
+            linux_desktop_only_show_in)
     endif
 
     if is_linux

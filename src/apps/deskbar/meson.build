@@ -1,6 +1,7 @@
 app_name = 'Deskbar'
 linux_desktop_id = 'x-vnd.Be-TSKB'
 linux_desktop_categories = 'System;Utility;'
+linux_desktop_only_show_in = 'cosmoe;'
 
 app_srcs = files(
     'BarApp.cpp',

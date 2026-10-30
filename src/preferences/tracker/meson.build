@@ -10,7 +10,8 @@ if is_linux
         app_name,
         app_name,
         app_name.to_lower(),
-        linux_desktop_categories)
+        linux_desktop_categories,
+        'cosmoe;')
 endif
 
 app_srcs = [

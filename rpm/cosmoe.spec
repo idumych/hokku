@@ -179,6 +179,7 @@ Deskbar, and a display-manager session entry.
 %{_datadir}/icons/hicolor/*/apps/tracker.png
 %{_datadir}/icons/hicolor/*/apps/trackerpreferences.png
 %{_datadir}/wayland-sessions/cosmoe.desktop
+%{_datadir}/xdg-desktop-portal/cosmoe-portals.conf
 
 %changelog
 * Mon Oct 12 2026 Bill Hayden <bill@haydentech.com> - 0.9.0-1

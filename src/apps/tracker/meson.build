@@ -1,6 +1,7 @@
 app_name = 'Tracker'
 linux_desktop_id = 'x-vnd.Cosmoe-Tracker'
 linux_desktop_categories = 'System;FileManager;Utility;'
+linux_desktop_only_show_in = 'cosmoe;'
 
 app_srcs = files(
     'main.cpp',
