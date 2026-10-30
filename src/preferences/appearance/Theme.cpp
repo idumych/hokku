@@ -792,14 +792,25 @@ Theme::Apply() const
 	if (labwcPid != NULL && atoi(labwcPid) > 0)
 		kill(atoi(labwcPid), SIGHUP);
 
-	// GTK reads settings.ini at startup; running GTK apps follow gsettings
+	// GTK reads settings.ini at startup; running GTK apps follow gsettings.
+	// Its font is the plain font: Be sizes are pixels at 72 dpi, GTK's
+	// points at 96, so 12 is 9.
+	Font plain = fonts[kPlainFont];
+	if (!plain.set)
+		default_font(kPlainFont, plain);
+	BString gtkFont(plain.family);
+	if (plain.style != "Regular")
+		gtkFont << " " << plain.style;
+	BString size;
+	size.SetToFormat(" %g", plain.size * 0.75f);
+	gtkFont << size;
+
 	const char* gtkFiles[] = { "gtk-3.0/settings.ini", "gtk-4.0/settings.ini" };
 	for (size_t i = 0; i < sizeof(gtkFiles) / sizeof(gtkFiles[0]); i++) {
-		if (gtkTheme.IsEmpty() && iconTheme.IsEmpty() && cursorTheme.IsEmpty())
-			break;
 		BPath path = config_path(gtkFiles[i], true);
 		IniFile gtk;
 		gtk.Load(path.Path());
+		gtk.SetValue("Settings", "gtk-font-name", gtkFont.String());
 		if (!gtkTheme.IsEmpty())
 			gtk.SetValue("Settings", "gtk-theme-name", gtkTheme.String());
 		if (!iconTheme.IsEmpty())
@@ -810,6 +821,7 @@ Theme::Apply() const
 		}
 		gtk.Save(path.Path());
 	}
+	set_gsetting("font-name", gtkFont);
 	set_gsetting("gtk-theme", gtkTheme);
 	set_gsetting("icon-theme", iconTheme);
 	set_gsetting("cursor-theme", cursorTheme);

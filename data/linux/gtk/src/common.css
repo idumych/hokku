@@ -1,0 +1,574 @@
+/* Rules both looks share. Adwaita underneath gives the sizes and the
+ * widgets nobody restyles; these take its colours, rounding and animation
+ * out and put the palette in. Each look's file defines the colours named
+ * here and draws its own controls after this. */
+
+/* the names GTK applications and Adwaita's leftovers look up */
+@define-color theme_bg_color @bg;
+@define-color theme_fg_color @fg;
+@define-color theme_base_color @base;
+@define-color theme_text_color @text;
+@define-color theme_selected_bg_color @sel_bg;
+@define-color theme_selected_fg_color @sel_fg;
+@define-color insensitive_bg_color @bg;
+@define-color insensitive_fg_color @disabled_fg;
+@define-color insensitive_base_color @bg;
+@define-color theme_unfocused_bg_color @bg;
+@define-color theme_unfocused_fg_color @fg;
+@define-color theme_unfocused_base_color @base;
+@define-color theme_unfocused_text_color @text;
+@define-color theme_unfocused_selected_bg_color @sel_bg;
+@define-color theme_unfocused_selected_fg_color @sel_fg;
+@define-color unfocused_insensitive_color @disabled_fg;
+@define-color borders @border;
+@define-color unfocused_borders @border;
+@define-color wm_title @fg;
+@define-color wm_unfocused_title @disabled_fg;
+@define-color wm_bg_a @bg;
+@define-color wm_bg_b @bg;
+
+* {
+	transition: none;
+	outline-color: @nav;
+	outline-style: dotted;
+	outline-width: 1px;
+	outline-offset: -3px;
+	-gtk-outline-radius: 0;
+	-GtkScrollbar-has-backward-stepper: true;
+	-GtkScrollbar-has-forward-stepper: true;
+	-GtkScrollbar-has-secondary-backward-stepper: false;
+	-GtkScrollbar-has-secondary-forward-stepper: false;
+}
+
+/* Inactive windows look like active ones, as on Be; nothing dims. */
+
+window, window:backdrop, .background, .background:backdrop {
+	background-color: @bg;
+	color: @fg;
+}
+
+label:disabled, label:disabled:backdrop {
+	color: @disabled_fg;
+}
+
+label:backdrop, label.dim-label:backdrop {
+	color: inherit;
+}
+
+.dim-label, label.separator {
+	opacity: 1;
+	color: mix(@fg, @bg, 0.45);
+}
+
+*:disabled, *:disabled:backdrop {
+	-gtk-icon-effect: dim;
+}
+
+selection, *:selected, *:selected:focus,
+selection:backdrop, *:selected:backdrop,
+entry selection, entry selection:focus, entry selection:backdrop,
+textview text selection:focus, textview text selection,
+label selection, label selection:backdrop {
+	background-color: @sel_bg;
+	color: @sel_fg;
+}
+
+/* window decorations GTK draws itself: square, with a plain edge */
+
+decoration, decoration:backdrop {
+	border-radius: 0;
+	box-shadow: 0 0 0 1px @frame, 0 2px 6px 1px alpha(black, 0.25);
+}
+
+.maximized decoration, .fullscreen decoration, .tiled decoration {
+	box-shadow: none;
+}
+
+headerbar, .titlebar:not(headerbar), headerbar:backdrop,
+.titlebar:not(headerbar):backdrop {
+	min-height: 0;
+	padding: 2px 6px;
+	border-width: 0 0 1px 0;
+	border-style: solid;
+	border-color: @sep_dark;
+	border-radius: 0;
+	background-image: none;
+	background-color: @bg;
+	box-shadow: none;
+	color: @fg;
+}
+
+headerbar .title, .titlebar .title {
+	font-weight: bold;
+}
+
+headerbar .subtitle, .titlebar .subtitle {
+	opacity: 0.7;
+}
+
+headerbar entry, headerbar spinbutton, headerbar button {
+	margin-top: 2px;
+	margin-bottom: 2px;
+}
+
+headerbar separator.titlebutton, .titlebar separator.titlebutton {
+	background: none;
+}
+
+button.titlebutton, button.titlebutton:backdrop {
+	min-width: 16px;
+	min-height: 16px;
+	padding: 2px;
+	border: none;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: @fg;
+}
+
+button.titlebutton:hover {
+	background-color: alpha(@fg, 0.08);
+}
+
+button.titlebutton:active {
+	background-color: alpha(@fg, 0.16);
+}
+
+/* text */
+
+entry, spinbutton:not(.vertical), entry:backdrop,
+spinbutton:not(.vertical):backdrop, textview text, textview text:backdrop,
+iconview, iconview:backdrop, .view, .view:backdrop {
+	background-color: @base;
+	color: @text;
+}
+
+textview border {
+	background-color: @bg;
+}
+
+/* fields are square in both looks, joined or not */
+.linked:not(.vertical) > entry:first-child, .linked:not(.vertical) > entry:last-child,
+.linked:not(.vertical) > entry:only-child, .linked.vertical > entry:first-child,
+.linked.vertical > entry:last-child, .linked.vertical > entry:only-child {
+	border-radius: 0;
+}
+
+entry image, entry image:backdrop {
+	color: mix(@text, @base, 0.3);
+}
+
+entry progress {
+	border-color: @status;
+	background-image: none;
+	background-color: transparent;
+}
+
+entry.error, entry.error:focus {
+	color: @failure;
+	border-color: @failure;
+}
+
+entry.warning {
+	color: mix(@text, orange, 0.6);
+}
+
+/* lists */
+
+treeview.view, treeview.view:backdrop {
+	background-color: @base;
+	color: @text;
+	border-left-color: @sep_dark;
+	border-top-color: @sep_dark;
+	-GtkTreeView-grid-line-pattern: '';
+	-GtkTreeView-tree-line-pattern: '';
+}
+
+treeview.view:selected, treeview.view:selected:focus,
+treeview.view:selected:backdrop, row:selected, row:selected:backdrop,
+row:selected:focus, flowboxchild:selected, iconview:selected {
+	background-color: @sel_bg;
+	color: @sel_fg;
+	border-radius: 0;
+}
+
+treeview.view:hover {
+	background-color: transparent;
+}
+
+treeview.view.progressbar, treeview.view.progressbar:selected {
+	border: 1px solid @status_border;
+	background-color: @status;
+	background-image: none;
+	color: @fg;
+}
+
+treeview.view.trough {
+	background-color: @bg;
+}
+
+treeview.view.dnd {
+	border: 1px solid @nav;
+}
+
+treeview.view header button, treeview.view header button:backdrop,
+treeview.view header button:hover, treeview.view header button:active {
+	min-height: 0;
+	padding: 1px 6px;
+	border-width: 0 1px 1px 0;
+	border-style: solid;
+	border-color: @header_border;
+	border-radius: 0;
+	background-color: @header;
+	box-shadow: inset 1px 1px @header_light;
+	text-shadow: none;
+	color: @fg;
+}
+
+treeview.view header button:active {
+	background-image: none;
+	background-color: @header_active;
+}
+
+treeview.view header button:last-child {
+	border-right-width: 0;
+}
+
+list, list:backdrop {
+	background-color: @base;
+	color: @text;
+}
+
+row:hover, row.activatable:hover {
+	background-color: transparent;
+}
+
+row.activatable:active {
+	box-shadow: none;
+	background-color: alpha(@sel_bg, 0.5);
+}
+
+/* scrolled windows and frames */
+
+scrolledwindow > undershoot, scrolledwindow > overshoot {
+	background: none;
+	box-shadow: none;
+}
+
+scrolledwindow junction, scrolledwindow junction:backdrop {
+	border: none;
+	background-image: none;
+	background-color: @bg;
+}
+
+frame > border, .frame, frame > border:backdrop, .frame:backdrop {
+	border-color: @frame;
+}
+
+scrolledwindow.frame, frame.view > border, scrolledwindow > .frame {
+	border-color: @field_border;
+}
+
+separator, separator:backdrop {
+	min-width: 1px;
+	min-height: 1px;
+	background: none;
+	background-color: @sep_dark;
+}
+
+paned > separator, paned > separator:backdrop {
+	background-image: none;
+	background-color: @sep_dark;
+}
+
+paned.wide > separator {
+	background-color: @bg;
+	border-color: @sep_dark;
+}
+
+/* Adwaita underlines the current tab; neither look does */
+
+notebook > header.top > tabs > tab:checked,
+notebook > header.top > tabs > tab:not(:checked),
+notebook > header.bottom > tabs > tab:checked,
+notebook > header.bottom > tabs > tab:not(:checked),
+notebook > header.left > tabs > tab:checked,
+notebook > header.left > tabs > tab:not(:checked),
+notebook > header.right > tabs > tab:checked,
+notebook > header.right > tabs > tab:not(:checked) {
+	box-shadow: none;
+}
+
+/* tool bars and action bars: the window's colour, a line underneath */
+
+toolbar, .toolbar, toolbar:backdrop, actionbar > revealer > box,
+searchbar > revealer > box, .inline-toolbar {
+	background-color: @bg;
+	background-image: none;
+	border-color: @sep_dark;
+}
+
+toolbar {
+	padding: 2px;
+	border-bottom: 1px solid @sep_dark;
+	box-shadow: inset 0 1px @light;
+}
+
+toolbar.horizontal > separator, toolbar.vertical > separator {
+	margin: 4px;
+}
+
+toolbar button, toolbar button:backdrop {
+	padding: 3px;
+}
+
+/* tool tips: the Be yellow note */
+
+tooltip, tooltip.background, tooltip:backdrop, .tooltip,
+tooltip.background.csd {
+	padding: 2px 4px;
+	border: 1px solid @tooltip_border;
+	border-radius: 0;
+	background-image: none;
+	background-color: @tooltip_bg;
+	box-shadow: none;
+	text-shadow: none;
+	color: @tooltip_fg;
+}
+
+tooltip *, tooltip label {
+	color: @tooltip_fg;
+	padding: 0;
+}
+
+tooltip decoration {
+	background-color: transparent;
+	box-shadow: none;
+}
+
+/* menus */
+
+menubar, .menubar, menubar:backdrop {
+	padding: 0;
+	background-image: none;
+	background-color: @menu_bg;
+	box-shadow: inset 0 1px @menubar_light;
+	border-bottom: 1px solid @menubar_line;
+	color: @menu_fg;
+}
+
+menubar > menuitem, .menubar > menuitem {
+	min-height: 0;
+	padding: 2px 7px;
+	border: 1px solid transparent;
+	color: @menu_fg;
+}
+
+menubar > menuitem:hover, .menubar > menuitem:hover {
+	box-shadow: none;
+	border-color: @menu_sel_border;
+	background-color: @menu_sel_bg;
+	color: @menu_sel_fg;
+}
+
+menubar > menuitem:disabled {
+	color: @disabled_fg;
+	box-shadow: none;
+}
+
+menu, .menu, .context-menu, menu:backdrop, .menu:backdrop {
+	margin: 0;
+	padding: 1px 0;
+	border: 1px solid @menu_border;
+	border-radius: 0;
+	background-color: @menu_bg;
+	color: @menu_fg;
+	font: initial;
+}
+
+.csd menu, .csd .menu {
+	border: 1px solid @menu_border;
+	border-radius: 0;
+}
+
+.csd.popup decoration {
+	border-radius: 0;
+}
+
+.csd.popup decoration {
+	box-shadow: 0 1px 4px alpha(black, 0.25);
+}
+
+menu menuitem, .menu menuitem {
+	min-height: 0;
+	min-width: 40px;
+	padding: 2px 10px;
+	border: 1px solid transparent;
+	text-shadow: none;
+	color: @menu_fg;
+}
+
+menu menuitem:hover, .menu menuitem:hover {
+	border-color: @menu_sel_border;
+	background-color: @menu_sel_bg;
+	color: @menu_sel_fg;
+}
+
+menu menuitem:disabled, .menu menuitem:disabled {
+	color: @disabled_fg;
+}
+
+menu menuitem accelerator, .menu menuitem accelerator {
+	color: inherit;
+	opacity: 0.75;
+	margin-left: 18px;
+}
+
+menu menuitem arrow {
+	min-width: 9px;
+	min-height: 9px;
+	-gtk-icon-source: none;
+}
+
+menu > arrow, .menu > arrow {
+	border: none;
+	background-color: @menu_bg;
+	color: @menu_fg;
+}
+
+menu separator, .menu separator, menu menuitem.separator {
+	min-height: 1px;
+	margin: 3px 0 4px;
+	background-color: @menu_sep;
+	box-shadow: 0 1px @menu_sep_light;
+}
+
+menu menuitem check, menu menuitem radio, menu menuitem check:hover,
+menu menuitem radio:hover, menu menuitem check:checked,
+menu menuitem radio:checked {
+	min-width: 12px;
+	min-height: 12px;
+	margin: 0 4px 0 -6px;
+	border: none;
+	background-color: transparent;
+	box-shadow: none;
+}
+
+/* popovers: a menu-coloured box with a plain edge */
+
+popover, popover.background, popover:backdrop {
+	padding: 4px;
+	border: 1px solid @menu_border;
+	border-radius: 0;
+	background-image: none;
+	background-color: @menu_bg;
+	box-shadow: 0 2px 5px alpha(black, 0.25);
+	color: @menu_fg;
+}
+
+popover.menu modelbutton:hover, modelbutton.flat:hover {
+	background-color: @menu_sel_bg;
+	color: @menu_sel_fg;
+}
+
+modelbutton.flat, .menuitem.button.flat {
+	border-radius: 0;
+	padding: 2px 10px;
+}
+
+/* the rest */
+
+calendar, calendar:backdrop {
+	border-color: @field_border;
+	background-color: @base;
+	color: @text;
+}
+
+calendar.header {
+	border-radius: 0;
+	background-color: @bg;
+}
+
+calendar:selected {
+	border-radius: 0;
+}
+
+infobar, infobar.info, infobar.question, infobar.warning, infobar.error {
+	background-image: none;
+	text-shadow: none;
+	color: @fg;
+}
+
+infobar.info, infobar.question {
+	background-color: @tooltip_bg;
+}
+
+infobar.warning {
+	background-color: mix(@bg, orange, 0.35);
+}
+
+infobar.error {
+	background-color: mix(@bg, @failure, 0.35);
+}
+
+*:link, button:link, button:visited {
+	color: @link;
+}
+
+*:visited {
+	color: @link_visited;
+}
+
+stacksidebar row:selected, placessidebar row:selected {
+	background-color: @sel_bg;
+	color: @sel_fg;
+}
+
+.sidebar, .sidebar:backdrop, stacksidebar.sidebar list,
+placessidebar list {
+	background-color: @bg;
+	border-color: @sep_dark;
+}
+
+rubberband, .rubberband {
+	border: 1px solid @nav;
+	background-color: alpha(@nav, 0.15);
+}
+
+levelbar block.filled, levelbar block.filled.low,
+levelbar block.filled.high {
+	border-color: @status_border;
+	background-color: @status;
+}
+
+levelbar block.empty {
+	border-color: @field_border;
+	background-color: @base;
+}
+
+levelbar trough {
+	border: none;
+	background: none;
+	padding: 0;
+}
+
+levelbar block {
+	border-radius: 0;
+	box-shadow: none;
+}
+
+levelbar.horizontal.continuous block {
+	min-height: 6px;
+}
+
+colorswatch, colorswatch:drop(active) {
+	border-radius: 0;
+}
+
+.app-notification, .app-notification.frame {
+	border-radius: 0;
+	background-image: none;
+	background-color: @tooltip_bg;
+	color: @tooltip_fg;
+	border: 1px solid @tooltip_border;
+}

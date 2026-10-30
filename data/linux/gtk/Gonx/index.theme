@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=Gonx
+Comment=The Gonx BeOS concept look for GTK 3 applications.
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=Gonx

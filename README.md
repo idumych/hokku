@@ -214,6 +214,15 @@ Appearance has a Themes tab, and `hokku-theme` does the same from a shell
   GTK, icon and cursor themes (GTK's `settings.ini` and gsettings), and the Qt style (qt5ct's
   and qt6ct's settings, Kvantum's theme).
 
+GTK 3 and Qt apps get the Haiku and Gonx looks too: Hokku installs GTK themes of both
+(`/usr/share/themes/Haiku`, `Gonx`) and Kvantum themes for Qt 5 and 6 (`/usr/share/Kvantum`;
+Qt needs the `kvantum` package), made by `data/linux/gtk/generate.py` and
+`data/linux/kvantum/generate.py` from the control looks' own colours and shapes. A theme also
+sets GTK's font from its plain font (¾ of the Be size: GTK counts points at 96 dpi). The Hokku
+session hands the theme's Qt style to Qt apps (`QT_STYLE_OVERRIDE`, from qt6ct's settings) and
+keeps GTK's scroll bars beside the content (`GTK_OVERLAY_SCROLLING=0`); Qt apps pick up a new
+style when they start, and GTK 4/libadwaita apps keep their own look.
+
 Hokku ships Haiku and Gonx in `/usr/share/cosmoe/themes`. *Save current look* keeps what is in
 use as a theme of your own in `~/.config/cosmoe/themes`; each theme is a folder with a
 `theme.ini` (see `src/preferences/appearance/Theme.h`) and the files it names. Running apps take

@@ -114,6 +114,17 @@ if [ -z "${XKB_DEFAULT_LAYOUT:-}" ]; then
     fi
 fi
 
+# The Qt style of the theme chosen in Appearance (Kvantum for Haiku and Gonx).
+# Qt takes it from qt5ct's or qt6ct's settings only with their platform theme
+# loaded, so hand it to Qt 5 and 6 apps alike; they read it when they start.
+if [ -z "${QT_STYLE_OVERRIDE:-}" ]; then
+    qt_style="$(sed -n 's/^style=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/qt6ct/qt6ct.conf" \
+        2>/dev/null | head -n 1 || true)"
+    [ -z "$qt_style" ] || export QT_STYLE_OVERRIDE="$qt_style"
+fi
+# GTK apps keep their scroll bars beside the content, as Be apps do
+export GTK_OVERLAY_SCROLLING="${GTK_OVERLAY_SCROLLING:-0}"
+
 # VirtualBox's VMSVGA driver can accept pointer events while failing to display
 # wlroots hardware cursors. Use software cursors and pixmap renderer to avoid this,
 # but only there: elsewhere the pixman renderer leaves the GPU unused.

@@ -778,6 +778,12 @@ executable(
 
 # Themes for Appearance and hokku-theme
 install_subdir('data/themes', install_dir: dir_cosmoe_data)
+# The Haiku and Gonx looks for GTK 3 apps (data/linux/gtk/generate.py makes them)
+foreach theme : ['Haiku', 'Gonx']
+    install_subdir('data/linux/gtk' / theme, install_dir: dir_data / 'themes')
+    # and for Qt apps, through Kvantum (data/linux/kvantum/generate.py)
+    install_subdir('data/linux/kvantum' / theme, install_dir: dir_data / 'Kvantum')
+endforeach
 
 executable(
 	'mime_db_builder',
