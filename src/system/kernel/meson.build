@@ -2,8 +2,9 @@ kernel_misc_file = host_machine.system() == 'darwin' ? 'misc_minimal.c' : 'misc.
 
 # Semaphore implementation selection:
 # - macOS: sem-macos.c (uses macOS-specific APIs, standalone)
-# - Windows: sem.cpp + semaphore.c (BeOS API + native Windows POSIX wrapper)
-# - Linux: sem.cpp (POSIX semaphores work correctly)
+# - Windows: sem.cpp + semaphore.c (semaphore.c: POSIX semaphores on
+#   Windows, which sem.cpp no longer uses)
+# - Linux: sem.cpp (FIFO semaphores on pthread mutexes and conditions)
 if host_machine.system() == 'darwin'
     kernel_sem_files = ['sem-macos.c']
 elif host_machine.system() == 'windows'

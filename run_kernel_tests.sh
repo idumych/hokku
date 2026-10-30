@@ -148,6 +148,7 @@ QUICK_TESTS=(
     "wait_test_3"
     "wait_test_4"
     "testsem"
+    "sem_fairness_test"
     "testports"
     "testporttorture"
     "testimage"

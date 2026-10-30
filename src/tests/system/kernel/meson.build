@@ -43,6 +43,7 @@ kernel_tests_cpp = [
   # 'wait_for_objects_test',  # Linking issues
   # 'yield_test',  # Uses _kern_thread_yield
   'testsem',
+  'sem_fairness_test',
   'testports',
   'testporttorture',
   'testimage',
