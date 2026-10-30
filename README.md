@@ -186,6 +186,8 @@ and do nothing: frames always go through the view. `CopyPixelsIn()`/`Out()`, ove
 `BGLScreen` aren't there yet. VLC Reborn's OpenGL video output uses it, and so does
 GLTeapot, Haiku's OpenGL demo, which Hokku now includes (Deskbar: Demos).
 
+![GLTeapot on Wayland (labwc), in Hokku's own look: a lit red teapot spinning at 60 frames per second, with a green light on its right](docs/screenshots/glteapot.png)
+
 ### Apps built on Hokku
 
 Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare as HiShare):
