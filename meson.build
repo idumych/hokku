@@ -979,6 +979,9 @@ subdir('src/backends')  # backend plugins (X11, Wayland, Windows, Cocoa) — bui
 
 subdir('src/tools')     # test framework (uses real libbe)
 
+# Before the apps: their install scripts type each app with mimeset, which
+# needs the system MIME database (the ELF executable sniffer rule) in place.
+subdir('data')
 if get_option('enable_apps')
   subdir('src/apps')
   subdir('src/preferences')
@@ -987,7 +990,6 @@ subdir('src/add-ons')
 if unit_tests_enabled
   subdir('src/tests')
 endif
-subdir('data')
 subdir('headers')
 subdir('src/servers/app/fonts')  # Font installation (macOS only)
 

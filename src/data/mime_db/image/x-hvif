@@ -12,3 +12,5 @@ resource(5, "META:EXTENS") message(234) {
 	"extensions" = "hvif",
 	"type" = "image/x-hvif"
 };
+
+resource(6, "META:PREF_APP") #'MSIG' "application/x-vnd.haiku-icon_o_matic";

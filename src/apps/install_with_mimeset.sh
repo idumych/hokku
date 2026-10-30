@@ -38,27 +38,34 @@ if [ ! -d "$mime_db_path" ] || [ ! -w "$mime_db_path" ]; then
     fi
 fi
 
+# Type the app from the system MIME database being installed (installed before
+# the apps), not the user's or the one already on the system: without its ELF
+# executable rule, an app is typed application/octet-stream and taken for a
+# document.
 case "$(uname -s)" in
     Darwin)
         DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
-            "$mimeset_path" -f "$dest_path"
+            "$mimeset_path" -f --mimedb "$mime_db_path" "$dest_path"
         ;;
     *)
         LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-            "$mimeset_path" -f "$dest_path"
+            "$mimeset_path" -f --mimedb "$mime_db_path" "$dest_path"
         ;;
 esac
 
 tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/cosmoe-mimeset.XXXXXX")"
 
+# The system database under the new entries: the types the app claims are then
+# copied from it, instead of created empty, which would replace the system
+# entries (descriptions, sniffer rules, icons) when copied over them below.
 case "$(uname -s)" in
     Darwin)
         DYLD_LIBRARY_PATH="${build_root}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}" \
-            "$mimeset_path" -a --mimedb "$tmpdir" "$dest_path"
+            "$mimeset_path" -a --mimedb "$tmpdir" --mimedb "$mime_db_path" "$dest_path"
         ;;
     *)
         LD_LIBRARY_PATH="${build_root}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \
-            "$mimeset_path" -a --mimedb "$tmpdir" "$dest_path"
+            "$mimeset_path" -a --mimedb "$tmpdir" --mimedb "$mime_db_path" "$dest_path"
         ;;
 esac
 

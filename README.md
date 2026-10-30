@@ -431,6 +431,12 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
   finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
   `/usr/local/lib`.
+- **Installed apps are typed as apps.** Each app is typed while it's installed, but the
+  system MIME database was installed after the apps, so on a machine without one (a package
+  build) `mimeset` typed them all `application/octet-stream`: the Deskbar then took an app
+  it launched for a document and listed it under Recent documents. The database is now
+  installed first and the apps are typed from it; the types they claim are copied from it
+  rather than created empty.
 
 ## Building
 
