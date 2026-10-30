@@ -8,6 +8,9 @@
  * the view. SwapBuffers() reads the frame back into a BBitmap and asks the
  * window to redraw; Draw() paints it. Cosmoe only shows what a view draws on
  * its window's thread, and this way GL can run on any thread, as on Haiku.
+ * The redraw is asked for with a message, never by locking the window: its
+ * thread takes the lock back between messages ahead of a waiting thread, so
+ * while the pointer moves a GL thread could wait for it on every frame.
  */
 
 #include <GLView.h>
@@ -19,10 +22,15 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
+#include <AppDefs.h>
 #include <Autolock.h>
 #include <Bitmap.h>
 #include <Locker.h>
+#include <Messenger.h>
+#include <OS.h>
 #include <Window.h>
+
+#include <AppMisc.h>
 
 #ifndef EGL_PLATFORM_SURFACELESS_MESA
 #define EGL_PLATFORM_SURFACELESS_MESA 0x31DD
@@ -50,7 +58,8 @@ struct gl_view_private {
 		pixelsSize(0),
 		readPixels(NULL),
 		finish(NULL),
-		failed(false)
+		failed(false),
+		redrawAsked(0)
 	{
 	}
 
@@ -71,6 +80,9 @@ struct gl_view_private {
 	read_pixels_func readPixels;
 	finish_func		finish;
 	bool			failed;
+	BMessenger		window;		// set while attached
+	int64			redrawAsked;	// when the last _UPDATE_ was posted,
+									// 0 once Draw() has run
 };
 
 
@@ -281,13 +293,23 @@ BGLView::SwapBuffers(bool vSync)
 	p->frameLock.Lock();
 	BBitmap* old = p->front;
 	p->front = frame;
+	BMessenger window = p->window;
 	p->frameLock.Unlock();
 	delete old;
 
-	if (LockLooperWithTimeout(100000) == B_OK) {
-		Invalidate();
-		UnlockLooper();
-	}
+	// One _UPDATE_ until Draw() has run, as Draw() paints the newest frame;
+	// another after 100 ms in case that one was dropped (window hidden)
+	bigtime_t now = system_time();
+	int64 asked = atomic_get64(&p->redrawAsked);
+	if (asked != 0 && now - asked < 100000)
+		return;
+	atomic_set64(&p->redrawAsked, now);
+	BMessage update(_UPDATE_);
+	update.AddInt64("when", now);
+	update.AddInt32("token", _get_object_token_(this));
+	update.AddRect("updateRect", BRect(0, 0, width - 1, height - 1));
+	if (window.SendMessage(&update, (BHandler*)NULL, 0) != B_OK)
+		atomic_set64(&p->redrawAsked, 0);
 }
 
 
@@ -349,6 +371,7 @@ BGLView::EnableDirectMode(bool enabled)
 void
 BGLView::Draw(BRect updateRect)
 {
+	atomic_set64(&fPrivate->redrawAsked, 0);
 	BAutolock locker(fPrivate->frameLock);
 	BBitmap* frame = fPrivate->front;
 	if (frame == NULL) {
@@ -371,6 +394,8 @@ BGLView::AttachedToWindow()
 	BView::AttachedToWindow();
 	BRect b = Bounds();
 	FrameResized(b.Width(), b.Height());
+	BAutolock locker(fPrivate->frameLock);
+	fPrivate->window = BMessenger(Window());
 }
 
 
@@ -385,6 +410,8 @@ void
 BGLView::DetachedFromWindow()
 {
 	BView::DetachedFromWindow();
+	BAutolock locker(fPrivate->frameLock);
+	fPrivate->window = BMessenger();
 }
 
 
