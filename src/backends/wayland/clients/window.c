@@ -750,9 +750,11 @@ struct window {
 	struct surface *main_surface;
 	struct zwlr_layer_surface_v1 *layer_surface;
 	/* configured: it has been configured, so it was shown; lost: the
-	 * compositor dropped it with its output, to make again on another */
+	 * compositor dropped it with its output, to make again on another;
+	 * retried: one dropped before it was shown was made again at once */
 	int layer_surface_configured;
 	int layer_surface_lost;
+	int layer_surface_retried;
 	struct xdg_surface *xdg_surface;
 	struct xdg_toplevel *xdg_toplevel;
 	struct zxdg_toplevel_decoration_v1 *xdg_toplevel_decoration;
@@ -6726,6 +6728,7 @@ layer_surface_handle_configure(void *data,
 
 	zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
 	window->layer_surface_configured = 1;
+	window->layer_surface_retried = 0;
 
 	/* The compositor decides only the sides we leave to it (0: an edge
 	 * panel's length, the desktop). A size we set ourselves is just echoed,
@@ -6760,15 +6763,20 @@ layer_surface_handle_closed(void *data,
 	if (window == NULL || window->layer_surface != layer_surface)
 		return;
 
-	/* Closed before it was ever shown: the compositor won't have it */
-	if (!window->layer_surface_configured) {
-		window_close(window);
+	window->layer_surface_lost = 1;
+	if (wl_list_empty(&window->display->output_list))
 		return;
+
+	/* Closed before it was ever shown: it started while a text console had
+	 * the screen, or as it was taken. Make it again once; if that goes too,
+	 * wait for the next output (closing it would quit the Deskbar). */
+	if (!window->layer_surface_configured) {
+		if (window->layer_surface_retried)
+			return;
+		window->layer_surface_retried = 1;
 	}
 
-	window->layer_surface_lost = 1;
-	if (!wl_list_empty(&window->display->output_list))
-		window_restore_layer_surface(window);
+	window_restore_layer_surface(window);
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
@@ -9003,7 +9011,10 @@ display_notify_screen_change(struct display *display, struct output *changedOutp
 
 	wl_list_for_each(window, &display->window_list, link) {
 		struct window_output *windowOutput;
-		bool matchesOutput = changedOutput == NULL;
+		/* A window on no output yet (one that started while a text
+		 * console had the screen) takes any: it placed itself on none. */
+		bool matchesOutput = changedOutput == NULL
+			|| wl_list_empty(&window->window_output_list);
 
 		if (window->screen_handler == NULL)
 			continue;

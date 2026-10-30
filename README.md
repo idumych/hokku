@@ -342,6 +342,9 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   to a text console (and adds new ones on the way back), so the Tracker desktop and the
   Deskbar never came back. A layer surface whose output is gone, or that the compositor
   closes, is now made again when an output appears, as if the window were hidden and shown.
+  That includes one started while a text console has the screen (a Deskbar starting as the
+  user switched to one quit), and such a window is told about the screen it gets, so the
+  Deskbar places itself on it instead of off the left edge of a screen of no width.
 
 ### Desktop integration
 
