@@ -108,7 +108,11 @@ if ! grep -qF "Terminal" "$HOME/.config/labwc/autostart" 2>/dev/null; then
     Terminal &
 fi
 
-mako &
+# The Deskbar starts Hokku's notification_server, which also shows the
+# desktop's notifications; mako is for sessions that turn it off.
+if [ "${HOKKU_NOTIFICATIONS:-1}" = 0 ]; then
+    mako &
+fi
 EOF
 chmod 700 "$startup_script"
 
