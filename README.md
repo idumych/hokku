@@ -345,6 +345,8 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   That includes one started while a text console has the screen (a Deskbar starting as the
   user switched to one quit), and such a window is told about the screen it gets, so the
   Deskbar places itself on it instead of off the left edge of a screen of no width.
+  Meanwhile `BScreen::Frame()` is the last screen (or 1024x768 if there was none) instead
+  of an empty rectangle, so a Tracker started then no longer piles the desktop icons at 0,0.
 
 ### Desktop integration
 
@@ -371,6 +373,10 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   the app launching it and never waited for it, so every app started from the Deskbar or
   Tracker stayed `<defunct>` after quitting until the Deskbar or Tracker quit. Apps are now
   started detached, as `xdg-open` is, and nothing has to wait for them, as on Haiku.
+- **The Deskbar drops apps that quit before it noticed their window.** An app already running
+  when the Deskbar starts (the Terminal opened at login) is listed by its process, and the
+  display reports only its window's quit, so it stayed in the Deskbar. When an app quits, the
+  Deskbar now also drops the listed processes that are gone.
 - **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
   screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
   return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead

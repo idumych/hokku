@@ -161,6 +161,8 @@ struct display {
 	struct wl_list window_list;
 	struct wl_list input_list;
 	struct wl_list output_list;
+	/* the screen while there is no output (see display_get_screen_dimensions) */
+	struct rectangle last_screen;
 	struct wl_list popup_callback_data_list;
 	struct wl_list deferred_widget_deletion_list;
 	struct wl_list deferred_window_deletion_list;
@@ -6576,9 +6578,11 @@ window_update_panel_margins(struct window *window, uint32_t width,
 	    || (window->cosmoe_flags & COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG) == 0)
 		return;
 
-	display_get_screen_dimensions(window->display, &screen);
 	output = display_get_output(window->display);
-	if (output != NULL && output->scale > 1)
+	if (output == NULL)
+		return;
+	display_get_screen_dimensions(window->display, &screen);
+	if (output->scale > 1)
 		scale = output->scale;
 	if (screen.width <= 0 || screen.height <= 0)
 		return;
@@ -9100,6 +9104,14 @@ display_destroy_output(struct display *d, uint32_t id)
 			 * the list, so we can call it for all windows to remove
 			 * this output.
 			 */
+			if (output == display_get_output(d)) {
+				struct rectangle screen;
+
+				output_get_allocation(output, &screen);
+				if (screen.width > 0 && screen.height > 0)
+					d->last_screen = screen;
+			}
+
 			wl_list_for_each(window, &d->window_list, link) {
 				bool wasOnOutput = false;
 				struct window_output *windowOutput;
@@ -9208,9 +9220,23 @@ display_get_screen_dimensions(struct display *display, struct rectangle *allocat
 	if (!display)
 		return;
 	struct output *output = display_get_output(display);
-	if (!output)
+	if (output)
+		output_get_allocation(output, allocation);
+	if (allocation->width > 0 && allocation->height > 0)
 		return;
-	output_get_allocation(output, allocation);
+
+	/* No output: labwc removes them all while a text console has the
+	 * screen. What is laid out against the screen then (Tracker's desktop
+	 * icons) would pile up at 0,0 on an empty one, so give the last
+	 * screen, or Haiku's default size if there was none. */
+	if (display->last_screen.width > 0 && display->last_screen.height > 0) {
+		*allocation = display->last_screen;
+	} else {
+		allocation->x = 0;
+		allocation->y = 0;
+		allocation->width = 1024;
+		allocation->height = 768;
+	}
 }
 
 void

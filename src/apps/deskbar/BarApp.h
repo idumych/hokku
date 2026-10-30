@@ -165,6 +165,7 @@ private:
 			void					AddTeam(team_id team, uint32 flags,
 										const char* sig, entry_ref*);
 			void					RemoveTeam(team_id);
+			void					_RemoveExitedTeams();
 
 			void					InitSettings();
 			void					SaveSettings();

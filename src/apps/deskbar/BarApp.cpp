@@ -38,6 +38,9 @@ All rights reserved.
 
 #include <locale.h>
 #include <errno.h>
+#ifndef _WIN32
+#	include <signal.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -714,6 +717,7 @@ TBarApp::MessageReceived(BMessage* message)
 			team_id team = -1;
 			message->FindInt32("be:team", &team);
 			RemoveTeam(team);
+			_RemoveExitedTeams();
 			break;
 		}
 
@@ -1211,6 +1215,37 @@ TBarApp::RemoveTeam(team_id team)
 			}
 		}
 	}
+}
+
+
+/*!	Hokku: an app that was already running when the Deskbar started is
+	listed by its process, found through the roster, and joined by the
+	display's team for it once its window shows. Only that team is reported
+	quitting, so when an app quits, the processes that are gone go too.
+*/
+void
+TBarApp::_RemoveExitedTeams()
+{
+#ifndef _WIN32
+	BList exited;
+	{
+		BAutolock autolock(sSubscriberLock);
+		if (!autolock.IsLocked())
+			return;
+
+		for (int32 i = 0; i < sBarTeamInfoList.CountItems(); i++) {
+			BarTeamInfo* barInfo = (BarTeamInfo*)sBarTeamInfoList.ItemAt(i);
+			for (int32 j = 0; j < barInfo->teams->CountItems(); j++) {
+				team_id team = (addr_t)barInfo->teams->ItemAt(j);
+				if (team > 0 && kill(team, 0) != 0 && errno == ESRCH)
+					exited.AddItem((void*)(addr_t)team);
+			}
+		}
+	}
+
+	for (int32 i = 0; i < exited.CountItems(); i++)
+		RemoveTeam((addr_t)exited.ItemAt(i));
+#endif
 }
 
 
