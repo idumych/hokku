@@ -1903,10 +1903,12 @@ status_t
 set_decorator(const BString& path)
 {
 	// The decorators are built into the backends: "Default" (the backend's
-	// own frame) and "Gonx".
+	// own frame), "Haiku" and "Gonx".
 	BString name;
 	if (path.ICompare("Default") == 0)
 		name = "Default";
+	else if (path.ICompare("Haiku") == 0)
+		name = "Haiku";
 	else if (path.ICompare("Gonx") == 0)
 		name = "Gonx";
 	else
@@ -1998,6 +2000,8 @@ apply_decorator(void* display)
 	set_rgb(style.tab_inactive, ui_color(B_WINDOW_INACTIVE_TAB_COLOR));
 	set_rgb(style.text, ui_color(B_WINDOW_TEXT_COLOR));
 	set_rgb(style.text_inactive, ui_color(B_WINDOW_INACTIVE_TEXT_COLOR));
+	set_rgb(style.frame, ui_color(B_WINDOW_BORDER_COLOR));
+	set_rgb(style.frame_inactive, ui_color(B_WINDOW_INACTIVE_BORDER_COLOR));
 
 	// bold titles, plain on the small tabs of floating windows, as the
 	// app_server decorators do

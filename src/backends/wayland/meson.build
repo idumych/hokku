@@ -18,6 +18,7 @@ srcs_wayland = [
     'shared/file-util.c',
     'shared/frame.c',
     'shared/gonx-frame.c',
+    'shared/haiku-frame.c',
 ]
 
 srcs_wayland = files(srcs_wayland)

@@ -6,6 +6,10 @@
  * decorator (github.com/idumych/gonx) to cairo. frame.c lays out and draws
  * a frame with these functions instead of the Weston theme when a window
  * has a Gonx style set (frame_set_gonx()).
+ *
+ * A style with `haiku` set asks for Haiku's own frame instead (the yellow
+ * tab of app_server's Default decorator, haiku-frame.c) through the same
+ * functions and layout.
  */
 #ifndef GONX_FRAME_H
 #define GONX_FRAME_H
@@ -26,6 +30,11 @@ struct gonx_style {
 	/* Pango font descriptions, e.g. "Noto Sans Bold 11px" */
 	char title_font[128];
 	char small_title_font[128];
+	/* B_WINDOW_BORDER_COLOR and its inactive twin; only Haiku's frame uses
+	 * them */
+	uint8_t frame[3];
+	uint8_t frame_inactive[3];
+	int haiku;			/* Haiku's frame instead of Gonx */
 };
 
 enum {
@@ -64,6 +73,11 @@ struct gonx_layout {
 	int slope, text_offset, resize_length;
 	int text_ascent, text_height;
 	double scale;
+
+	/* Haiku's frame: set by its layout, which leaves the shelf and flap
+	 * empty. text_offset is then from the tab's left edge. */
+	int haiku;
+	int title_space;
 };
 
 /* Decoration thickness round the content, before the window is laid out. */
@@ -85,7 +99,7 @@ gonx_frame_paint(cairo_t *cr, const struct gonx_layout *layout,
  * corners and a document window's resize knob. Draw after the content. */
 void
 gonx_frame_paint_overlay(cairo_t *cr, const struct gonx_layout *layout,
-			 int active);
+			 const struct gonx_style *style, int active);
 
 /* A THEME_LOCATION_* value for the point (x, y). */
 int

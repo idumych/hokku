@@ -222,7 +222,8 @@ bool
 DecorInfo::CheckForChanges(bool& deleted)
 {
 	// the built-in decorators never change
-	if (InitCheck() != B_OK || IsDefault() || fPath == "Gonx")
+	if (InitCheck() != B_OK || IsDefault() || fPath == "Gonx"
+		|| fPath == "Haiku")
 		return false;
 
 	BEntry entry(fPath.String());
@@ -278,11 +279,11 @@ DecorInfo::_Init(bool isUpdate)
 		fVersion = 0.5;
 		fInitStatus = B_OK;
 
+		// Cosmoe: the desktop's own frames (the compositor's, or the
+		// backend's theme); Haiku's tab is the "Haiku" decorator
 		fName = gSystemCatalog.GetString(B_TRANSLATE_MARK("Default"),
 			B_TRANSLATION_CONTEXT);
-		fShortDescription = gSystemCatalog.GetString(B_TRANSLATE_MARK(
-				"Default Haiku window decorator."),
-			B_TRANSLATION_CONTEXT);
+		fShortDescription = "The desktop's own window frames.";
 
 		// The following is to get the modification time of the app_server
 		// and, thusly, the Default decorator...
@@ -296,6 +297,23 @@ DecorInfo::_Init(bool isUpdate)
 			return;
 
 		entry.GetModificationTime(&fModificationTime);
+		return;
+	}
+
+	if (fPath == "Haiku") {
+		// Cosmoe: app_server's Default decorator, built into the backends
+		fName = "Haiku";
+		fAuthors = "DarkWyrm, Stephan Aßmus, Clemens Zeidler, Ingo Weinhold; "
+			"Hokku contributors";
+		fShortDescription = "Haiku's window decorator: a yellow tab with the "
+			"close and zoom buttons, a bevelled frame.";
+		fLongDescription = "";
+		fLicenseURL = "https://opensource.org/licenses/MIT";
+		fLicenseName = "MIT";
+		fSupportURL = "https://github.com/idumych/hokku";
+		fVersion = 0.5;
+		fModificationTime = 0;
+		fInitStatus = B_OK;
 		return;
 	}
 
@@ -387,12 +405,16 @@ DecorInfoUtility::DecorInfoUtility(bool scanNow)
 
 	fList.AddItem(info);
 
-	// Cosmoe has no decorator add-ons; Gonx is built in like Default
-	DecorInfo* gonx = new(std::nothrow) DecorInfo("Gonx");
-	if (gonx != NULL && gonx->InitCheck() == B_OK)
-		fList.AddItem(gonx);
-	else
-		delete gonx;
+	// Cosmoe has no decorator add-ons; Haiku and Gonx are built in like
+	// Default
+	const char* builtIn[] = { "Haiku", "Gonx" };
+	for (size_t i = 0; i < sizeof(builtIn) / sizeof(builtIn[0]); i++) {
+		DecorInfo* decorator = new(std::nothrow) DecorInfo(builtIn[i]);
+		if (decorator != NULL && decorator->InitCheck() == B_OK)
+			fList.AddItem(decorator);
+		else
+			delete decorator;
+	}
 
 	if (scanNow)
 		ScanDecorators();

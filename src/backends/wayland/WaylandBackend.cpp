@@ -325,8 +325,9 @@ public:
 		if (display == NULL)
 			return B_BAD_VALUE;
 
-		// "Default" is the theme's frame; Gonx is the only other built-in one
-		if (style == NULL || strcmp(style->name, "Gonx") != 0) {
+		// "Default" is the theme's frame; Haiku and Gonx are drawn here
+		const bool haiku = style != NULL && strcmp(style->name, "Haiku") == 0;
+		if (style == NULL || (!haiku && strcmp(style->name, "Gonx") != 0)) {
 			display_set_gonx_style((struct display*)display, NULL);
 			return style == NULL || strcmp(style->name, "Default") == 0
 				? B_OK : B_NAME_NOT_FOUND;
@@ -344,6 +345,10 @@ public:
 			style->title_font);
 		snprintf(gonx.small_title_font, sizeof(gonx.small_title_font), "%s",
 			style->small_title_font);
+		memcpy(gonx.frame, style->frame, sizeof(gonx.frame));
+		memcpy(gonx.frame_inactive, style->frame_inactive,
+			sizeof(gonx.frame_inactive));
+		gonx.haiku = haiku;
 		display_set_gonx_style((struct display*)display, &gonx);
 		return B_OK;
 	}

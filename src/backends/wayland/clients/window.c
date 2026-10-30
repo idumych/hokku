@@ -3850,8 +3850,9 @@ frame_tablet_tool_up_handler(struct widget *widget, struct tablet_tool *tool,
 	frame_handle_status(frame, tool->input, time, location);
 }
 
-/* Windows that get the Gonx frame when it is chosen: the looks that have a
- * tab (titled, document, floating). Others keep the theme's frame. */
+/* Windows that get the Gonx or Haiku frame when one is chosen: the looks
+ * that have a tab (titled, document, floating) and modal windows' plain
+ * border. Others keep the theme's frame. */
 static int
 window_uses_gonx(struct window *window)
 {

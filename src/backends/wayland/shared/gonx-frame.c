@@ -29,6 +29,7 @@
 
 #include "cairo-util.h"
 #include "gonx-frame.h"
+#include "haiku-frame.h"
 
 struct color {
 	double r, g, b;
@@ -306,6 +307,11 @@ void
 gonx_frame_sizes(const struct gonx_style *style, int small, int tabless,
 		 int *top, int *bottom, int *left, int *right)
 {
+	if (style->haiku) {
+		haiku_frame_sizes(style, small, tabless, top, bottom, left, right);
+		return;
+	}
+
 	struct gonx_layout l;
 	memset(&l, 0, sizeof l);
 	l.small = small;
@@ -329,6 +335,11 @@ gonx_frame_layout(struct gonx_layout *l, const struct gonx_style *style,
 		  const char *title)
 {
 	int top, bottom, left, right;
+
+	if (style->haiku) {
+		haiku_frame_layout(l, style, title);
+		return;
+	}
 
 	geometry(l, style);
 	gonx_frame_sizes(style, l->small, l->tabless, &top, &bottom, &left,
@@ -1177,6 +1188,11 @@ gonx_frame_paint(cairo_t *cr, const struct gonx_layout *l,
 		 const struct gonx_style *style, const char *title, int active,
 		 const int pressed[GONX_BUTTON_COUNT])
 {
+	if (style->haiku) {
+		haiku_frame_paint(cr, l, style, title, active, pressed);
+		return;
+	}
+
 	cairo_save(cr);
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 	cairo_set_source_rgba(cr, 0, 0, 0, 0);
@@ -1233,8 +1249,14 @@ gonx_frame_paint(cairo_t *cr, const struct gonx_layout *l,
 
 
 void
-gonx_frame_paint_overlay(cairo_t *cr, const struct gonx_layout *l, int active)
+gonx_frame_paint_overlay(cairo_t *cr, const struct gonx_layout *l,
+			 const struct gonx_style *style, int active)
 {
+	if (l->haiku) {
+		haiku_frame_paint_overlay(cr, l, style, active);
+		return;
+	}
+
 	const struct color base = frame_color(active);
 	const int knob = l->document && l->resizable;
 

@@ -192,6 +192,15 @@ and an alert in the Gonx border.
 - **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
   Hokku now keeps (see Desktop integration below). The fonts are Noto Sans at 9 and 11 points.
 
+### Haiku's window frame
+
+`setdecor Haiku` gives Hokku windows Haiku's own frame on Wayland: app_server's Default
+decorator (the yellow tab with the close and zoom buttons, the bevelled border in the window
+border colour, the resize notches and a document window's knob), ported to cairo and drawn
+client-side like the Gonx frame. `Default` stays the desktop's own frames.
+
+![StyledEdit (active), Appearance and DeskCalc in Haiku's frame on Hokku OS](docs/screenshots/haiku-decorator.png)
+
 ### OpenGL with `BGLView`
 
 Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header `<opengl/GLView.h>`, the same

@@ -136,7 +136,7 @@ status_t cosmoe_display_read_screen(cosmoe_display_t display, int32_t x,
 void cosmoe_display_set_port(cosmoe_display_t display, int32_t sender_port_id, int32_t receiver_port_id);
 
 // Window decorator for client-side frames. name is "Default" or a built-in
-// decorator such as "Gonx"; the colours and fonts come from the system's
+// decorator ("Haiku", "Gonx"); the colours and fonts come from the system's
 // settings. Applies to windows created afterwards.
 typedef struct cosmoe_decorator_style {
 	char name[64];
@@ -146,6 +146,8 @@ typedef struct cosmoe_decorator_style {
 	uint8_t text_inactive[3];
 	char title_font[128];		// Pango description, e.g. "Noto Sans Bold 11px"
 	char small_title_font[128];	// for floating windows
+	uint8_t frame[3];			// B_WINDOW_BORDER_COLOR
+	uint8_t frame_inactive[3];
 } cosmoe_decorator_style;
 
 status_t cosmoe_display_set_decorator(cosmoe_display_t display,

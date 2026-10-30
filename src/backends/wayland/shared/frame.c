@@ -108,7 +108,7 @@ struct frame {
 	struct wl_list pointers;
 	struct wl_list touches;
 
-	/* set when the frame is drawn as Gonx instead of the theme */
+	/* set when the frame is drawn as Gonx or Haiku instead of the theme */
 	const struct gonx_style *gonx;
 	uint32_t gonx_look;
 	struct gonx_layout gonx_layout;
@@ -1208,7 +1208,7 @@ frame_repaint_overlay(struct frame *frame, cairo_t *cr)
 		return;
 
 	frame_refresh_geometry(frame);
-	gonx_frame_paint_overlay(cr, &frame->gonx_layout,
+	gonx_frame_paint_overlay(cr, &frame->gonx_layout, frame->gonx,
 				 (frame->flags & FRAME_FLAG_ACTIVE) != 0);
 }
 
