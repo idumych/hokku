@@ -22,7 +22,7 @@
 #include <strings.h>
 #include <sys/file.h>
 #include <unistd.h>
-#ifdef __linux__
+#ifndef _WIN32
 #	include <sys/wait.h>
 #endif
 
@@ -1204,6 +1204,51 @@ open_with_desktop(const char* target)
 	return opener > 0 ? (team_id)opener : -1;
 }
 #endif	// __linux__
+
+
+#ifndef _WIN32
+/*!	Starts the app at \a path with \a argv, detached (through a child that
+	exits at once), so it's never left a zombie of the app that launched it:
+	nothing waits for it, as on Haiku. Returns its process, or -1.
+*/
+static team_id
+spawn_detached_app(const char* path, char* const argv[])
+{
+	int pipeFDs[2];
+	if (pipe(pipeFDs) != 0)
+		return -1;
+
+	pid_t child = fork();
+	if (child < 0) {
+		close(pipeFDs[0]);
+		close(pipeFDs[1]);
+		return -1;
+	}
+
+	if (child == 0) {
+		close(pipeFDs[0]);
+		pid_t grandchild = fork();
+		if (grandchild == 0) {
+			close(pipeFDs[1]);
+			setenv(kRosterLaunchEnvVar, "1", 1);
+			execv(path, argv);
+			_exit(1);
+		}
+		pid_t reported = grandchild;
+		ssize_t written = write(pipeFDs[1], &reported, sizeof(reported));
+		(void)written;
+		_exit(grandchild < 0 ? 1 : 0);
+	}
+
+	close(pipeFDs[1]);
+	pid_t app = -1;
+	if (read(pipeFDs[0], &app, sizeof(app)) != sizeof(app))
+		app = -1;
+	close(pipeFDs[0]);
+	waitpid(child, NULL, 0);
+	return app > 0 ? (team_id)app : -1;
+}
+#endif
 
 
 static bool
@@ -2629,15 +2674,9 @@ BRoster::_LaunchApp(const char* mimeType, const entry_ref* ref,
 
 	team_id launchedTeam = (team_id)child;
 #else
-	pid_t pid = fork();
+	team_id pid = spawn_detached_app(appPathString, launchArgv.data());
 	if (pid < 0)
 		return B_ERROR;
-
-	if (pid == 0) {
-		setenv(kRosterLaunchEnvVar, "1", 1);
-		execv(appPathString, launchArgv.data());
-		_exit(1);
-	}
 
 	if (_appTeam != NULL)
 		*_appTeam = (team_id)pid;

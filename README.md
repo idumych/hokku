@@ -364,6 +364,10 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   Cosmoe app handles the document, URL (`application/x-vnd.Be.URL.*`, `text/x-email`) or the
   `be:url`/refs of the launch message, it now runs `xdg-open`, detached, without the variables
   an AppImage's AppRun set for the bundle.
+- **Launched apps aren't left as zombies.** `BRoster::Launch()` started an app as a child of
+  the app launching it and never waited for it, so every app started from the Deskbar or
+  Tracker stayed `<defunct>` after quitting until the Deskbar or Tracker quit. Apps are now
+  started detached, as `xdg-open` is, and nothing has to wait for them, as on Haiku.
 - **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
   screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
   return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
