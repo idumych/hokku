@@ -203,6 +203,9 @@ libgl-dev`). `DirectConnected()` and `EnableDirectMode()` exist for `BDirectWind
 and do nothing: frames always go through the view. `CopyPixelsIn()`/`Out()`, overlays and
 `BGLScreen` aren't there yet. VLC Reborn's OpenGL video output uses it, and so does
 GLTeapot, Haiku's OpenGL demo, which Hokku now includes (Deskbar: Demos).
+`SwapBuffers()` doesn't lock the window: it locked it to show the frame, waiting up to
+100 ms, so while pointer motion kept the window busy GLTeapot fell from about 700 frames per
+second to 9-80. It now posts the update to the window, and keeps drawing at 600-1000.
 
 ![GLTeapot on Wayland (labwc), in Hokku's own look: a lit red teapot spinning at 60 frames per second, with a green light on its right](docs/screenshots/glteapot.png)
 
@@ -299,6 +302,14 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   broke, the window stopped taking messages, and the Terminal stopped showing what was
   typed. Each of those threads now gets an ID of its own, outside
   the range `spawn_thread()` hands out.
+- **Semaphores are fair, as on Haiku.** They were POSIX semaphores, which don't queue their
+  waiters: a thread that released one and acquired it straight back usually got it first.
+  A looper does exactly that between messages, so another thread locking a busy window
+  could wait out its whole timeout. Each semaphore is now a count and a queue of waiting
+  threads, served in order (a waiter got in after up to 81 ms before, 0.3 ms now). Also:
+  `B_ABSOLUTE_TIMEOUT` was read as wall-clock time, so absolute waits timed out at once;
+  `delete_sem()` wakes its waiters at once; `B_RELEASE_ALL` and `B_RELEASE_IF_WAITING_ONLY`
+  do what they say; and a thread killed while waiting leaves the queue.
 - **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
   creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
   (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
@@ -477,6 +488,12 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   it launched for a document and listed it under Recent documents. The database is now
   installed first and the apps are typed from it; the types they claim are copied from it
   rather than created empty.
+- **Installs and types apps on ext4.** ext4 keeps at most 4 KiB of attributes per file, and
+  Tracker, Chart and Showcase need more once `mimeset` has copied their icons and version
+  info from their resources, so `mimeset` failed on them and stopped `meson install`
+  (Ubuntu and Debian couldn't install Hokku). Those attributes are only copies that
+  `BAppFileInfo` falls back from to the resources, so one that doesn't fit is now left out
+  and the rest are written: all the apps are typed, with their icons read from the binary.
 
 ## Building
 
