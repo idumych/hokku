@@ -71,6 +71,30 @@ All rights reserved.
 #include "WindowMenuItem.h"
 
 
+/*!	Returns \a icon, or when it isn't a usable bitmap, a copy of the team's
+	icon fetched again. Now and then an app was listed without an icon (its
+	label where the icon goes), and the cause hasn't been found.
+*/
+static BBitmap*
+usable_team_icon(BBitmap* icon, BList* teams)
+{
+	if (icon != NULL && icon->IsValid())
+		return icon;
+
+	delete icon;
+	if (teams == NULL || teams->IsEmpty())
+		return NULL;
+
+	TBarApp* app = static_cast<TBarApp*>(be_app);
+	BBitmap* fetched = app->FetchTeamIcon((team_id)(addr_t)teams->ItemAt(0),
+		app->Settings()->iconSize);
+	if (fetched == NULL || !fetched->IsValid())
+		return NULL;
+
+	return new BBitmap(fetched);
+}
+
+
 bool TExpandoMenuBar::sDoMonitor = false;
 thread_id TExpandoMenuBar::sMonThread = B_ERROR;
 BLocker TExpandoMenuBar::sMonLocker("expando monitor");
@@ -488,7 +512,8 @@ TExpandoMenuBar::BuildItems()
 		if (iter == items.end()) {
 			// new team
 			TTeamMenuItem* item = new TTeamMenuItem(barInfo->teams,
-				barInfo->icon, barInfo->name, barInfo->sig, itemWidth);
+				usable_team_icon(barInfo->icon, barInfo->teams), barInfo->name,
+				barInfo->sig, itemWidth);
 
 			if (settings->trackerAlwaysFirst
 				&& strcasecmp(barInfo->sig, kTrackerSignature) == 0) {
@@ -501,7 +526,7 @@ TExpandoMenuBar::BuildItems()
 		} else {
 			// existing team, update info and add it
 			TTeamMenuItem* item = iter->second;
-			item->SetIcon(barInfo->icon);
+			item->SetIcon(usable_team_icon(barInfo->icon, barInfo->teams));
 			item->SetOverrideWidth(itemWidth);
 
 			if (settings->trackerAlwaysFirst
@@ -619,7 +644,8 @@ void
 TExpandoMenuBar::AddTeam(BList* team, BBitmap* icon, char* name,
 	char* signature)
 {
-	TTeamMenuItem* item = new TTeamMenuItem(team, icon, name, signature);
+	TTeamMenuItem* item = new TTeamMenuItem(team, usable_team_icon(icon, team),
+		name, signature);
 
 	desk_settings* settings = static_cast<TBarApp*>(be_app)->Settings();
 	if (settings != NULL && settings->trackerAlwaysFirst

@@ -3626,8 +3626,13 @@ BMenu::_AddDynamicItems(bool keyDown)
 		BMenuItem* superItem = Superitem();
 		BMenu* superMenu = Supermenu();
 		do {
-			if (superMenu != NULL
-				&& !superMenu->_OkToProceed(superItem, keyDown)) {
+			if (superMenu == NULL)
+				continue;
+
+			// _SelectItem() unlocks the supermenu's window while it shows
+			// this menu, so lock it again to ask it where the mouse is
+			SupermenuLocker locker(superMenu);
+			if (!superMenu->_OkToProceed(superItem, keyDown)) {
 				AddDynamicItem(B_ABORT);
 				addAborted = true;
 				break;

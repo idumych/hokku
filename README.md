@@ -314,6 +314,11 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
 - **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
   creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
   (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
+- **A menu that fills slowly asks its parent with the parent locked.** A submenu is shown
+  with its parent menu's window unlocked (Cosmoe does that so showing it can't deadlock on
+  Windows). A menu of folder contents that took more than one pass to fill (the Deskbar's,
+  on a slow or cold machine) then asked the unlocked parent where the mouse was, and printed
+  "Looper must be locked". It locks the parent for that now.
 - **Leaving a window is a `B_EXITED_VIEW`.** When the pointer leaves a window (X11
   `LeaveNotify`, Wayland pointer leave), the view that was under it gets a `B_MOUSE_MOVED`
   with `B_EXITED_VIEW`, as on Haiku, and no idle event follows. Before it heard nothing, so a
@@ -407,6 +412,9 @@ Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare
   when the Deskbar starts (the Terminal opened at login) is listed by its process, and the
   display reports only its window's quit, so it stayed in the Deskbar. When an app quits, the
   Deskbar now also drops the listed processes that are gone.
+- **Every app in the Deskbar has its icon.** Now and then an app was listed without one, its
+  label where the icon goes; the cause hasn't been found. When an app's entry gets no usable
+  icon, the Deskbar now fetches it again.
 - **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
   screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
   return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead

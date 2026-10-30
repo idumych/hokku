@@ -1356,8 +1356,9 @@ TBarApp::_CacheTeamIcon(BarTeamInfo* barInfo, int32 size)
 
 	// first look in the icon cache
 	barInfo->icon = barInfo->iconCache[index];
-	if (barInfo->icon != NULL)
+	if (barInfo->icon != NULL && barInfo->icon->IsValid())
 		return B_OK;
+	// (an unusable one is left to whoever still points to it, and replaced)
 
 	int32 composed = be_control_look->ComposeIconSize(size).IntegerWidth() + 1;
 	BRect iconRect = BRect(0, 0, composed - 1, composed - 1);
