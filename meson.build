@@ -768,6 +768,18 @@ executable(
 )
 
 executable(
+    'hokku-theme',
+    ['src/bin/hokku-theme.cpp', 'src/preferences/appearance/Theme.cpp'],
+    dependencies: dep_libbe,
+    include_directories: common_inc,
+    install: true,
+    install_dir: get_option('bindir'),
+)
+
+# Themes for Appearance and hokku-theme
+install_subdir('data/themes', install_dir: dir_cosmoe_data)
+
+executable(
 	'mime_db_builder',
 	'src/bin/mime_db_builder.cpp',
 	dependencies: dep_libbe,

@@ -20,6 +20,7 @@
 class ColorsView;
 class FontView;
 class LookAndFeelSettingsView;
+class ThemesView;
 
 
 class AppearanceWindow : public BWindow {
@@ -31,6 +32,7 @@ private:
 			void					_UpdateButtons();
 			bool					_IsDefaultable() const;
 			bool					_IsRevertable() const;
+			void					_AddSettingsTabs();
 
 		ColorsView*					fColorsView;
 		BButton*					fDefaultsButton;
@@ -38,6 +40,8 @@ private:
 
 		FontView*					fFontSettings;
 		LookAndFeelSettingsView*	fLookAndFeelSettings;
+		ThemesView*					fThemesView;
+		BTabView*					fTabView;
 };
 
 

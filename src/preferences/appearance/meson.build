@@ -22,6 +22,8 @@ app_srcs = [
     'FontSelectionView.cpp',
     'FontView.cpp',
     'LookAndFeelSettingsView.cpp',
+    'Theme.cpp',
+    'ThemesView.cpp',
 ]
 
 app_resource_defs = [

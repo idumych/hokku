@@ -201,6 +201,24 @@ client-side like the Gonx frame. `Default` stays the desktop's own frames.
 
 ![StyledEdit (active), Appearance and DeskCalc in Haiku's frame on Hokku OS](docs/screenshots/haiku-decorator.png)
 
+### Themes
+
+Appearance has a Themes tab, and `hokku-theme` does the same from a shell
+(`list`, `apply NAME`, `save NAME`, `current`). A theme sets the whole look at once:
+
+- the window decorator (Default, Haiku or Gonx) and the control look;
+- the system colours (any not listed are Haiku's) and the plain, bold, fixed and menu fonts;
+- the desktop colour and a wallpaper;
+- for other Linux apps: labwc's frames (a themerc the theme carries, written to
+  `~/.config/labwc/themerc-override`; a themerc-override of your own is kept as `.orig`), the
+  GTK, icon and cursor themes (GTK's `settings.ini` and gsettings), and the Qt style (qt5ct's
+  and qt6ct's settings, Kvantum's theme).
+
+Hokku ships Haiku and Gonx in `/usr/share/cosmoe/themes`. *Save current look* keeps what is in
+use as a theme of your own in `~/.config/cosmoe/themes`; each theme is a folder with a
+`theme.ini` (see `src/preferences/appearance/Theme.h`) and the files it names. Running apps take
+the new colours, fonts and frames; a new control look shows when they are restarted.
+
 ### OpenGL with `BGLView`
 
 Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header `<opengl/GLView.h>`, the same

@@ -22,6 +22,7 @@
 #include "ColorsView.h"
 #include "FontView.h"
 #include "LookAndFeelSettingsView.h"
+#include "ThemesView.h"
 
 
 // This file used to be called APRWindow, left this to avoid retranslating everything
@@ -45,25 +46,18 @@ AppearanceWindow::AppearanceWindow(BRect frame)
 	fRevertButton = new BButton("revert", B_TRANSLATE("Revert"),
 		new BMessage(kMsgRevert), B_WILL_DRAW);
 
-	BTabView* tabView = new BTabView("tabview", B_WIDTH_FROM_LABEL);
+	fTabView = new BTabView("tabview", B_WIDTH_FROM_LABEL);
 
-	fFontSettings = new FontView(B_TRANSLATE("Fonts"));
-
-	fColorsView = new ColorsView(B_TRANSLATE("Colors"));
-
-	fLookAndFeelSettings = new LookAndFeelSettingsView(
-		B_TRANSLATE("Look and feel"));
-
-	tabView->AddTab(fFontSettings);
-	tabView->AddTab(fColorsView);
-	tabView->AddTab(fLookAndFeelSettings);
-	tabView->SetBorder(B_NO_BORDER);
+	fThemesView = new ThemesView(B_TRANSLATE("Themes"));
+	fTabView->AddTab(fThemesView);
+	_AddSettingsTabs();
+	fTabView->SetBorder(B_NO_BORDER);
 
 	_UpdateButtons();
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0)
 		.SetInsets(0, B_USE_DEFAULT_SPACING, 0, B_USE_DEFAULT_SPACING)
-		.Add(tabView)
+		.Add(fTabView)
 		.Add(new BSeparatorView(B_HORIZONTAL))
 		.AddGroup(B_HORIZONTAL)
 			.Add(fDefaultsButton)
@@ -81,6 +75,18 @@ AppearanceWindow::MessageReceived(BMessage *message)
 		case kMsgUpdate:
 			_UpdateButtons();
 			break;
+
+		case kMsgThemeApplied:
+		{
+			// the other tabs read the settings when they are made
+			int32 selection = fTabView->Selection();
+			while (fTabView->CountTabs() > 1)
+				delete fTabView->RemoveTab(fTabView->CountTabs() - 1);
+			_AddSettingsTabs();
+			fTabView->Select(selection);
+			_UpdateButtons();
+			break;
+		}
 
 		case kMsgSetDefaults:
 			fFontSettings->SetDefaults();
@@ -102,6 +108,20 @@ AppearanceWindow::MessageReceived(BMessage *message)
 			BWindow::MessageReceived(message);
 			break;
 	}
+}
+
+
+void
+AppearanceWindow::_AddSettingsTabs()
+{
+	fFontSettings = new FontView(B_TRANSLATE("Fonts"));
+	fColorsView = new ColorsView(B_TRANSLATE("Colors"));
+	fLookAndFeelSettings = new LookAndFeelSettingsView(
+		B_TRANSLATE("Look and feel"));
+
+	fTabView->AddTab(fFontSettings);
+	fTabView->AddTab(fColorsView);
+	fTabView->AddTab(fLookAndFeelSettings);
 }
 
 

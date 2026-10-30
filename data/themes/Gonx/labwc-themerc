@@ -1,0 +1,47 @@
+# labwc's frames round other apps (Firefox, GTK, Qt) in Gonx's colours.
+# Be apps draw the Gonx frame themselves (client-side decorations).
+
+border.width: 2
+padding.width: 6
+padding.height: 3
+titlebar.height: 22
+
+window.active.border.color: #9eb2ca
+window.inactive.border.color: #a6b7cc
+window.active.indicator.toggled-keybind.color: #ff0000
+
+window.active.title.bg.color: #fbcc00
+window.inactive.title.bg.color: #ebebeb
+window.active.title.separator.color: #4f5b6b
+window.inactive.title.separator.color: #a6b7cc
+
+window.active.label.text.color: #000000
+window.inactive.label.text.color: #4c4c4c
+window.label.text.justify: left
+
+window.active.button.unpressed.image.color: #000000
+window.inactive.button.unpressed.image.color: #4c4c4c
+window.button.width: 22
+window.button.spacing: 2
+window.button.hover.bg.color: #fde680
+window.button.hover.bg.corner-radius: 3
+
+menu.border.width: 1
+menu.border.color: #4f5b6b
+menu.items.bg.color: #f7f7f5
+menu.items.text.color: #000000
+menu.items.active.bg.color: #9eb2ca
+menu.items.active.text.color: #000000
+menu.separator.color: #a6b7cc
+menu.title.bg.color: #fbcc00
+menu.title.text.color: #000000
+
+osd.bg.color: #ecebe6
+osd.border.color: #4f5b6b
+osd.border.width: 1
+osd.label.text.color: #000000
+osd.window-switcher.style-classic.item.active.border.color: #fbcc00
+osd.window-switcher.style-classic.item.active.bg.color: #fbcc00
+
+snapping.overlay.region.bg.color: #809dbd80
+snapping.overlay.edge.bg.color: #809dbd80

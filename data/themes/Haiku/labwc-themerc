@@ -1,0 +1,47 @@
+# labwc's frames round other apps (Firefox, GTK, Qt) in Haiku's colours:
+# the window tab and border colours of Haiku's decorator.
+
+border.width: 2
+padding.width: 6
+padding.height: 3
+titlebar.height: 22
+
+window.active.border.color: #e0e0e0
+window.inactive.border.color: #e8e8e8
+window.active.indicator.toggled-keybind.color: #ff0000
+
+window.active.title.bg.color: #ffcb00
+window.inactive.title.bg.color: #e8e8e8
+window.active.title.separator.color: #919191
+window.inactive.title.separator.color: #bebebe
+
+window.active.label.text.color: #000000
+window.inactive.label.text.color: #505050
+window.label.text.justify: left
+
+window.active.button.unpressed.image.color: #000000
+window.inactive.button.unpressed.image.color: #505050
+window.button.width: 22
+window.button.spacing: 2
+window.button.hover.bg.color: #ffe57f
+window.button.hover.bg.corner-radius: 0
+
+menu.border.width: 1
+menu.border.color: #6c6c6c
+menu.items.bg.color: #d8d8d8
+menu.items.text.color: #000000
+menu.items.active.bg.color: #999999
+menu.items.active.text.color: #000000
+menu.separator.color: #a0a0a0
+menu.title.bg.color: #ffcb00
+menu.title.text.color: #000000
+
+osd.bg.color: #d8d8d8
+osd.border.color: #6c6c6c
+osd.border.width: 1
+osd.label.text.color: #000000
+osd.window-switcher.style-classic.item.active.border.color: #ffcb00
+osd.window-switcher.style-classic.item.active.bg.color: #ffcb00
+
+snapping.overlay.region.bg.color: #33669880
+snapping.overlay.edge.bg.color: #33669880
