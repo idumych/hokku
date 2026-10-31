@@ -6430,14 +6430,16 @@ widget_schedule_resize(struct widget *widget, int32_t width, int32_t height)
 	window_schedule_resize(widget->window, width, height);
 }
 
-static int
-window_get_shadow_margin(struct window *window)
+/* What the frame's shadow adds to the window's width and height */
+static void
+window_get_shadow_extent(struct window *window, int32_t *width,
+			 int32_t *height)
 {
 	if (window->frame != NULL && window->frame->frame != NULL
 		&& !window->fullscreen)
-		return frame_get_shadow_margin(window->frame->frame);
+		frame_get_shadow_extent(window->frame->frame, width, height);
 	else
-		return 0;
+		*width = *height = 0;
 }
 
 void
@@ -6865,12 +6867,13 @@ xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *xdg_toplevel,
 	if (width > 0 && height > 0) {
 		/* The width / height params are for window geometry,
 		 * but window_schedule_resize takes allocation. Add
-		 * on the shadow margin to get the difference. */
-		int margin = window_get_shadow_margin(window);
+		 * on the shadow to get the difference. */
+		int32_t shadow_width, shadow_height;
+		window_get_shadow_extent(window, &shadow_width, &shadow_height);
 
 		window_configure_resize(window,
-				        width + margin * 2,
-				        height + margin * 2);
+				        width + shadow_width,
+				        height + shadow_height);
 	} else if (window->saved_allocation.width > 0 &&
 		   window->saved_allocation.height > 0) {
 		window_configure_resize(window,

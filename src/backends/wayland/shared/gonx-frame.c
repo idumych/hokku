@@ -23,6 +23,7 @@
 #include "config.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <pango/pangocairo.h>
@@ -1316,6 +1317,140 @@ int
 gonx_frame_overlay_contains(const struct gonx_layout *l, int x, int y)
 {
 	return l->document && l->resizable && contains(&l->resize, x, y);
+}
+
+
+//	#pragma mark - shadow
+
+
+/* The Gonx mockups' shadow: the window's shape moved down and right and
+ * blurred, which darkens the four pixels past its right and bottom edges by
+ * about 87, 65, 33 and 11 percent and leaves its top and left edges clear. */
+static const int kShadowOffset = 2;
+static const double kShadowSigma = 1.3;
+#define SHADOW_RADIUS 4			/* of the blur, ~3 sigma */
+
+
+/* A gaussian blur of an A8 image, rows then columns; outside it is clear. */
+static void
+blur_alpha(unsigned char *data, int width, int height, int stride)
+{
+	int kernel[2 * SHADOW_RADIUS + 1];
+	int sum = 0;
+	for (int i = -SHADOW_RADIUS; i <= SHADOW_RADIUS; i++) {
+		kernel[i + SHADOW_RADIUS] = (int)lround(1024
+			* exp(-i * i / (2 * kShadowSigma * kShadowSigma)));
+		sum += kernel[i + SHADOW_RADIUS];
+	}
+
+	unsigned char *line = malloc(imax(width, height));
+	if (line == NULL)
+		return;
+
+	for (int y = 0; y < height; y++) {
+		unsigned char *row = data + y * stride;
+		memcpy(line, row, width);
+		for (int x = 0; x < width; x++) {
+			int total = 0;
+			for (int k = -SHADOW_RADIUS; k <= SHADOW_RADIUS; k++) {
+				if (x + k >= 0 && x + k < width)
+					total += kernel[k + SHADOW_RADIUS] * line[x + k];
+			}
+			row[x] = (unsigned char)(total / sum);
+		}
+	}
+
+	for (int x = 0; x < width; x++) {
+		for (int y = 0; y < height; y++)
+			line[y] = data[y * stride + x];
+		for (int y = 0; y < height; y++) {
+			int total = 0;
+			for (int k = -SHADOW_RADIUS; k <= SHADOW_RADIUS; k++) {
+				if (y + k >= 0 && y + k < height)
+					total += kernel[k + SHADOW_RADIUS] * line[y + k];
+			}
+			data[y * stride + x] = (unsigned char)(total / sum);
+		}
+	}
+
+	free(line);
+}
+
+
+/* The shadow within r: the frame and content painted into a mask, which
+ * reaches the blur's radius past r, blurred, and laid under r offset. */
+static void
+paint_shadow_rect(cairo_t *cr, const struct gonx_layout *l,
+		  const struct gonx_style *style, struct gonx_rect r)
+{
+	const int mask_x = r.left - kShadowOffset - SHADOW_RADIUS;
+	const int mask_y = r.top - kShadowOffset - SHADOW_RADIUS;
+	const int width = r.right - r.left + 1;
+	const int height = r.bottom - r.top + 1;
+	cairo_surface_t *mask = cairo_image_surface_create(CAIRO_FORMAT_A8,
+		width + 2 * SHADOW_RADIUS, height + 2 * SHADOW_RADIUS);
+	if (cairo_surface_status(mask) != CAIRO_STATUS_SUCCESS) {
+		cairo_surface_destroy(mask);
+		return;
+	}
+
+	cairo_t *mcr = cairo_create(mask);
+	cairo_translate(mcr, -mask_x, -mask_y);
+	const int pressed[GONX_BUTTON_COUNT] = { 0 };
+	gonx_frame_paint(mcr, l, style, "", 1, pressed);
+	const struct gonx_rect *c = &l->content;
+	if (valid(c)) {
+		cairo_set_source_rgba(mcr, 0, 0, 0, 1);
+		cairo_rectangle(mcr, c->left, c->top, c->right - c->left + 1,
+			c->bottom - c->top + 1);
+		cairo_fill(mcr);
+	}
+	cairo_destroy(mcr);
+
+	cairo_surface_flush(mask);
+	blur_alpha(cairo_image_surface_get_data(mask),
+		cairo_image_surface_get_width(mask),
+		cairo_image_surface_get_height(mask),
+		cairo_image_surface_get_stride(mask));
+	cairo_surface_mark_dirty(mask);
+
+	cairo_save(cr);
+	cairo_rectangle(cr, r.left, r.top, width, height);
+	cairo_clip(cr);
+	cairo_set_operator(cr, CAIRO_OPERATOR_DEST_OVER);
+	cairo_set_source_rgb(cr, 0, 0, 0);
+	cairo_mask_surface(cr, mask, mask_x + kShadowOffset,
+		mask_y + kShadowOffset);
+	cairo_restore(cr);
+	cairo_surface_destroy(mask);
+}
+
+
+void
+gonx_frame_paint_shadow(cairo_t *cr, const struct gonx_layout *l,
+			const struct gonx_style *style,
+			const struct gonx_rect *clip)
+{
+	/* round the content, which hides what falls on it */
+	const struct gonx_rect c = l->content;
+	const int right = l->width - 1 + GONX_SHADOW_SIZE;
+	const int bottom = l->height - 1 + GONX_SHADOW_SIZE;
+	const struct gonx_rect strips[] = {
+		make_rect(0, 0, right, c.top - 1),
+		make_rect(0, c.bottom + 1, right, bottom),
+		make_rect(0, c.top, c.left - 1, c.bottom),
+		make_rect(c.right + 1, c.top, right, c.bottom),
+	};
+
+	for (unsigned i = 0; i < sizeof strips / sizeof strips[0]; i++) {
+		struct gonx_rect r = strips[i];
+		if (clip != NULL) {
+			r = make_rect(imax(r.left, clip->left), imax(r.top, clip->top),
+				imin(r.right, clip->right), imin(r.bottom, clip->bottom));
+		}
+		if (valid(&r))
+			paint_shadow_rect(cr, l, style, r);
+	}
 }
 
 

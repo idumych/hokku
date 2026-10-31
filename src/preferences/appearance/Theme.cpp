@@ -805,7 +805,11 @@ Theme::Apply() const
 			// line may predate.
 			BStringList lines;
 			themerc.Split("\n", false, lines);
-			for (int32 i = 0; i < lines.CountStrings(); i++) {
+			// (the file's last newline leaves an empty last line)
+			int32 count = lines.CountStrings();
+			if (count > 0 && lines.StringAt(count - 1).IsEmpty())
+				count--;
+			for (int32 i = 0; i < count; i++) {
 				if (!lines.StringAt(i).StartsWith("window.decorator.font"))
 					text << lines.StringAt(i) << "\n";
 			}
