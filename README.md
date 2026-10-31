@@ -235,6 +235,16 @@ Kvantum Manager (Qt), all switched together.
 
 ![Gonx: the same three windows in the Gonx look, on the Gonx desktop, with the Hokku tab on the Deskbar](docs/screenshots/theme-gonx.png)
 
+Windows in the Haiku and Gonx frames cast a soft shadow, of a light above and to the left
+(`gonx_frame_paint_shadow()`; Hokku OS's labwc draws the same under other apps' windows). The
+pointer is BeOS's own: its pointing hand and I-beam, from `B_HAND_CURSOR` and `B_I_BEAM_CURSOR`,
+as the Xcursor themes `Hokku` and `Hokku-Shadow` (`/usr/share/icons`, made by
+`data/linux/cursors/generate.py`; the other cursors are Adwaita's), which Haiku and Gonx name.
+Appearance's *Look and feel* tab (or `hokku-theme shadows on|off`) turns the shadows of windows
+and the pointer on and off together: the pointer and other apps' windows change at once, Hokku
+apps' windows when they start. Hokku apps ask the compositor to draw their standard cursors
+(cursor-shape protocol), so they follow its cursor theme as other apps do.
+
 Hokku ships Haiku and Gonx in `/usr/share/cosmoe/themes`. *Save current look* keeps what is in
 use as a theme of your own in `~/.config/cosmoe/themes`; each theme is a folder with a
 `theme.ini` (see `src/preferences/appearance/Theme.h`) and the files it names. Running apps take

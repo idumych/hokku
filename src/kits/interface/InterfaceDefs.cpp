@@ -1929,6 +1929,33 @@ set_decorator(const BString& path)
 }
 
 
+//!	Hokku: whether windows cast a shadow (the decorator draws it)
+bool
+get_window_shadows()
+{
+	DesktopSettings settings;
+	return settings.WindowShadows();
+}
+
+
+status_t
+set_window_shadows(bool shadows)
+{
+	status_t status;
+	{
+		LockedDesktopSettings settings;
+		status = settings.SetWindowShadows(shadows);
+	}
+	if (status != B_OK)
+		return status;
+
+	// other applications pick it up when they start, as the decorator
+	if (be_app != NULL && be_app->Display() != NULL)
+		apply_decorator(be_app->Display());
+	return B_OK;
+}
+
+
 static void
 set_rgb(uint8_t out[3], rgb_color color)
 {
@@ -2002,6 +2029,7 @@ apply_decorator(void* display)
 	set_rgb(style.text_inactive, ui_color(B_WINDOW_INACTIVE_TEXT_COLOR));
 	set_rgb(style.frame, ui_color(B_WINDOW_BORDER_COLOR));
 	set_rgb(style.frame_inactive, ui_color(B_WINDOW_INACTIVE_BORDER_COLOR));
+	style.shadow = get_window_shadows() ? 1 : 0;
 
 	// bold titles, plain on the small tabs of floating windows, as the
 	// app_server decorators do

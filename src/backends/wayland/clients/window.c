@@ -65,6 +65,7 @@
 #include "pointer-constraints-unstable-v1-client-protocol.h"
 #include "relative-pointer-unstable-v1-client-protocol.h"
 #include "tablet-unstable-v2-client-protocol.h"
+#include "cursor-shape-v1-client-protocol.h"
 #include "shared/os-compatibility.h"
 #include "shared/string-helpers.h"
 #include "matrix.h"
@@ -139,6 +140,7 @@ struct display {
 	struct xx_color_manager_v4 *color_manager;
 	struct zwp_tablet_manager_v2 *tablet_manager;
 	struct zwp_relative_pointer_manager_v1 *relative_pointer_manager;
+	struct wp_cursor_shape_manager_v1 *cursor_shape_manager;
 	struct zwp_pointer_constraints_v1 *pointer_constraints;
 	uint32_t serial;
 
@@ -885,6 +887,8 @@ struct input {
 	struct display *display;
 	struct wl_seat *seat;
 	struct wl_pointer *pointer;
+	/* the compositor draws the standard cursors from its cursor theme */
+	struct wp_cursor_shape_device_v1 *cursor_shape_device;
 	struct wl_keyboard *keyboard;
 	struct wl_touch *touch;
 	struct wl_list touch_point_list;
@@ -5534,6 +5538,10 @@ seat_handle_capabilities(void *data, struct wl_seat *seat,
 		wl_pointer_add_listener(input->pointer, &pointer_listener,
 					input);
 	} else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && input->pointer) {
+		if (input->cursor_shape_device) {
+			wp_cursor_shape_device_v1_destroy(input->cursor_shape_device);
+			input->cursor_shape_device = NULL;
+		}
 		if (input->seat_version >= WL_POINTER_RELEASE_SINCE_VERSION)
 			wl_pointer_release(input->pointer);
 		else
@@ -5839,6 +5847,62 @@ static const struct wl_data_device_listener data_device_listener = {
 	data_device_selection
 };
 
+/* The cursor-shape protocol's name for a standard cursor, or 0 */
+static uint32_t
+cursor_shape(int cursor)
+{
+	switch (cursor) {
+	case CURSOR_BOTTOM_LEFT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_SW_RESIZE;
+	case CURSOR_BOTTOM_RIGHT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_SE_RESIZE;
+	case CURSOR_BOTTOM: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_S_RESIZE;
+	case CURSOR_DRAGGING: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING;
+	case CURSOR_LEFT_PTR: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
+	case CURSOR_LEFT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_W_RESIZE;
+	case CURSOR_RIGHT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_E_RESIZE;
+	case CURSOR_TOP_LEFT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NW_RESIZE;
+	case CURSOR_TOP_RIGHT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NE_RESIZE;
+	case CURSOR_TOP: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_N_RESIZE;
+	case CURSOR_IBEAM: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT;
+	case CURSOR_HAND1: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER;
+	case CURSOR_WATCH: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_WAIT;
+	case CURSOR_DND_MOVE: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_MOVE;
+	case CURSOR_DND_COPY: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COPY;
+	case CURSOR_DND_FORBIDDEN: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_NO_DROP;
+	case CURSOR_CONTEXT_MENU: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CONTEXT_MENU;
+	case CURSOR_CROSSHAIR: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CROSSHAIR;
+	case CURSOR_VERTICAL_TEXT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_VERTICAL_TEXT;
+	case CURSOR_ZOOM_IN: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ZOOM_IN;
+	case CURSOR_ZOOM_OUT: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ZOOM_OUT;
+	case CURSOR_COLUMN_RESIZE: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_COL_RESIZE;
+	case CURSOR_ROW_RESIZE: return WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ROW_RESIZE;
+	default: return 0;
+	}
+}
+
+/* Asks the compositor to draw a standard cursor, in its own cursor theme, as
+ * for any other app; app-made cursors are drawn here. Returns whether it
+ * did. */
+static bool
+input_set_pointer_shape(struct input *input)
+{
+	struct display *display = input->display;
+	uint32_t shape = cursor_shape(input->current_cursor);
+
+	if (shape == 0 || !display->cursor_shape_manager || !input->pointer)
+		return false;
+
+	if (!input->cursor_shape_device) {
+		input->cursor_shape_device =
+			wp_cursor_shape_manager_v1_get_pointer(
+				display->cursor_shape_manager, input->pointer);
+	}
+	wp_cursor_shape_device_v1_set_shape(input->cursor_shape_device,
+					    input->pointer_enter_serial, shape);
+	/* the cursor surface is no longer the cursor */
+	input->pointer_surface_has_role = false;
+	return true;
+}
+
 static void
 input_set_pointer_image_index(struct input *input, int index)
 {
@@ -5848,6 +5912,9 @@ input_set_pointer_image_index(struct input *input, int index)
 	int dx = 0, dy = 0;
 
 	if (!input->pointer || !input->pointer_surface)
+		return;
+
+	if (input_set_pointer_shape(input))
 		return;
 
 	cursor = display_get_cursor_for_id(input->display, input->current_cursor);
@@ -5966,6 +6033,10 @@ pointer_surface_frame_callback(void *data, struct wl_callback *callback,
 		return;
 
 	if (input_set_pointer_special(input))
+		return;
+
+	/* the compositor animates the standard cursors it draws */
+	if (input_set_pointer_shape(input))
 		return;
 
 	cursor = display_get_cursor_for_id(input->display, input->current_cursor);
@@ -9443,6 +9514,8 @@ input_destroy(struct input *input)
 		else
 			wl_data_device_destroy(input->data_device);
 	}
+	if (input->cursor_shape_device)
+		wp_cursor_shape_device_v1_destroy(input->cursor_shape_device);
 	if (input->seat_version >= WL_POINTER_RELEASE_SINCE_VERSION) {
 		if (input->touch)
 			wl_touch_release(input->touch);
@@ -10083,6 +10156,10 @@ registry_handle_global(void *data, struct wl_registry *registry, uint32_t id,
 		display_add_output(d, id);
 	} else if (strcmp(interface, "wl_seat") == 0) {
 		display_add_input(d, id, version);
+	} else if (strcmp(interface, "wp_cursor_shape_manager_v1") == 0) {
+		d->cursor_shape_manager =
+			wl_registry_bind(registry, id,
+					 &wp_cursor_shape_manager_v1_interface, 1);
 	} else if (strcmp(interface, "zwp_relative_pointer_manager_v1") == 0 &&
 		   version == ZWP_RELATIVE_POINTER_MANAGER_V1_VERSION) {
 		d->relative_pointer_manager =

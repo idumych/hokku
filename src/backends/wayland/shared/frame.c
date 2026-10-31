@@ -109,7 +109,10 @@ struct frame {
 	struct wl_list touches;
 
 	/* set when the frame is drawn as Gonx or Haiku instead of the theme */
-	const struct gonx_style *gonx;
+	const struct gonx_style *gonx;	/* gonx_style, or NULL */
+	/* the frame's own copy: the display's is replaced when the decorator
+	 * is set again, which applies to windows created afterwards */
+	struct gonx_style gonx_style;
 	uint32_t gonx_look;
 	struct gonx_layout gonx_layout;
 	/* its shadow, kept while the layout it was made for stays */
@@ -144,11 +147,12 @@ frame_gonx_small(struct frame *frame)
 }
 
 /* How far the Gonx frame's shadow reaches past its right and bottom edges:
- * nothing when the window fills the screen */
+ * nothing when the window fills the screen or shadows are off */
 static int
 frame_gonx_shadow(struct frame *frame, int *right, int *bottom)
 {
-	if (frame->flags & (FRAME_FLAG_MAXIMIZED | FRAME_FLAG_NO_SHADOW)) {
+	if (frame->flags & (FRAME_FLAG_MAXIMIZED | FRAME_FLAG_NO_SHADOW)
+	    || !frame->gonx->shadow) {
 		*right = *bottom = 0;
 		return 0;
 	}
@@ -707,7 +711,11 @@ void
 frame_set_gonx(struct frame *frame, const struct gonx_style *style,
 	       uint32_t look)
 {
-	frame->gonx = style;
+	if (style != NULL) {
+		frame->gonx_style = *style;
+		frame->gonx = &frame->gonx_style;
+	} else
+		frame->gonx = NULL;
 	frame->gonx_look = look;
 	frame->geometry_dirty = 1;
 	frame->status |= FRAME_STATUS_REPAINT;

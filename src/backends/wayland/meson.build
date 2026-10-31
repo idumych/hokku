@@ -10,6 +10,7 @@ srcs_wayland = [
     'protocol/xdg-shell-protocol.c',
     'protocol/text-cursor-position-protocol.c',
     'protocol/pointer-constraints-unstable-v1-protocol.c',
+    'protocol/cursor-shape-v1-protocol.c',
     'clients/window.c',
     'shared/image-loader.c',
     'shared/os-compatibility.c',

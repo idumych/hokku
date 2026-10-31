@@ -87,6 +87,7 @@ DesktopSettingsPrivate::_SetDefaults()
 	fFocusFollowsMouseMode = B_NORMAL_FOCUS_FOLLOWS_MOUSE;
 	fAcceptFirstClick = true;
 	fShowAllDraggers = true;
+	fWindowShadows = true;
 
 	// init scrollbar info
 	fScrollBarInfo.proportional = true;
@@ -315,6 +316,10 @@ DesktopSettingsPrivate::_Load()
 			if (settings.FindString("decorator", &decorator) == B_OK)
 				fDecorator = decorator;
 
+			bool windowShadows;
+			if (settings.FindBool("window shadows", &windowShadows) == B_OK)
+				fWindowShadows = windowShadows;
+
 			int32 desktopColor;
 			if (settings.FindInt32("desktop color", &desktopColor) == B_OK)
 				fDesktopColor = _ColorFromInt32(desktopColor);
@@ -471,6 +476,7 @@ DesktopSettingsPrivate::Save(uint32 mask)
 
 			settings.AddString("control look", fControlLook);
 			settings.AddString("decorator", fDecorator);
+			settings.AddBool("window shadows", fWindowShadows);
 			settings.AddInt32("desktop color", _ColorToInt32(fDesktopColor));
 
 			for (int32 i = 0; i < kColorWhichCount; i++) {
@@ -786,6 +792,21 @@ DesktopSettingsPrivate::Decorator() const
 }
 
 
+status_t
+DesktopSettingsPrivate::SetWindowShadows(bool shadows)
+{
+	fWindowShadows = shadows;
+	return Save(kAppearanceSettings);
+}
+
+
+bool
+DesktopSettingsPrivate::WindowShadows() const
+{
+	return fWindowShadows;
+}
+
+
 void
 DesktopSettingsPrivate::SetDesktopColor(rgb_color color)
 {
@@ -954,6 +975,13 @@ DesktopSettings::Decorator() const
 }
 
 
+bool
+DesktopSettings::WindowShadows() const
+{
+	return fSettings->WindowShadows();
+}
+
+
 rgb_color
 DesktopSettings::DesktopColor() const
 {
@@ -1078,6 +1106,13 @@ status_t
 LockedDesktopSettings::SetDecorator(const char* name)
 {
 	return fSettings->SetDecorator(name);
+}
+
+
+status_t
+LockedDesktopSettings::SetWindowShadows(bool shadows)
+{
+	return fSettings->SetWindowShadows(shadows);
 }
 
 

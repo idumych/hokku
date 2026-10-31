@@ -59,6 +59,11 @@ static const char* kFontNames[Theme::kFontCount] = {
 // labwc reads this after the theme's themerc, whatever the theme is called
 static const char* kLabwcOverride = "labwc/themerc-override";
 static const char* kLabwcHeader = "# Written by Hokku's themes";
+// and this for its environment, again on SIGHUP (XCURSOR_THEME)
+static const char* kLabwcEnvironment = "labwc/environment";
+
+// Hokku's cursors come with and without a shadow: Hokku and Hokku-Shadow
+static const char* kCursorShadowSuffix = "-Shadow";
 
 // Tracker's background settings (see Backgrounds)
 static const char* kBackgroundInfo = "be:bgndimginfo";
@@ -482,6 +487,101 @@ set_gsetting(const char* key, const BString& value)
 }
 
 
+/*!	text without its lines that start with prefix, ending in a newline */
+static BString
+without_lines(const BString& text, const char* prefix)
+{
+	BStringList lines;
+	text.Split("\n", false, lines);
+	// (the file's last newline leaves an empty last line)
+	int32 count = lines.CountStrings();
+	if (count > 0 && lines.StringAt(count - 1).IsEmpty())
+		count--;
+	BString result;
+	for (int32 i = 0; i < count; i++) {
+		if (!lines.StringAt(i).StartsWith(prefix))
+			result << lines.StringAt(i) << "\n";
+	}
+	return result;
+}
+
+
+//	#pragma mark - shadows
+
+
+/*!	labwc-hokku's line for the shadows setting (window.decorator.shadow) */
+static BString
+labwc_shadow_line()
+{
+	BString line("window.decorator.shadow: ");
+	line << (BPrivate::get_window_shadows() ? "yes" : "no") << "\n";
+	return line;
+}
+
+
+//!	Whether an Xcursor theme of that name is installed.
+static bool
+cursor_theme_installed(const BString& name)
+{
+	BStringList folders;
+	const char* home = getenv("HOME");
+	if (home != NULL) {
+		folders.Add(BString(home) << "/.local/share/icons");
+		folders.Add(BString(home) << "/.icons");
+	}
+	const char* dataDirs = getenv("XDG_DATA_DIRS");
+	BStringList data;
+	BString(dataDirs != NULL && dataDirs[0] != '\0' ? dataDirs
+		: "/usr/local/share:/usr/share").Split(":", true, data);
+	for (int32 i = 0; i < data.CountStrings(); i++)
+		folders.Add(BString(data.StringAt(i)) << "/icons");
+
+	for (int32 i = 0; i < folders.CountStrings(); i++) {
+		BPath path(folders.StringAt(i).String(), name.String());
+		path.Append("cursors");
+		if (BEntry(path.Path()).Exists())
+			return true;
+	}
+	return false;
+}
+
+
+/*!	The cursor theme to use for name with the shadows setting: its variant
+	with a shadow when there is one and shadows are on, else itself.
+*/
+static BString
+shadow_cursor_theme(BString name, bool shadows)
+{
+	if (name.EndsWith(kCursorShadowSuffix))
+		name.Truncate(name.Length() - strlen(kCursorShadowSuffix));
+	if (shadows && !name.IsEmpty()) {
+		BString shadowed(name);
+		shadowed << kCursorShadowSuffix;
+		if (cursor_theme_installed(shadowed))
+			return shadowed;
+	}
+	return name;
+}
+
+
+/*!	labwc's cursor theme, which also draws the standard cursors of Hokku,
+	GTK and Qt apps (cursor-shape protocol): XCURSOR_THEME in its environment,
+	which it reads again on SIGHUP.
+*/
+static void
+set_labwc_cursor_theme(const BString& name)
+{
+	if (name.IsEmpty())
+		return;
+	BPath path = config_path(kLabwcEnvironment, true);
+	BString text;
+	read_file(path.Path(), text);
+	text = without_lines(text, "XCURSOR_THEME=");
+	text << "XCURSOR_THEME=" << name << "\n";
+	write_file(path.Path(), text);
+}
+
+
 //	#pragma mark - Theme
 
 
@@ -801,27 +901,30 @@ Theme::Apply() const
 			text << " (" << name << "); applying a theme replaces it\n";
 
 			// The tabs labwc draws (window.decorator, in Hokku OS's labwc)
-			// are titled in the theme's bold font, which a captured file's
-			// line may predate.
-			BStringList lines;
-			themerc.Split("\n", false, lines);
-			// (the file's last newline leaves an empty last line)
-			int32 count = lines.CountStrings();
-			if (count > 0 && lines.StringAt(count - 1).IsEmpty())
-				count--;
-			for (int32 i = 0; i < count; i++) {
-				if (!lines.StringAt(i).StartsWith("window.decorator.font"))
-					text << lines.StringAt(i) << "\n";
-			}
+			// are titled in the theme's bold font and cast a shadow as the
+			// setting says, which a captured file's lines may predate.
+			themerc = without_lines(themerc, "window.decorator.font");
+			text << without_lines(themerc, "window.decorator.shadow");
 			Font bold = fonts[kBoldFont];
 			if (!bold.set)
 				default_font(kBoldFont, bold);
 			text << "window.decorator.font: " << pango_font(bold) << "\n";
+			text << labwc_shadow_line();
 			write_file(override.Path(), text);
 		} else
 			fprintf(stderr, "Theme: can't read %s\n", source.Path());
-	} else if (ours)
-		unlink(override.Path());
+	} else if (ours) {
+		// labwc's own theme, but with the shadows setting
+		BString text(kLabwcHeader);
+		text << " (" << name << "); applying a theme replaces it\n"
+			<< labwc_shadow_line();
+		write_file(override.Path(), text);
+	}
+
+	// the pointer, with or without a shadow as the setting says
+	const BString cursor = shadow_cursor_theme(cursorTheme,
+		BPrivate::get_window_shadows());
+	set_labwc_cursor_theme(cursor);
 
 	const char* labwcPid = getenv("LABWC_PID");
 	if (labwcPid != NULL && atoi(labwcPid) > 0)
@@ -850,16 +953,14 @@ Theme::Apply() const
 			gtk.SetValue("Settings", "gtk-theme-name", gtkTheme.String());
 		if (!iconTheme.IsEmpty())
 			gtk.SetValue("Settings", "gtk-icon-theme-name", iconTheme.String());
-		if (!cursorTheme.IsEmpty()) {
-			gtk.SetValue("Settings", "gtk-cursor-theme-name",
-				cursorTheme.String());
-		}
+		if (!cursor.IsEmpty())
+			gtk.SetValue("Settings", "gtk-cursor-theme-name", cursor.String());
 		gtk.Save(path.Path());
 	}
 	set_gsetting("font-name", gtkFont);
 	set_gsetting("gtk-theme", gtkTheme);
 	set_gsetting("icon-theme", iconTheme);
-	set_gsetting("cursor-theme", cursorTheme);
+	set_gsetting("cursor-theme", cursor);
 
 	// Qt: qt5ct's and qt6ct's settings (the session picks the platform
 	// theme), and Kvantum's theme
@@ -885,6 +986,59 @@ Theme::Apply() const
 	}
 
 	set_current_theme_name(name.String());
+	return B_OK;
+}
+
+
+//	#pragma mark - shadows setting
+
+
+status_t
+apply_window_shadows(bool shadows)
+{
+	status_t status = BPrivate::set_window_shadows(shadows);
+	if (status != B_OK)
+		return status;
+
+	// labwc-hokku's frames round other apps: the line in our override (one
+	// of the user's own is left alone)
+	BPath override = config_path(kLabwcOverride, true);
+	BString text;
+	const bool exists = read_file(override.Path(), text) == B_OK;
+	if (!exists || text.StartsWith(kLabwcHeader)) {
+		if (!exists)
+			text << kLabwcHeader << "; applying a theme replaces it\n";
+		text = without_lines(text, "window.decorator.shadow");
+		text << labwc_shadow_line();
+		write_file(override.Path(), text);
+	}
+
+	// the pointer: the variant of the cursor theme in use
+	IniFile gtk;
+	BString cursor;
+	if (gtk.Load(config_path("gtk-3.0/settings.ini", false).Path()) == B_OK)
+		cursor = gtk.Value("Settings", "gtk-cursor-theme-name");
+	if (cursor.IsEmpty() && getenv("XCURSOR_THEME") != NULL)
+		cursor = getenv("XCURSOR_THEME");
+	cursor = shadow_cursor_theme(cursor, shadows);
+	if (!cursor.IsEmpty()) {
+		set_labwc_cursor_theme(cursor);
+		const char* gtkFiles[] = { "gtk-3.0/settings.ini",
+			"gtk-4.0/settings.ini" };
+		for (size_t i = 0; i < sizeof(gtkFiles) / sizeof(gtkFiles[0]); i++) {
+			BPath path = config_path(gtkFiles[i], true);
+			IniFile settings;
+			settings.Load(path.Path());
+			settings.SetValue("Settings", "gtk-cursor-theme-name",
+				cursor.String());
+			settings.Save(path.Path());
+		}
+		set_gsetting("cursor-theme", cursor);
+	}
+
+	const char* labwcPid = getenv("LABWC_PID");
+	if (labwcPid != NULL && atoi(labwcPid) > 0)
+		kill(atoi(labwcPid), SIGHUP);
 	return B_OK;
 }
 

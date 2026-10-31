@@ -43,8 +43,11 @@
 #include <StringView.h>
 #include <TextView.h>
 
+#include <DecoratorPrivate.h>
+
 #include "AppearanceWindow.h"
 #include "FakeScrollBar.h"
+#include "Theme.h"
 
 
 #undef B_TRANSLATION_CONTEXT
@@ -63,6 +66,8 @@ static const int32 kMsgDoubleScrollBarArrows = 'dsba';
 static const int32 kMsgArrowStyleSingle = 'mass';
 static const int32 kMsgArrowStyleDouble = 'masd';
 
+static const int32 kMsgShadows = 'shdw';
+
 static const bool kDefaultDoubleScrollBarArrowsSetting = false;
 
 
@@ -77,9 +82,11 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 	fControlLookMenu(NULL),
 	fArrowStyleSingle(NULL),
 	fArrowStyleDouble(NULL),
+	fShadowsCheckBox(NULL),
 	fSavedControlLook(NULL),
 	fCurrentControlLook(NULL),
-	fSavedDoubleArrowsValue(_DoubleScrollBarArrows())
+	fSavedDoubleArrowsValue(_DoubleScrollBarArrows()),
+	fSavedShadows(BPrivate::get_window_shadows())
 {
 	BPrivate::get_control_look(fCurrentControlLook);
 	fSavedControlLook = fCurrentControlLook;
@@ -125,6 +132,15 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 	scrollBarLabel->SetExplicitAlignment(
 		BAlignment(B_ALIGN_LEFT, B_ALIGN_TOP));
 
+	// Hokku: the shadow under windows (Hokku's and the desktop's frames)
+	// and under the pointer
+	fShadowsCheckBox = new BCheckBox("shadows",
+		B_TRANSLATE("Windows and the pointer cast a shadow"),
+		new BMessage(kMsgShadows));
+	fShadowsCheckBox->SetValue(fSavedShadows ? B_CONTROL_ON : B_CONTROL_OFF);
+	fShadowsCheckBox->SetToolTip(
+		B_TRANSLATE("Running applications' windows change when they restart"));
+
 	// control layout
 	BLayoutBuilder::Grid<>(this, B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
 		.Add(fControlLookMenuField->CreateLabelLayoutItem(), 0, 0)
@@ -132,7 +148,8 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 		.Add(fControlLookInfoButton, 2, 0)
 		.Add(scrollBarLabel, 0, 1)
 		.Add(arrowStyleBox, 1, 1)
-		.AddGlue(0, 2)
+		.Add(fShadowsCheckBox, 1, 2)
+		.AddGlue(0, 3)
 		.SetInsets(B_USE_WINDOW_SPACING);
 
 	// TODO : Decorator Preview Image?
@@ -156,6 +173,7 @@ LookAndFeelSettingsView::AttachedToWindow()
 	fControlLookInfoButton->SetTarget(this);
 	fArrowStyleSingle->SetTarget(this);
 	fArrowStyleDouble->SetTarget(this);
+	fShadowsCheckBox->SetTarget(this);
 
 	if (fSavedDoubleArrowsValue)
 		fArrowStyleDouble->SetValue(B_CONTROL_ON);
@@ -214,6 +232,10 @@ LookAndFeelSettingsView::MessageReceived(BMessage* message)
 
 		case kMsgArrowStyleDouble:
 			_SetDoubleScrollBarArrows(true);
+			break;
+
+		case kMsgShadows:
+			_SetShadows(fShadowsCheckBox->Value() == B_CONTROL_ON);
 			break;
 
 		default:
@@ -333,11 +355,23 @@ LookAndFeelSettingsView::_SetDoubleScrollBarArrows(bool doubleArrows)
 }
 
 
+void
+LookAndFeelSettingsView::_SetShadows(bool shadows)
+{
+	if (BPrivate::get_window_shadows() != shadows)
+		apply_window_shadows(shadows);
+	fShadowsCheckBox->SetValue(shadows ? B_CONTROL_ON : B_CONTROL_OFF);
+
+	Window()->PostMessage(kMsgUpdate);
+}
+
+
 bool
 LookAndFeelSettingsView::IsDefaultable()
 {
 	return fCurrentControlLook.Length() != 0
-		|| _DoubleScrollBarArrows() != false;
+		|| _DoubleScrollBarArrows() != false
+		|| !BPrivate::get_window_shadows();
 }
 
 
@@ -346,6 +380,7 @@ LookAndFeelSettingsView::SetDefaults()
 {
 	_SetControlLook(BString(""));
 	_SetDoubleScrollBarArrows(false);
+	_SetShadows(true);
 }
 
 
@@ -353,7 +388,8 @@ bool
 LookAndFeelSettingsView::IsRevertable()
 {
 	return fCurrentControlLook != fSavedControlLook
-		|| _DoubleScrollBarArrows() != fSavedDoubleArrowsValue;
+		|| _DoubleScrollBarArrows() != fSavedDoubleArrowsValue
+		|| BPrivate::get_window_shadows() != fSavedShadows;
 }
 
 
@@ -363,5 +399,6 @@ LookAndFeelSettingsView::Revert()
 	if (IsRevertable()) {
 		_SetControlLook(fSavedControlLook);
 		_SetDoubleScrollBarArrows(fSavedDoubleArrowsValue);
+		_SetShadows(fSavedShadows);
 	}
 }

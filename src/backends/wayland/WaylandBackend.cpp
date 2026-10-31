@@ -349,6 +349,7 @@ public:
 		memcpy(gonx.frame_inactive, style->frame_inactive,
 			sizeof(gonx.frame_inactive));
 		gonx.haiku = haiku;
+		gonx.shadow = style->shadow;
 		display_set_gonx_style((struct display*)display, &gonx);
 		return B_OK;
 	}

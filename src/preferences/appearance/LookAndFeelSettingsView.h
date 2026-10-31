@@ -44,6 +44,8 @@ private:
 			bool				_DoubleScrollBarArrows();
 			void				_SetDoubleScrollBarArrows(bool doubleArrows);
 
+			void				_SetShadows(bool shadows);
+
 private:
 			BButton*			fControlLookInfoButton;
 			BMenuField*			fControlLookMenuField;
@@ -52,10 +54,13 @@ private:
 			FakeScrollBar*		fArrowStyleSingle;
 			FakeScrollBar*		fArrowStyleDouble;
 
+			BCheckBox*			fShadowsCheckBox;
+
 			BString				fSavedControlLook;
 			BString				fCurrentControlLook;
 
 			bool				fSavedDoubleArrowsValue : 1;
+			bool				fSavedShadows : 1;
 };
 
 

@@ -102,5 +102,10 @@ status_t	user_themes_folder(BPath& path, bool create = false);
 BString		current_theme_name();
 status_t	set_current_theme_name(const char* name);
 
+// Turns window and pointer shadows on or off: Hokku's frames (for apps
+// started afterwards), labwc-hokku's round other apps and the cursor theme's
+// variant, at once.
+status_t	apply_window_shadows(bool shadows);
+
 
 #endif	// THEME_H

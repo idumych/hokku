@@ -8,6 +8,8 @@
  *   hokku-theme apply NAME
  *   hokku-theme save NAME      the look in use now, as a theme of your own
  *   hokku-theme current
+ *   hokku-theme shadows [on | off]   whether windows and the pointer cast a
+ *                                    shadow (Appearance's Look and feel)
  */
 
 
@@ -15,6 +17,8 @@
 #include <string.h>
 
 #include <Application.h>
+
+#include <DecoratorPrivate.h>
 
 #include "../preferences/appearance/Theme.h"
 
@@ -37,7 +41,7 @@ static int
 usage()
 {
 	fprintf(stderr, "usage: hokku-theme list | apply NAME | save NAME "
-		"| current\n");
+		"| current | shadows [on | off]\n");
 	return 2;
 }
 
@@ -65,6 +69,21 @@ main(int argc, char** argv)
 
 	if (strcmp(command, "current") == 0) {
 		printf("%s\n", current_theme_name().String());
+		return 0;
+	}
+
+	if (strcmp(command, "shadows") == 0) {
+		if (argc == 2) {
+			printf("%s\n", BPrivate::get_window_shadows() ? "on" : "off");
+			return 0;
+		}
+		if (argc != 3 || (strcmp(argv[2], "on") != 0
+				&& strcmp(argv[2], "off") != 0))
+			return usage();
+		if (apply_window_shadows(strcmp(argv[2], "on") == 0) != B_OK) {
+			fprintf(stderr, "hokku-theme: can't change the shadows\n");
+			return 1;
+		}
 		return 0;
 	}
 

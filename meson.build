@@ -784,6 +784,11 @@ foreach theme : ['Haiku', 'Gonx']
     # and for Qt apps, through Kvantum (data/linux/kvantum/generate.py)
     install_subdir('data/linux/kvantum' / theme, install_dir: dir_data / 'Kvantum')
 endforeach
+# BeOS's pointing hand and I-beam as Xcursor themes, with and without a
+# shadow (data/linux/cursors/generate.py makes them)
+foreach theme : ['Hokku', 'Hokku-Shadow']
+    install_subdir('data/linux/cursors' / theme, install_dir: dir_data / 'icons')
+endforeach
 
 executable(
 	'mime_db_builder',

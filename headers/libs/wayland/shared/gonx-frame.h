@@ -35,6 +35,7 @@ struct gonx_style {
 	uint8_t frame[3];
 	uint8_t frame_inactive[3];
 	int haiku;			/* Haiku's frame instead of Gonx */
+	int shadow;			/* windows cast a shadow */
 };
 
 enum {
