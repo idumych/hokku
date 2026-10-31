@@ -1332,9 +1332,9 @@ struct shadow {
 	double opacity;
 };
 
-/* After the Gonx mockups' (2, 2, 1.3, 1.0), deepened: windows float well
- * above the desktop, lit from high up and to the left. */
-static const struct shadow kShadow = { 12, 22, 7.0, 0.5 };
+/* After the Gonx mockups' (2, 2, 1.3, 1.0), deepened and softened: windows
+ * stand off the desktop, lit from above and to the left. */
+static const struct shadow kShadow = { 6, 9, 3.0, 0.6 };
 
 
 /* A gaussian blur, as three box blurs of these widths (Kutskir's "boxes for
