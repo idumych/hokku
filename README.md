@@ -222,9 +222,11 @@ GTK 3 and Qt apps get the Haiku and Gonx looks too: Hokku installs GTK themes of
 Qt needs the `kvantum` package), made by `data/linux/gtk/generate.py` and
 `data/linux/kvantum/generate.py` from the control looks' own colours and shapes. A theme also
 sets GTK's font from its plain font (¾ of the Be size: GTK counts points at 96 dpi). The Hokku
-session hands the theme's Qt style to Qt apps (`QT_STYLE_OVERRIDE`, from qt6ct's settings) and
-keeps GTK's scroll bars beside the content (`GTK_OVERLAY_SCROLLING=0`); Qt apps pick up a new
-style when they start, and GTK 4/libadwaita apps keep their own look.
+session hands the theme's Qt style to Qt apps (`QT_STYLE_OVERRIDE`, from qt6ct's settings),
+loads Qt's GTK platform theme (`QT_QPA_PLATFORMTHEME=gtk3`) so that Qt apps take the same font
+and icons from GTK's settings, and keeps GTK's scroll bars beside the content
+(`GTK_OVERLAY_SCROLLING=0`); Qt apps pick up a new style and font when they start, and GTK
+4/libadwaita apps keep their own look.
 
 Haiku's look and Gonx on Hokku OS: Appearance's Themes tab, Network Connections (GTK 3) and
 Kvantum Manager (Qt), all switched together.

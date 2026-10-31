@@ -122,6 +122,9 @@ if [ -z "${QT_STYLE_OVERRIDE:-}" ]; then
         2>/dev/null | head -n 1 || true)"
     [ -z "$qt_style" ] || export QT_STYLE_OVERRIDE="$qt_style"
 fi
+# Qt's GTK platform theme gives Qt apps the font and icons of GTK's settings,
+# which the theme sets from its plain font (Qt's own default is a fixed 9 pt)
+export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
 # GTK apps keep their scroll bars beside the content, as Be apps do
 export GTK_OVERLAY_SCROLLING="${GTK_OVERLAY_SCROLLING:-0}"
 
