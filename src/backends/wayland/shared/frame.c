@@ -112,6 +112,10 @@ struct frame {
 	const struct gonx_style *gonx;
 	uint32_t gonx_look;
 	struct gonx_layout gonx_layout;
+	/* its shadow, kept while the layout it was made for stays */
+	cairo_surface_t *gonx_shadow;
+	int gonx_shadow_x, gonx_shadow_y;
+	struct gonx_layout gonx_shadow_layout;
 };
 
 /* window_look values from BWindow */
@@ -142,11 +146,14 @@ frame_gonx_small(struct frame *frame)
 /* How far the Gonx frame's shadow reaches past its right and bottom edges:
  * nothing when the window fills the screen */
 static int
-frame_gonx_shadow(struct frame *frame)
+frame_gonx_shadow(struct frame *frame, int *right, int *bottom)
 {
-	if (frame->flags & (FRAME_FLAG_MAXIMIZED | FRAME_FLAG_NO_SHADOW))
+	if (frame->flags & (FRAME_FLAG_MAXIMIZED | FRAME_FLAG_NO_SHADOW)) {
+		*right = *bottom = 0;
 		return 0;
-	return GONX_SHADOW_SIZE;
+	}
+	gonx_frame_shadow_extent(right, bottom);
+	return 1;
 }
 
 static int
@@ -392,6 +399,8 @@ frame_destroy(struct frame *frame)
 	wl_list_for_each_safe(pointer, next_pointer, &frame->pointers, link)
 		frame_pointer_destroy(pointer);
 
+	if (frame->gonx_shadow)
+		cairo_surface_destroy(frame->gonx_shadow);
 	free(frame->title);
 	free(frame);
 }
@@ -601,8 +610,10 @@ frame_decoration_sizes(struct frame *frame, int32_t *top, int32_t *bottom,
 
 	/* the Gonx frame's shadow falls down and right */
 	if (frame->gonx) {
-		*right += frame_gonx_shadow(frame);
-		*bottom += frame_gonx_shadow(frame);
+		int shadow_right, shadow_bottom;
+		frame_gonx_shadow(frame, &shadow_right, &shadow_bottom);
+		*right += shadow_right;
+		*bottom += shadow_bottom;
 		return;
 	}
 
@@ -646,8 +657,10 @@ frame_refresh_gonx_geometry(struct frame *frame)
 
 	/* the frame, without its shadow */
 	memset(layout, 0, sizeof *layout);
-	layout->width = frame->width - frame_gonx_shadow(frame);
-	layout->height = frame->height - frame_gonx_shadow(frame);
+	int shadow_right, shadow_bottom;
+	frame_gonx_shadow(frame, &shadow_right, &shadow_bottom);
+	layout->width = frame->width - shadow_right;
+	layout->height = frame->height - shadow_bottom;
 	layout->small = frame_gonx_small(frame);
 	layout->tabless = frame_gonx_tabless(frame);
 	layout->document = frame->gonx_look == GONX_DOCUMENT_LOOK;
@@ -898,7 +911,7 @@ frame_get_shadow_extent(struct frame *frame, int32_t *width, int32_t *height)
 
 	/* the Gonx frame's falls on one side, the theme's all round */
 	if (frame->gonx) {
-		*width = *height = frame_gonx_shadow(frame);
+		frame_gonx_shadow(frame, width, height);
 		return;
 	}
 	*width = *height = frame->shadow_margin * 2;
@@ -1294,9 +1307,25 @@ frame_repaint(struct frame *frame, cairo_t *cr)
 		}
 		gonx_frame_paint(cr, &frame->gonx_layout, frame->gonx, frame->title,
 				 (frame->flags & FRAME_FLAG_ACTIVE) != 0, pressed);
-		if (frame_gonx_shadow(frame) > 0)
-			gonx_frame_paint_shadow(cr, &frame->gonx_layout,
-						frame->gonx, NULL);
+		int shadow_right, shadow_bottom;
+		if (frame_gonx_shadow(frame, &shadow_right, &shadow_bottom)) {
+			/* its blur is the slow part: made again only when the
+			 * frame's size or tab changes */
+			if (frame->gonx_shadow == NULL
+			    || memcmp(&frame->gonx_shadow_layout, &frame->gonx_layout,
+				      sizeof frame->gonx_layout) != 0) {
+				if (frame->gonx_shadow)
+					cairo_surface_destroy(frame->gonx_shadow);
+				frame->gonx_shadow = gonx_frame_create_shadow(
+					&frame->gonx_layout, frame->gonx, NULL,
+					&frame->gonx_shadow_x, &frame->gonx_shadow_y);
+				frame->gonx_shadow_layout = frame->gonx_layout;
+			}
+			gonx_frame_paint_shadow_surface(cr, &frame->gonx_layout,
+							frame->gonx_shadow,
+							frame->gonx_shadow_x,
+							frame->gonx_shadow_y);
+		}
 		frame_status_clear(frame, FRAME_STATUS_REPAINT);
 		return;
 	}

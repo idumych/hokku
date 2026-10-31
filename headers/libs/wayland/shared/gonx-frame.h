@@ -80,10 +80,10 @@ struct gonx_layout {
 	int title_space;
 };
 
-/* How far the drop shadow reaches past the frame's right and bottom edges:
- * the Gonx mockups' shadow, of a light above and to the left. Nothing
- * reaches past the top and left. */
-#define GONX_SHADOW_SIZE 4
+/* How far the drop shadow reaches past the frame's right and bottom edges,
+ * of a light above and to the left. Nothing reaches past the top and left. */
+void
+gonx_frame_shadow_extent(int *right, int *bottom);
 
 /* Decoration thickness round the content, before the window is laid out. */
 void
@@ -126,13 +126,25 @@ gonx_frame_input_rects(const struct gonx_layout *layout,
 /* The drop shadow the frame casts on what is below it, painted under what
  * the surface already holds (after gonx_frame_paint()): the frame's shape and
  * the content's, moved down and right and blurred. It is painted where it can
- * show, round the content and out to GONX_SHADOW_SIZE past the frame's right
- * and bottom edges, and only within clip (frame coordinates) when clip isn't
- * NULL. The surface must reach that far. */
+ * show, round the content and out past the frame's right and bottom edges as
+ * far as gonx_frame_shadow_extent() says, and only within clip (frame
+ * coordinates) when clip isn't NULL. The surface must reach that far. */
 void
 gonx_frame_paint_shadow(cairo_t *cr, const struct gonx_layout *layout,
 			const struct gonx_style *style,
 			const struct gonx_rect *clip);
+
+/* The same in two steps, for keeping the shadow while the layout stays:
+ * its alpha, which goes at (x, y) in frame coordinates (NULL when there is
+ * nothing to paint), then painting it. */
+cairo_surface_t *
+gonx_frame_create_shadow(const struct gonx_layout *layout,
+			 const struct gonx_style *style,
+			 const struct gonx_rect *clip, int *x, int *y);
+
+void
+gonx_frame_paint_shadow_surface(cairo_t *cr, const struct gonx_layout *layout,
+				cairo_surface_t *shadow, int x, int y);
 
 #ifdef __cplusplus
 }
