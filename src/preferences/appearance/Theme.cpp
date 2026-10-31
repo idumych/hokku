@@ -334,6 +334,24 @@ current_font(int32 which, Theme::Font& font)
 }
 
 
+/*!	The font as a Pango description, for labwc's window.decorator.font: the
+	window tabs labwc draws round other apps take the bold font, as Hokku's
+	own do (describe_font() in InterfaceDefs.cpp).
+*/
+static BString
+pango_font(const Theme::Font& font)
+{
+	// Pango doesn't know "Regular" as a style
+	const char* style = font.style.String();
+	const bool regular = strcasecmp(style, "Regular") == 0
+		|| strcasecmp(style, "Roman") == 0 || strcasecmp(style, "Book") == 0;
+	BString text;
+	text.SetToFormat("%s%s%s %gpx", font.family.String(), regular ? "" : " ",
+		regular ? "" : style, font.size);
+	return text;
+}
+
+
 static void
 set_font(int32 which, const Theme::Font& font)
 {
@@ -780,8 +798,21 @@ Theme::Apply() const
 			if (themerc.StartsWith(kLabwcHeader))
 				themerc.Remove(0, themerc.FindFirst('\n') + 1);
 			BString text(kLabwcHeader);
-			text << " (" << name << "); applying a theme replaces it\n"
-				<< themerc;
+			text << " (" << name << "); applying a theme replaces it\n";
+
+			// The tabs labwc draws (window.decorator, in Hokku OS's labwc)
+			// are titled in the theme's bold font, which a captured file's
+			// line may predate.
+			BStringList lines;
+			themerc.Split("\n", false, lines);
+			for (int32 i = 0; i < lines.CountStrings(); i++) {
+				if (!lines.StringAt(i).StartsWith("window.decorator.font"))
+					text << lines.StringAt(i) << "\n";
+			}
+			Font bold = fonts[kBoldFont];
+			if (!bold.set)
+				default_font(kBoldFont, bold);
+			text << "window.decorator.font: " << pango_font(bold) << "\n";
 			write_file(override.Path(), text);
 		} else
 			fprintf(stderr, "Theme: can't read %s\n", source.Path());

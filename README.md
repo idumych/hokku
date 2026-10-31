@@ -210,7 +210,10 @@ Appearance has a Themes tab, and `hokku-theme` does the same from a shell
 - the system colours (any not listed are Haiku's) and the plain, bold, fixed and menu fonts;
 - the desktop colour and a wallpaper;
 - for other Linux apps: labwc's frames (a themerc the theme carries, written to
-  `~/.config/labwc/themerc-override`; a themerc-override of your own is kept as `.orig`), the
+  `~/.config/labwc/themerc-override`; a themerc-override of your own is kept as `.orig`;
+  Haiku's and Gonx's name their frame with `window.decorator`, which
+  [Hokku OS's labwc](https://github.com/idumych/hokku-os/tree/main/packages/labwc-hokku)
+  draws with Hokku's own frame code, titled in the theme's bold font), the
   GTK, icon and cursor themes (GTK's `settings.ini` and gsettings), and the Qt style (qt5ct's
   and qt6ct's settings, Kvantum's theme).
 
