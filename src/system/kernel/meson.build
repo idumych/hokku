@@ -19,18 +19,11 @@ srcs_kernel = [
     'thread.cpp',
     'misc.c',
     'fs.c',
+    'area.c',
     'real_time_clock.c',
 	'fs/fd.cpp',
 	'fs/vfs.cpp',  # Common platform-agnostic code
 ] + kernel_sem_files
-
-# Areas: shared between processes on Linux (POSIX shared memory); elsewhere
-# still private to each process.
-if host_machine.system() == 'linux'
-    srcs_kernel += ['area_linux.c']
-else
-    srcs_kernel += ['area.c']
-endif
 
 # Add platform-specific kernel interface implementation
 if is_windows
