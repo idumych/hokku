@@ -516,6 +516,11 @@ to the Haiku project, whose work made both possible.
   for a messenger into another running app, so `hey` reaches the Deskbar, Tracker's desktop
   and the servers (`hey Deskbar BeMn` opens the Deskbar menu). `GetAppList()` lists each app
   once, by its real team.
+- **`BRoster::FindApp()` finds running apps wherever they are.** Haiku finds an app
+  anywhere by a query on its signature; without queries, an app run from a build folder or
+  installed without a `.desktop` file wasn't found, so `BAboutWindow` showed no version or
+  icon for it. When the MIME database and `.desktop` files don't know the signature, it
+  takes the running app's executable from `/proc/<pid>/exe`.
 - **Recent documents, folders and apps are shared**, as Haiku's registrar keeps them, in
   `~/.config/cosmoe/roster/recent_documents`, `recent_folders` and `recent_apps` (one
   `signature<TAB>path` per line, newest first), and survive a restart. Background apps,
