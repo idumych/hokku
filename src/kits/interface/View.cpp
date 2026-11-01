@@ -1789,6 +1789,10 @@ BView::DragMessage(BMessage* message, BBitmap* image,
 }
 
 
+// the buttons down now (Window.cpp)
+extern uint32 _hokku_current_buttons();
+
+
 void
 BView::GetMouse(BPoint* _location, uint32* _buttons, bool checkMessageQueue)
 {
@@ -1872,10 +1876,11 @@ BView::GetMouse(BPoint* _location, uint32* _buttons, bool checkMessageQueue)
 		ConvertFromScreen(&location);
 		_location->Set(location.x, location.y);
 	}
+	// (the backend's state, not the last message dispatched: a press or
+	// release for a window that is blocked, e.g. in BPopUpMenu::Go() on its
+	// own thread, would otherwise never reach a menu tracking meanwhile)
 	if (_buttons != NULL)
-		*_buttons = (sLastButtonState[B_PRIMARY_MOUSE_BUTTON] * B_PRIMARY_MOUSE_BUTTON)
-			+ (sLastButtonState[B_SECONDARY_MOUSE_BUTTON] * B_SECONDARY_MOUSE_BUTTON)
-			+ (sLastButtonState[B_TERTIARY_MOUSE_BUTTON] * B_TERTIARY_MOUSE_BUTTON);
+		*_buttons = _hokku_current_buttons();
 }
 
 

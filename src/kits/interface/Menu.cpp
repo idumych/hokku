@@ -1482,11 +1482,12 @@ BMenu::Track(bool sticky, BRect* clickToOpenRect)
 		UnlockLooper();
 	}
 
-	if (clickToOpenRect != NULL && LockLooper()) {
+	// (kept in screen coordinates: converted now, before the backend has
+	// told the menu window where it is, it was off, so a release in it never
+	// made the menu sticky and the first item the pointer crossed was chosen;
+	// _UpdateStateClose converts the pointer instead)
+	if (clickToOpenRect != NULL)
 		fExtraRect = clickToOpenRect;
-		ConvertFromScreen(fExtraRect);
-		UnlockLooper();
-	}
 
 	_SetStickyMode(sticky);
 
@@ -2559,7 +2560,12 @@ BMenu::_UpdateStateClose(BMenuItem* item, const BPoint& where,
 		DBG(OUT("BMenu::_UpdateStateClose() buttons released, sticky=%d, stickyPress=%d, item=%p\n", 
 			_IsStickyMode(), stickyPressDetected, item));
 		
-		if (fExtraRect != NULL && fExtraRect->Contains(where) && !_IsStickyMode()) {
+		BPoint screenWhere = where;
+		if (fExtraRect != NULL && LockLooper()) {
+			screenWhere = ConvertToScreen(where);
+			UnlockLooper();
+		}
+		if (fExtraRect != NULL && fExtraRect->Contains(screenWhere) && !_IsStickyMode()) {
 			DBG(OUT("BMenu::_UpdateStateClose() in extra rect, enabling sticky mode\n"));
 			_SetStickyMode(true);
 			fExtraRect = NULL;

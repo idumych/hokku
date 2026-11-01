@@ -695,6 +695,14 @@ view_redraw_handler(struct widget *widget, void *data)
 
 // Track currently pressed mouse buttons globally for motion events
 static uint32_t sCurrentButtons = 0;
+
+// the buttons down now, as the backend reported them (View.cpp's GetMouse:
+// a window blocked in BPopUpMenu::Go() never dispatches its own release)
+uint32
+_hokku_current_buttons()
+{
+	return __atomic_load_n(&sCurrentButtons, __ATOMIC_ACQUIRE);
+}
 static const uint32_t kMsgApplyDisplayScale = 'dScl';
 
 static inline double
