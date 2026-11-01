@@ -1,0 +1,3 @@
+/* GNU ld script. Haiku has a separate lib@KIT@; in Hokku that kit is
+   part of libbe, so linking -l@KIT@ links libbe. */
+INPUT ( -lbe )

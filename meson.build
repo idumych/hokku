@@ -1020,6 +1020,21 @@ if unit_tests_enabled
   subdir('src/tests')
 endif
 subdir('headers')
+
+# Haiku apps link -lmedia, -ltranslation and -lnetwork. Those kits are in
+# libbe here (and sockets in libc), so each name is a linker script that
+# links libbe, and Haiku Makefiles work unchanged.
+if is_linux
+    foreach kit : ['media', 'translation', 'network']
+        alias = configuration_data()
+        alias.set('KIT', kit)
+        configure_file(input: 'data/linux/libbe-alias.so.in',
+            output: 'lib' + kit + '.so',
+            configuration: alias,
+            install: true,
+            install_dir: dir_lib)
+    endforeach
+endif
 subdir('src/servers/app/fonts')  # Font installation (macOS only)
 
 configure_file(input : 'config.h.meson',
