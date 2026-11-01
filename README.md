@@ -228,12 +228,20 @@ and icons from GTK's settings, and keeps GTK's scroll bars beside the content
 (`GTK_OVERLAY_SCROLLING=0`); Qt apps pick up a new style and font when they start, and GTK
 4/libadwaita apps keep their own look.
 
-Haiku's look and Gonx on Hokku OS: Appearance's Themes tab, Network Connections (GTK 3) and
-Kvantum Manager (Qt), all switched together.
+Haiku's look and Gonx on Hokku OS: Appearance (a Hokku app), Network Connections (GTK 3) and
+V4L2 Test Bench (Qt 6), all switched together. All three wear the theme's frame (labwc draws it
+round the Linux apps with Hokku's own frame code) and cast the same shadow; the Qt app is the
+active window.
 
-![Haiku's look: Appearance's Themes tab with Haiku in use in a yellow Haiku tab, Network Connections (GTK) and Kvantum Manager (Qt) in Haiku's grey controls, on Haiku's blue desktop](docs/screenshots/theme-haiku.png)
+![Haiku's look: Appearance with Haiku in use, Network Connections and V4L2 Test Bench, each in Haiku's frame, a tab as wide as its title with the close box at the left and the zoom box at the right, casting a soft shadow down and to the right, on Haiku's blue desktop](docs/screenshots/theme-haiku.png)
 
-![Gonx: the same three windows in the Gonx look, on the Gonx desktop, with the Hokku tab on the Deskbar](docs/screenshots/theme-gonx.png)
+![Gonx: the same three windows in the Gonx frame, a rounded tab with the close, zoom and minimize buttons on a blue-grey shelf beside it, each casting a soft shadow, on the Gonx desktop](docs/screenshots/theme-gonx.png)
+
+The Gonx controls in Showcase and in the GTK and Qt test galleries, which copy its layout:
+
+| Hokku | GTK 3 | Qt (Kvantum) |
+|---|---|---|
+| ![Showcase's check boxes, radio buttons and buttons in Gonx](docs/screenshots/gonx-hokku.png) | ![GTK check boxes with the Gonx ✕, radio buttons, buttons and scroll bars](docs/screenshots/gonx-gtk.png) | ![Qt check boxes, radio buttons, buttons, scroll bar and fields in Gonx](docs/screenshots/gonx-qt.png) |
 
 Windows in the Haiku and Gonx frames cast a soft shadow, of a light above and to the left
 (`gonx_frame_paint_shadow()`; Hokku OS's labwc draws the same under other apps' windows). The
