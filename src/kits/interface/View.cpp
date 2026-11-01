@@ -3567,12 +3567,15 @@ BView::DrawString(const char* string, int32 length, BPoint location,
 	bool hasRotation = (fabs(rotation) > 0.001);
 	bool hasShear = (fabs(shear - 90.0) > 0.001);
 
-	cairo_move_to(cr, location.x, location.y - height.ascent - 0.5);
-
-	// Apply rotation
+	// Rotated text turns about the pen location on its baseline, as in
+	// app_server: the rotation goes on a frame placed there, and the
+	// layout's top-left corner sits the ascent above it
 	if (hasRotation) {
+		cairo_translate(cr, location.x, location.y);
 		cairo_rotate(cr, -rotation * M_PI / 180.0);
-	}
+		cairo_move_to(cr, 0, -height.ascent - 0.5);
+	} else
+		cairo_move_to(cr, location.x, location.y - height.ascent - 0.5);
 	
 	// Apply shear (oblique/italic transformation)
 	// Shear of 90° is upright, < 90° leans right (italic)
@@ -3586,14 +3589,18 @@ BView::DrawString(const char* string, int32 length, BPoint location,
 	}
 
 	pango_layout_set_text(layout, string, length);
+	// (the layout was made before the turn: shaped again for it)
+	if (hasRotation)
+		pango_cairo_update_layout(cr, layout);
 	cr.ShowLayout(layout);
 
 	// free the layout object
 	g_object_unref(layout);
 
-	// FIXME: This is only valid for non-rotated text
-	MovePenTo(location.x + fState->font.StringWidth(string, length),
-		location.y);
+	// the pen moves along the baseline, turned with the text
+	float advance = fState->font.StringWidth(string, length);
+	MovePenTo(location.x + advance * cos(rotation * M_PI / 180.0),
+		location.y - advance * sin(rotation * M_PI / 180.0));
 #endif
 
 }
@@ -3675,18 +3682,21 @@ BView::DrawString(const char* string, int32 length, const BPoint* locations,
 		pango_layout_set_text(layout, charStart, charLen);
 
 		cairo_save(cr);
-		cairo_move_to(cr, locations[i].x, locations[i].y - height.ascent - 0.5);
-		
-		// Apply rotation
+		// (turned about the character's location, as above)
 		if (hasRotation) {
+			cairo_translate(cr, locations[i].x, locations[i].y);
 			cairo_rotate(cr, -rotation * M_PI / 180.0);
-		}
+			cairo_move_to(cr, 0, -height.ascent - 0.5);
+		} else
+			cairo_move_to(cr, locations[i].x, locations[i].y - height.ascent - 0.5);
 
 		// Apply shear (oblique/italic transformation)
 		if (hasShear) {
 			cairo_transform(cr, &shearMatrix);
 		}
 		
+		if (hasRotation)
+			pango_cairo_update_layout(cr, layout);
 		cr.ShowLayout(layout);
 		cairo_restore(cr);
 
