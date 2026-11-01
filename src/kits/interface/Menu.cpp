@@ -46,6 +46,21 @@
 #include <binary_compatibility/Interface.h>
 #include <BMCPrivate.h>
 #include <CosmoeBackendAPI.h>
+
+
+// Hokku: how many menus are tracking now. A BPopUpMenu::Go() on a window's
+// own thread blocks that window, so Window.cpp's key_handler closes the
+// menus on Escape for it (Haiku's menu window would get the key).
+int32 gHokkuTrackingMenus = 0;
+
+namespace {
+
+struct TrackingMenu {
+	TrackingMenu() { __atomic_add_fetch(&gHokkuTrackingMenus, 1, __ATOMIC_ACQ_REL); }
+	~TrackingMenu() { __atomic_sub_fetch(&gHokkuTrackingMenus, 1, __ATOMIC_ACQ_REL); }
+};
+
+}	// namespace
 #include <MenuPrivate.h>
 #include <MenuWindow.h>
 #include <private/interface/NativeMenuPrivate.h>
@@ -2144,6 +2159,7 @@ BMenu::_Track(int* action, long start)
 	bigtime_t selectedTime = system_time();
 	bigtime_t navigationAreaTime = 0;
 
+	TrackingMenu tracking;
 	fState = MENU_STATE_TRACKING;
 	fChosenItem = NULL;
 		// we will use this for keyboard selection
@@ -2160,8 +2176,10 @@ BMenu::_Track(int* action, long start)
 	}
 
 	// A sticky submenu entered with the button already down (a finger
-	// tapped straight into it) takes that press as its click.
-	if (_IsStickyMode() && buttons != 0)
+	// tapped straight into it) takes that press as its click. Not a menu of
+	// its own (a BPopUpMenu): the press that opened it isn't a click in it,
+	// and taken as one, its release outside the items closed the menu at once.
+	if (_IsStickyMode() && buttons != 0 && fSuper != NULL)
 		fStickyPressDetected = true;
 
 	bool releasedOnce = buttons == 0;

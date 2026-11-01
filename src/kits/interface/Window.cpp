@@ -859,6 +859,12 @@ void view_button_handler(struct widget *widget,
 		return;
 	}
 
+	// A press outside the menus closes them. Counted here, as it arrives,
+	// not in DispatchMessage: a BPopUpMenu::Go() on this window's own thread
+	// blocks it until the menu closes.
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED && window->Feel() != kMenuWindowFeel)
+		BWindow::NotifyNonMenuInteraction();
+
 	BView* view = window->fTopView;
 	BView* subView;
 	BView* dropTarget = NULL;
@@ -1516,6 +1522,10 @@ key_updates_modifiers(uint32 key)
 }
 
 
+// the menus tracking now (Menu.cpp)
+extern int32 gHokkuTrackingMenus;
+
+
 void
 key_handler(struct window *window, struct input *input, uint32_t time,
 	    uint32_t key, uint32_t sym,
@@ -1546,6 +1556,16 @@ key_handler(struct window *window, struct input *input, uint32_t time,
 	int32 what = (state == WL_KEYBOARD_KEY_STATE_PRESSED) ? B_KEY_DOWN : B_KEY_UP;
 	const bool wasPressed = is_key_pressed(key);
 	_set_key_state(key, state == WL_KEYBOARD_KEY_STATE_PRESSED);
+
+	// Escape while a menu tracks closes it and is used up, as on Haiku,
+	// where the menu's window gets the key; here the key comes to the
+	// focused window, which a BPopUpMenu::Go() on its thread may block.
+	if (key == KEY_ESC && state == WL_KEYBOARD_KEY_STATE_PRESSED
+		&& callbackWindow->Feel() != kMenuWindowFeel
+		&& __atomic_load_n(&gHokkuTrackingMenus, __ATOMIC_ACQUIRE) > 0) {
+		BWindow::NotifyNonMenuInteraction();
+		return;
+	}
 
 	#ifdef __linux__
 	const bool pressed = state == WL_KEYBOARD_KEY_STATE_PRESSED;
