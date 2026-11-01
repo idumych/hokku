@@ -2601,6 +2601,11 @@ void window_activate(struct window *win, bool active)
 							RevertToParent, CurrentTime);
 			XFlush(win->display->xdisplay);
 			X11_LOG("X11: Window activated\n");
+		} else if (win->is_popup) {
+			/* A menu or tooltip deactivated (its BWindow loses focus as
+			   it opens): it stays where it is. Lowered, it went under
+			   the window it pops up from, which a click had just raised. */
+			X11_LOG("X11: Deactivating popup (left in place)\n");
 		} else {
 			/* Deactivate: Lower window (optional - usually just lose focus naturally) */
 			X11_LOG("X11: Deactivating window (lowering)\n");
