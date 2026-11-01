@@ -384,6 +384,44 @@ resolve_exec_to_entry_ref(const char* execLine, entry_ref* appRef)
 }
 
 
+/*!	Finds the executable of a running app with this signature.
+
+	On Haiku, FindApp() finds an app wherever it is through a query on its
+	signature attribute. There are no queries here, so an app started from
+	a build directory, or any app not installed with a .desktop file, would
+	not be found even while it runs, and BAboutWindow showed neither its
+	version nor its icon. A running app is known by its messenger, and
+	/proc says where its executable is.
+*/
+static status_t
+resolve_running_app(const char* signature, entry_ref* appRef)
+{
+	team_id team = -1;
+	if (be_app != NULL && be_app->Signature() != NULL
+		&& strcasecmp(be_app->Signature(), signature) == 0) {
+		team = getpid();
+	} else {
+		app_info info;
+		if (BPrivate::FindRemoteAppMessenger(signature, -1, &info) != B_OK)
+			return B_LAUNCH_FAILED_APP_NOT_FOUND;
+		team = info.team;
+	}
+
+	char link[64];
+	snprintf(link, sizeof(link), "/proc/%d/exe", (int)team);
+	char path[B_PATH_NAME_LENGTH];
+	ssize_t length = readlink(link, path, sizeof(path) - 1);
+	if (length <= 0)
+		return B_LAUNCH_FAILED_APP_NOT_FOUND;
+	path[length] = '\0';
+
+	BEntry entry(path);
+	if (!entry.IsFile() || entry.GetRef(appRef) != B_OK)
+		return B_LAUNCH_FAILED_APP_NOT_FOUND;
+	return B_OK;
+}
+
+
 static status_t
 resolve_xdg_desktop_app(const char* signature, entry_ref* appRef,
 	char* canonicalSignature, size_t canonicalSignatureSize)
@@ -2793,6 +2831,10 @@ BRoster::_ResolveApp(const char* inType, entry_ref* ref,
 				appMeta.SetTo(canonicalSignature);
 				error = appFile.SetTo(&appRef, B_READ_ONLY);
 			}
+		}
+		if (error != B_OK && resolve_running_app(inType, &appRef) == B_OK) {
+			appMeta.SetTo(inType);
+			error = appFile.SetTo(&appRef, B_READ_ONLY);
 		}
 		#endif
 		if (_wasDocument != NULL)
