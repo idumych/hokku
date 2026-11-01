@@ -139,6 +139,7 @@ echo "======================================"
 
 # Tests that run quickly and don't hang
 QUICK_TESTS=(
+    "area_shared_test"
     "port_close_test_1"
     "port_close_test_2"
     "port_buffer_size_test"
