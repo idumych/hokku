@@ -406,6 +406,10 @@ BackendMessageProcessor::ProcessMessages(CosmoeBackend* backend,
 					frame.right = backendFrame.x + backendFrame.width - 1;
 					frame.bottom = backendFrame.y + backendFrame.height - 1;
 
+					// the window opens where its frame says (app_server puts a
+					// new window at its frame; the backend window starts at 0, 0)
+					backend->WindowSetPosition(window, backendFrame.x, backendFrame.y);
+
 					// Set title (not for popups)
 					if (title != NULL && feel != kMenuWindowFeel)
 						backend->WindowSetTitle(window, title);

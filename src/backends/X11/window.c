@@ -1503,6 +1503,22 @@ window_set_position(struct window *window, int x, int y)
 	XMoveWindow(xdisplay, window->xwindow, x, y);
 	window->x = x;
 	window->y = y;
+
+	/* A window not mapped yet opens where its frame says, as on Haiku: the
+	 * window manager places it itself unless WM_NORMAL_HINTS name the
+	 * position (a pop-up slider, a floater opened at a drop point). */
+	if (!window->mapped) {
+		XSizeHints hints;
+		long supplied;
+		if (!XGetWMNormalHints(xdisplay, window->xwindow, &hints, &supplied)) {
+			memset(&hints, 0, sizeof(hints));
+			hints.flags = 0;
+		}
+		hints.flags |= USPosition | PPosition;
+		hints.x = x;
+		hints.y = y;
+		XSetWMNormalHints(xdisplay, window->xwindow, &hints);
+	}
 }
 
 static void
