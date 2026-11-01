@@ -922,6 +922,15 @@ void view_button_handler(struct widget *widget,
 		sCurrentButtons |= buttons;
 	else
 		sCurrentButtons &= ~buttons;
+	// ... and what BView::GetMouse() falls back on, now: app_server knows
+	// the buttons even while the window's thread is busy (a view tracking
+	// the mouse in MouseDown() with checkMessageQueue false)
+	BView::sLastButtonState[B_PRIMARY_MOUSE_BUTTON]
+		= (sCurrentButtons & B_PRIMARY_MOUSE_BUTTON) != 0;
+	BView::sLastButtonState[B_SECONDARY_MOUSE_BUTTON]
+		= (sCurrentButtons & B_SECONDARY_MOUSE_BUTTON) != 0;
+	BView::sLastButtonState[B_TERTIARY_MOUSE_BUTTON]
+		= (sCurrentButtons & B_TERTIARY_MOUSE_BUTTON) != 0;
 
 	bool setMouseDownView = false;
 	if (state == WL_POINTER_BUTTON_STATE_PRESSED) {

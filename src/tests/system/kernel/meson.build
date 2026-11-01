@@ -2,6 +2,7 @@
 
 # Tests that use fork() - can't run on Windows
 fork_tests = [
+  'area_shared_test',
   'fibo_exec',
   'fibo_fork',
   'page_fault_cache_merge_test',
