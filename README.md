@@ -8,17 +8,13 @@ of a linked poem, the verse the haiku grew out of.
 
 ## Why this fork exists
 
-- **AI-generated fixes have a home here.** Hokku incorporates fixes written with AI
-  assistance. Each fix is reviewed and tested against real apps before it lands. Cosmoe
-  doesn't accept AI contributions, so these fixes are kept in this fork instead of being
-  proposed upstream.
-- **A library to build freestanding app ports against.** The focus is narrow: a stable
-  Haiku API that Renku OS and Haiku apps can be built against to run on Linux as
-  standalone, freestanding programs (for example AppImages), with behaviour that matches
-  Haiku as closely as possible.
-- **Started in the spirit of [Renku](https://github.com/RenkuOS/Source).** Renku OS is a
-  Haiku fork that welcomes machine-assisted work. Hokku brings that approach to the library
-  that carries Renku and Haiku apps to other systems.
+- **AI-assisted fixes have a home here.** Each fix is reviewed and tested against real apps
+  before it lands. Cosmoe doesn't accept AI contributions, so they live in this fork.
+- **A library to build freestanding app ports against.** A stable Haiku API that Renku OS
+  and Haiku apps build against to run on Linux as standalone programs (AppImages, say),
+  behaving as closely to Haiku as possible.
+- **In the spirit of [Renku](https://github.com/RenkuOS/Source)**, the Haiku fork that
+  welcomes machine-assisted work.
 
 Hokku follows upstream Cosmoe and merges its changes regularly. The library names, headers
 and build (`meson`, `libbe.so` and friends) are unchanged, so anything that builds against
@@ -26,577 +22,92 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 
 ## Highlights
 
-### The desktop's tray icons, in the Deskbar
-
-On Linux, Deskbar shows the tray icons of the desktop's other apps, as the Plasma and Xfce
-panels do: KDE and Qt apps, GTK apps using libappindicator or libayatana-appindicator,
-Electron apps (Signal, Slack...), VPN clients, update notifiers. Deskbar starts `TrayBridge`
-(`src/apps/traybridge`), a StatusNotifierItem host, which puts each icon in the tray as a
-replicant.
+- **Haiku apps build as they are.** Shared areas between processes, fair semaphores, a
+  working node monitor, `BGLView`, `BNetworkRoute`, the public `BAboutWindow`, and
+  `-lmedia`/`-ltranslation`/`-lnetwork` for unchanged Haiku Makefiles.
+- **Drawing like app_server.** Pixel-exact lines and polygons, Haiku's transfer modes and
+  bitmap transparency, underline and strikeout, rotated text, and fonts chosen as Haiku
+  chooses them.
+- **The desktop's tray icons in the Deskbar.** KDE, Qt, GTK and Electron apps' icons, with
+  their menus, tooltips and live updates, next to Plasma's or Xfce's own tray or on their own.
+- **More in the Deskbar.** A screen brightness control on laptops, a menu of the desktop's
+  Linux applications, and shared recent documents, folders and apps.
+- **Notifications, the Haiku way.** Haiku's `notification_server` and preferences, also
+  showing other Linux apps' notifications, with action buttons.
+- **Themes for the whole desktop.** Haiku's look or [Gonx](https://github.com/idumych/gonx)
+  in one step: window frame, controls, colours, fonts, wallpaper, shadows and the BeOS
+  pointer, carried over to GTK 3 and Qt apps too.
+- **Wayland and touch.** Client-side Haiku and Gonx frames, menus the compositor places,
+  corner panels, and touch screens (tap to click, long press for a right click).
+- **A desktop session beside others.** "Hokku" on the login screen next to Plasma or GNOME,
+  without cluttering their menus.
 
 ![Deskbar's tray on sway with the Gonx look: the Gonx menu button, three tray icons and the tooltip of the mail icon](docs/screenshots/deskbar-tray-tooltip.png)
 
-![The mail icon's menu, sent by the app over D-Bus: icons, a checkmark, a disabled entry and a submenu of radio items](docs/screenshots/deskbar-menu.png)
-
-- **Clicks go back to the app.** A click activates it, a middle click is its secondary
-  action, the wheel scrolls (a volume icon's, say), and a right click opens the app's own
-  menu (`com.canonical.dbusmenu`) with its icons, checkmarks, radio items, submenus and
-  disabled entries. The app hears when the menu opens and closes, with a choice or without.
-- **Changes come in live:** icon, attention, overlay, tooltip and status. Passive icons are
-  hidden, as Plasma hides them; `HOKKU_TRAY_SHOW_PASSIVE=1` shows them.
-- **Icons look like the desktop's.** They come from the app's pixmaps or from the icon
-  theme: KDE's, GNOME's or GTK's setting, Breeze in a Plasma session that hasn't changed
-  it, or `HOKKU_ICON_THEME`. SVG icons are drawn with librsvg when it's installed, and KDE's
-  symbolic icons take the system colours, as Plasma gives them its own.
-- **It works next to another panel.** On a desktop that already has a tray (Plasma, Xfce),
-  TrayBridge registers with that desktop's StatusNotifierWatcher as one more host, so the
-  icons are in both trays. Elsewhere it is the watcher.
-- **Old XEmbed icons** (Wine, older GTK 2 and Java apps) come through `xembedsniproxy` or
-  `snixembed` when one is installed (`HOKKU_TRAY_XEMBED=0` to skip).
-- **Starting and restarting.** Deskbar starts TrayBridge unless `HOKKU_TRAYBRIDGE=0`. A
-  Deskbar started again finds TrayBridge still running, and it adds its icons to the new
-  tray.
-
-Tested in a Plasma 6 Wayland session (next to IVPN's and the CachyOS update notifier's
-icons), on X11 and on sway. The screenshots show a scripted test item, on sway with the
-Gonx look.
-
-### Screen brightness, in the Deskbar
-
-On a Linux machine with a backlight (a laptop), the Deskbar's tray has a brightness control
-(`src/apps/deskbar/BrightnessItem.cpp`): a click on the sun opens a slider beside it, the
-mouse wheel over the sun steps the brightness by 5%, and its tooltip tells the level. It
-sets the backlight through logind (`SetBrightness`), so no root or udev rule is needed, and
-reads it from `/sys/class/backlight`, choosing the firmware (ACPI) device over a platform
-driver's over the GPU's raw one, as systemd does. It never goes below 1%, so the screen
-can't go black. Without a backlight (a desktop with an external monitor) there is no
-control.
-
-The slider is a popup window, which is new: a `kMenuWindowFeel` window with
-`kWindowPopupGrabFlag`, made a popup of its parent with
-`BPrivate::set_popup_window_parent()` (`WindowPrivate.h`), opens where it's moved beside the
-parent, takes the pointer and keyboard (an explicit `xdg_popup` grab on Wayland) and is sent
-`B_QUIT_REQUESTED` when the user clicks elsewhere. On X11 it isn't grabbed: a click on the
-sun or Escape closes it.
-
-The Deskbar menu has the desktop's applications too: **Linux applications** lists every
-`.desktop` file in the XDG data folders that the desktop itself would show (honouring
-`NoDisplay`, `Hidden`, `OnlyShowIn`/`NotShowIn` and `TryExec`, with your own files
-overriding the system's), in submenus by freedesktop main category, with their icons.
-Choosing one starts it through GIO as the desktop's launcher does. The list is read again
-when an applications folder changes.
-
-![The Deskbar menu open on Linux applications, with a submenu for each main category: Development, Games, Graphics, Internet, Multimedia, Office, Settings, System and Utilities](docs/screenshots/deskbar-linux-apps.png)
-
-It needed four fixes in the kits, which every app gets:
-
-- **`BShelf` works again.** Cosmoe had replaced Haiku's `BShelf` with empty stubs
-  (`AddReplicant()` always failed), so no shelf, the Deskbar's tray included, could hold a
-  replicant; the likely reason was that its `<AutoLock.h>` collides with `<Autolock.h>` on
-  macOS's case-insensitive file system. Haiku's implementation is back, using
-  `<AutoLocker.h>`.
-- **A removed view is repainted over.** With no app_server, nothing redrew the area a view
-  left when it was removed, so it stayed on screen; `BView::RemoveChild()` now invalidates
-  it.
-- **Apps without windows are seen.** `BRoster::GetAppInfo()` and `IsRunning()` find a
-  running app that has no window through the messenger every app registers, and
-  `BMessenger::IsValid()` is true for a messenger into another running app (ports are per
-  process here). `GetAppList()` lists those apps too, with the signature they registered,
-  so `hey` reaches the Deskbar, Tracker's desktop and the servers (`hey Deskbar BeMn`
-  opens the Deskbar menu).
-- **`BDeskbar::AddItem()` returns Deskbar's error** instead of `B_NAME_NOT_FOUND`.
-
-### Notifications, the Haiku way
-
-Haiku's `notification_server` is here, with its Notifications preferences. The Deskbar
-starts it on Linux (`HOKKU_NOTIFICATIONS=0` leaves it off), and notifications appear as on
-Haiku, beside the Deskbar: grouped by app under a header with a close button, with icons,
-progress bars, and the important type marked; they time out, and update in place when sent
-again with the same ID.
-
 ![Three notifications beside the Deskbar: a Thunderbird mail sent over D-Bus with Reply and Mark read buttons, a backup at 65% with a progress bar, and a reminder from a Hokku app with Open and Snooze buttons](docs/screenshots/notifications.png)
 
-- **Hokku apps:** `BNotification::Send()` goes to it when it runs, as on Haiku, and to the
-  desktop's notifications (`notify-send`) when it doesn't. A Hokku extension gives them
-  buttons: `AddAction(label, message[, target])` adds one, and clicking it sends the
-  message to the target (the app by default) and closes the notification;
-  `CountActions()`, `ActionLabelAt()`, `ActionMessageAt()` and `ActionTargetAt()` read
-  them. The class keeps its size: the actions live outside it, in its reserved room. Renku
-  OS has the same API
-  ([RenkuOS/Source#233](https://github.com/RenkuOS/Source/pull/233), merged); its
-  notification_server doesn't show the buttons yet, and Haiku has neither, so an app that
-  also builds for Haiku puts these calls under `#ifdef APP_COSMOE`, with an `OnClick*()`
-  launch as the fallback.
-- **The desktop's apps:** it serves `org.freedesktop.Notifications` on the session bus
-  when no other notification server does, as on a desktop of Hokku apps; under Plasma or
-  GNOME their own popups keep the desktop's apps (it takes over if they ever stop). A
-  Linux app's icon, image or icon name is its icon, critical urgency is the important
-  type, a progress hint is a progress bar, a replacement ID updates the notification, a
-  click is the app's default action, its other actions are a row of buttons under the text
-  (Reply, Mark read...), and the app hears why a notification closed (expired, dismissed,
-  or closed by the app).
-- **The preferences** (Notifications, in the Deskbar's Preferences): turn notifications
-  on or off, their width, timeout and position, and mute any app. Changes apply at once.
-  Every app that sent one is listed, the desktop's apps too, which Haiku's list (apps
-  added from a file panel) couldn't hold.
+Haiku's look and Gonx on Hokku OS, applied to a Hokku app, a GTK 3 app and a Qt 6 app at
+once:
 
-![The Notifications preferences in the Gonx look: the General tab with width, timeout and position, and the Applications tab listing the apps that sent notifications](docs/screenshots/notifications-prefs.png)
+![Haiku's look: Appearance, Network Connections and V4L2 Test Bench, each in Haiku's frame, on Haiku's blue desktop](docs/screenshots/theme-haiku.png)
 
-On Wayland, where windows can't place themselves, the notification window is a corner
-panel that keeps the distance to its corner it is moved to (see Wayland below).
+![Gonx: the same three windows in the Gonx frame, on the Gonx desktop](docs/screenshots/theme-gonx.png)
 
-### Touch screens
+<details>
+<summary>More screenshots</summary>
 
-On Wayland, Hokku apps work with a finger: a tap is a click, a drag is a drag (through
-menus and into their submenus too), and a long press is a right click, which opens a tray
-icon's menu or a context menu. Tested on a touch screen in Plasma; the details are under
-Wayland below.
+The Deskbar: a tray icon's menu sent over D-Bus, and the Linux applications menu.
 
-### The Gonx look
+![The mail icon's menu: icons, a checkmark, a disabled entry and a submenu of radio items](docs/screenshots/deskbar-menu.png)
 
-Hokku can take on the whole [Gonx](https://github.com/idumych/gonx) look, the BeOS concept
-theme made for Renku OS: its window frame, its controls, and its colours, fonts and desktop
-colour. Run `gonx-theme apply` to switch to it and `gonx-theme revert` to go back to what was
-there before; apps started afterwards use it.
+![The Deskbar menu open on Linux applications, with a submenu for each main category](docs/screenshots/deskbar-linux-apps.png)
 
-The same apps before and after `gonx-theme apply` (left: Hokku's own look, with sway's title
-bars; right: Gonx):
+The Notifications preferences:
+
+![The Notifications preferences in the Gonx look: the General and Applications tabs](docs/screenshots/notifications-prefs.png)
+
+The same apps before and after `gonx-theme apply`, and Gonx close-ups: tabs, controls, a
+menu and an alert.
 
 ![The same desktop in Hokku's own look and in the Gonx look](docs/screenshots/gonx-before-after.png)
 
-Close-ups: the tabs of an active, an inactive and a floating window; the controls; a menu,
-and an alert in the Gonx border.
-
 ![Close-up of the active, inactive and floating tabs](docs/screenshots/gonx-tabs.png)
 
-![Close-up of the Gonx controls in Showcase: check box, radio buttons, sliders, buttons, scroll bar and spinner](docs/screenshots/gonx-controls.png)
+![Close-up of the Gonx controls in Showcase](docs/screenshots/gonx-controls.png)
 
 ![An open menu with the Gonx selection colour, and an alert in the Gonx border](docs/screenshots/gonx-menu-alert.png)
 
-- **Window frame.** Titled, document and floating windows get the Gonx tab, flap and
-  rounded corners on Wayland, and modal windows (alerts) the Gonx border without a tab,
-  moved by dragging the border. The frame is drawn client-side, so the compositor leaves
-  its own title bar off (tested on sway; KDE honours the same request but hasn't been
-  tried). On X11 the window manager draws frames. `setdecor Gonx` and `setdecor Default`
-  switch only the frame. Standalone apps run from their AppImage keep the desktop's own
-  frames (Hokku's default frame where the compositor draws none), while taking the rest of
-  the look; apps they start don't count, as their executable isn't in the AppImage.
-- **Controls.** `GonxControlLook.so`, a control look add-on like the Be, Flat and dark ones,
-  draws buttons, check boxes, sliders, scroll bars and tabs. It is the same code as the
-  Renku add-on; `setcontrollook` can choose it on its own.
-- **Deskbar and About.** The Deskbar's menu button shows a small Gonx tab with "Hokku" on
-  it instead of the Cosmoe rocket, and AboutSystem shows it large
-  (`src/apps/deskbar/gonx-logo.py` draws it), with what Hokku adds to Cosmoe.
-
-  ![AboutSystem in the Gonx look: the large Gonx badge, the system's details, and what Hokku adds](docs/screenshots/about.png)
-- **Colours, fonts, desktop.** `gonx-theme` sets them through the usual Haiku calls, which
-  Hokku now keeps (see Desktop integration below). The fonts are Noto Sans at 9 and 11 points.
-
-### Haiku's window frame
-
-`setdecor Haiku` gives Hokku windows Haiku's own frame on Wayland: app_server's Default
-decorator (the yellow tab with the close and zoom buttons, the bevelled border in the window
-border colour, the resize notches and a document window's knob), ported to cairo and drawn
-client-side like the Gonx frame. `Default` stays the desktop's own frames.
-
-![StyledEdit (active), Appearance and DeskCalc in Haiku's frame on Hokku OS](docs/screenshots/haiku-decorator.png)
-
-### Themes
-
-Appearance has a Themes tab, and `hokku-theme` does the same from a shell
-(`list`, `apply NAME`, `save NAME`, `current`). A theme sets the whole look at once:
-
-- the window decorator (Default, Haiku or Gonx) and the control look;
-- the system colours (any not listed are Haiku's) and the plain, bold, fixed and menu fonts;
-- the desktop colour and a wallpaper;
-- for other Linux apps: labwc's frames (a themerc the theme carries, written to
-  `~/.config/labwc/themerc-override`; a themerc-override of your own is kept as `.orig`;
-  Haiku's and Gonx's name their frame with `window.decorator`, which
-  [Hokku OS's labwc](https://github.com/idumych/hokku-os/tree/main/packages/labwc-hokku)
-  draws with Hokku's own frame code, titled in the theme's bold font), the
-  GTK, icon and cursor themes (GTK's `settings.ini` and gsettings), and the Qt style (qt5ct's
-  and qt6ct's settings, Kvantum's theme).
-
-GTK 3 and Qt apps get the Haiku and Gonx looks too: Hokku installs GTK themes of both
-(`/usr/share/themes/Haiku`, `Gonx`) and Kvantum themes for Qt 5 and 6 (`/usr/share/Kvantum`;
-Qt needs the `kvantum` package), made by `data/linux/gtk/generate.py` and
-`data/linux/kvantum/generate.py` from the control looks' own colours and shapes. A theme also
-sets GTK's font from its plain font (¾ of the Be size: GTK counts points at 96 dpi). The Hokku
-session hands the theme's Qt style to Qt apps (`QT_STYLE_OVERRIDE`, from qt6ct's settings),
-loads Qt's GTK platform theme (`QT_QPA_PLATFORMTHEME=gtk3`) so that Qt apps take the same font
-and icons from GTK's settings, and keeps GTK's scroll bars beside the content
-(`GTK_OVERLAY_SCROLLING=0`); Qt apps pick up a new style and font when they start, and GTK
-4/libadwaita apps keep their own look.
-
-Haiku's look and Gonx on Hokku OS: Appearance (a Hokku app), Network Connections (GTK 3) and
-V4L2 Test Bench (Qt 6), all switched together. All three wear the theme's frame (labwc draws it
-round the Linux apps with Hokku's own frame code) and cast the same shadow; the Qt app is the
-active window.
-
-![Haiku's look: Appearance with Haiku in use, Network Connections and V4L2 Test Bench, each in Haiku's frame, a tab as wide as its title with the close box at the left and the zoom box at the right, casting a soft shadow down and to the right, on Haiku's blue desktop](docs/screenshots/theme-haiku.png)
-
-![Gonx: the same three windows in the Gonx frame, a rounded tab with the close, zoom and minimize buttons on a blue-grey shelf beside it, each casting a soft shadow, on the Gonx desktop](docs/screenshots/theme-gonx.png)
-
-The Gonx controls in Showcase and in the GTK and Qt test galleries, which copy its layout:
+The Gonx controls in Hokku, GTK 3 and Qt (Kvantum):
 
 | Hokku | GTK 3 | Qt (Kvantum) |
 |---|---|---|
-| ![Showcase's check boxes, radio buttons and buttons in Gonx](docs/screenshots/gonx-hokku.png) | ![GTK check boxes with the Gonx ✕, radio buttons, buttons and scroll bars](docs/screenshots/gonx-gtk.png) | ![Qt check boxes, radio buttons, buttons, scroll bar and fields in Gonx](docs/screenshots/gonx-qt.png) |
+| ![Showcase's check boxes, radio buttons and buttons in Gonx](docs/screenshots/gonx-hokku.png) | ![GTK check boxes, radio buttons, buttons and scroll bars in Gonx](docs/screenshots/gonx-gtk.png) | ![Qt check boxes, radio buttons, buttons, scroll bar and fields in Gonx](docs/screenshots/gonx-qt.png) |
 
-Windows in the Haiku and Gonx frames cast a soft shadow, of a light above and to the left
-(`gonx_frame_paint_shadow()`; Hokku OS's labwc draws the same under other apps' windows). The
-pointer is BeOS's own: its pointing hand and I-beam, from `B_HAND_CURSOR` and `B_I_BEAM_CURSOR`,
-as the Xcursor themes `Hokku` and `Hokku-Shadow` (`/usr/share/icons`, made by
-`data/linux/cursors/generate.py`; the other cursors are Adwaita's), which Haiku and Gonx name.
-Appearance's *Look and feel* tab (or `hokku-theme shadows on|off`) turns the shadows of windows
-and the pointer on and off together: the pointer and other apps' windows change at once, Hokku
-apps' windows when they start. Hokku apps ask the compositor to draw their standard cursors
-(cursor-shape protocol), so they follow its cursor theme as other apps do.
+Haiku's window frame, AboutSystem, and GLTeapot through `BGLView`:
 
-Hokku ships Haiku and Gonx in `/usr/share/cosmoe/themes`. *Save current look* keeps what is in
-use as a theme of your own in `~/.config/cosmoe/themes`; each theme is a folder with a
-`theme.ini` (see `src/preferences/appearance/Theme.h`) and the files it names. Running apps take
-the new colours, fonts and frames; a new control look shows when they are restarted.
+![StyledEdit, Appearance and DeskCalc in Haiku's frame on Hokku OS](docs/screenshots/haiku-decorator.png)
 
-### OpenGL with `BGLView`
+![AboutSystem in the Gonx look: the large Gonx badge, the system's details, and what Hokku adds](docs/screenshots/about.png)
 
-Hokku has the OpenGL kit's `BGLView` (`libopengl.so`, header `<opengl/GLView.h>`, the same
-API as Haiku's): `LockGL()`, `UnlockGL()`, `SwapBuffers()` and `GetGLProcAddress()`, from
-any thread, as on Haiku. It renders with EGL (Mesa's surfaceless platform when there is one,
-otherwise the default display, so NVIDIA's driver works too) into an off-screen buffer the
-size of the view; `SwapBuffers()` copies the frame into a bitmap that the view draws, on X11
-and Wayland alike. It's built when EGL and `GL/gl.h` are found (Debian/Ubuntu: `libegl-dev
-libgl-dev`). `DirectConnected()` and `EnableDirectMode()` exist for `BDirectWindow` code
-and do nothing: frames always go through the view. `CopyPixelsIn()`/`Out()`, overlays and
-`BGLScreen` aren't there yet. VLC Reborn's OpenGL video output uses it, and so does
-GLTeapot, Haiku's OpenGL demo, which Hokku now includes (Deskbar: Demos).
-`SwapBuffers()` doesn't lock the window: it locked it to show the frame, waiting up to
-100 ms, so while pointer motion kept the window busy GLTeapot fell from about 700 frames per
-second to 9-80. It now posts the update to the window, and keeps drawing at 600-1000.
+![GLTeapot on Wayland (labwc): a lit red teapot spinning at 60 frames per second](docs/screenshots/glteapot.png)
 
-![GLTeapot on Wayland (labwc), in Hokku's own look: a lit red teapot spinning at 60 frames per second, with a green light on its right](docs/screenshots/glteapot.png)
+</details>
 
-### Apps built on Hokku
+## Apps built on Hokku
 
-Apps shipped on Linux with Hokku (each also runs on Renku OS and Haiku, LinShare as HiShare):
+Shipped on Linux with Hokku; each also runs on Renku OS and Haiku.
 
 - [Sheath](https://github.com/idumych/sheath), a SWORD Bible reader (the first).
 - [Folio](https://github.com/idumych/folio), a notebook with wiki links that follow renames.
-- [Gobe Productive](https://github.com/idumych/gobe-productive), the BeOS office suite
-  ported from the original (a preview of its word processor). It is the largest so far,
-  and found the Wayland crash listed below: an alert as an app's first window.
+- [Gobe Productive](https://github.com/idumych/gobe-productive), the BeOS office suite,
+  ported from the original. The largest so far.
 - [VLC Reborn](https://github.com/idumych/vlc-reborn), VLC media player with its BeOS
-  interface back. It brought `BGLView` (for its OpenGL video output) and found the Wayland
-  menu placement bug.
+  interface back.
 - [LinShare](https://github.com/idumych/linshare), atomozero's
   [HiShare](https://github.com/atomozero/HiShare) (the modernized BeShare file-sharing and
-  chat client) for Linux. A network app with old Be code in it, it brought `BNetworkRoute`,
-  screen capture, `BDirectory(node_ref)`, `Launch()` through `xdg-open` and the `<Debug.h>`
-  helpers, and found the shell injection in notifications and the unlocked view lookups on
-  the display thread (once `debugger()` printed).
+  chat client) for Linux.
 
-## All changes from Cosmoe
-
-### Drawing
-
-- **Font styles chosen like Haiku.** Styles lighter than Book get `B_LIGHT_FACE`, Black and
-  Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
-  a face the canonical one wins. Before, every weight below Bold counted as regular and the
-  first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
-- **Underline and strikeout are drawn.** `B_UNDERSCORE_FACE` and `B_STRIKEOUT_FACE` stay in
-  the font's face and are drawn by `DrawString()`, so `BTextView` runs show them.
-- **Views moved by a layout are redrawn whole.** `Invalidate()` lists a view's children for
-  the update when it is called, but a layout pass could move them before the update ran: a
-  child that moved into the invalid area wasn't drawn, and one that moved within it only in
-  part. Windows that the window manager placed or sized differently from what they asked for
-  could show half-drawn buttons and remnants of earlier frames until resized. The update now
-  takes the children from their current frames.
-- **A resize can't leave a window's last drawing off screen.** Resizing recreates a window's
-  backing surface, dirty all over, without asking the backend to copy it; on X11 the backend's
-  own redraw for the resize could run first, with the old surface. The window then kept
-  showing its earlier content (a status line that had changed) until something else drew,
-  such as the mouse moving over it. The window now asks for a redraw when the surface changes.
-- **The text caret blinks under the backing-surface lock.** `InvertRect()`, which the caret
-  uses from `Pulse()` outside any update, drew into the window's backing surface without the
-  lock the backend holds while copying it to the screen, so a copy could catch the inversion
-  halfway. It now holds the lock while it draws and marks the area dirty.
-- **`B_OP_MIN` and `B_OP_MAX` compare brightness.** Like app_server, a pixel takes the
-  drawing's colour only where that is darker (MIN) or brighter (MAX) as a whole, judged by
-  brightness. Cairo's DARKEN and LIGHTEN, used before, compare each channel on its own, so a
-  gray wash over a red icon (how many BeOS apps grey out a disabled button) gave pink.
-- **Lines, rects and polygons sit on the pixels app_server uses.** Unless a view is
-  `B_SUBPIXEL_PRECISE`, coordinates are rounded down to whole pixels; an even pen size is
-  centred on the pixel edge, so a line of pen size 2 covers two whole rows instead of a
-  blurred three; lines thicker than 1 get the butt caps they ask for; and the points of a
-  filled polygon are pixel corners. Triangles, filled or not, go through pixel centers, as
-  in app_server.
-- **Patterns leave their low color out in `B_OP_OVER`.** A pattern's transparent pixels were
-  stored with their color but no alpha, which Cairo (premultiplied) adds to what's
-  underneath: a stipple filled over text painted the low color (often the 0x777477 of
-  `B_TRANSPARENT_32_BIT`) between its dots. The pattern's pixels are now premultiplied.
-- **8-bit and 32-bit bitmaps are transparent where Haiku's are.** Outside `B_OP_COPY`,
-  `B_TRANSPARENT_MAGIC_CMAP8` pixels of a `B_CMAP8` bitmap and `B_TRANSPARENT_MAGIC_RGBA32`
-  pixels of a `B_RGB32` bitmap are left out, and `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha
-  bytes. Before, icons drawn with `B_OP_OVER` showed a white box where they should be clear.
-- **A view bitmap's `Bits()` and its views' drawing stay in step.** On Haiku they are the same
-  memory; here a `B_BITMAP_ACCEPTS_VIEWS` bitmap's views draw into a separate surface. Every
-  `Bits()` call copied that surface over the bits, and `DrawBitmap()` drew the surface, so
-  pixels an app wrote through `Bits()` (a fill, a pasted image, a freshly cleared canvas) were
-  lost unless it locked the bitmap in between. The bitmap now tracks which copy changed: the
-  bits go to the surface on `Lock()` or before the bitmap is drawn, and come back only if the
-  views may have drawn. Test: `src/tests/kits/interface/bbitmap/BitmapBitsSyncTest`.
-
-### Windows, menus and input
-
-- **Opening a menu doesn't read the menu bar unlocked.** To avoid a deadlock on Windows, a
-  menu bar unlocks its window while a menu opens, but opening the menu still read the menu
-  bar's position (`Bounds()`, `ConvertToScreen()`, `ScreenLocation()`) from the tracking
-  thread: a race, and a `debugger("Looper must be locked")` with a backtrace every time a
-  menu opened. Those reads now take the menu bar's window lock briefly.
-- **Pointer events don't walk an unlocked window.** The display thread looked up the view
-  under the pointer (for every motion, click, wheel and idle event) without the window's
-  lock, racing the window thread and calling `debugger("Looper must be locked")` on every
-  `BView::Bounds()`. It now takes the lock only if it is free; when the window is busy, the
-  window thread finds the view itself before dispatching. Waiting for the lock is still
-  avoided, so a modal `BAlert::Go()` can't deadlock against the display thread.
-- **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` now get every
-  pointer motion, in whatever window they live, as they do on Haiku. Tooltip windows rely on
-  this to close when the mouse moves; before, tooltips stayed on screen for good.
-- **Every thread has its own ID.** `find_thread(NULL)` returned `B_NAME_NOT_FOUND` for any
-  thread not started by `spawn_thread()`, such as a `BMessageRunner`'s, so all of them
-  shared one ID. A `BLocker` tells its owner by that ID, so one such thread took a lock
-  another held as its own and changed a window's message queue at the same time. The queue
-  broke, the window stopped taking messages, and the Terminal stopped showing what was
-  typed. Each of those threads now gets an ID of its own, outside
-  the range `spawn_thread()` hands out.
-- **Semaphores are fair, as on Haiku.** They were POSIX semaphores, which don't queue their
-  waiters: a thread that released one and acquired it straight back usually got it first.
-  A looper does exactly that between messages, so another thread locking a busy window
-  could wait out its whole timeout. Each semaphore is now a count and a queue of waiting
-  threads, served in order (a waiter got in after up to 81 ms before, 0.3 ms now). Also:
-  `B_ABSOLUTE_TIMEOUT` was read as wall-clock time, so absolute waits timed out at once;
-  `delete_sem()` wakes its waiters at once; `B_RELEASE_ALL` and `B_RELEASE_IF_WAITING_ONLY`
-  do what they say; and a thread killed while waiting leaves the queue.
-- **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
-  creating it deadlocked its looper. `BTextView` does exactly that on a zero-length click
-  (touchpad tap, xdotool, remote desktop), and the window stopped taking any input.
-- **A menu that fills slowly asks its parent with the parent locked.** A submenu is shown
-  with its parent menu's window unlocked (Cosmoe does that so showing it can't deadlock on
-  Windows). A menu of folder contents that took more than one pass to fill (the Deskbar's,
-  on a slow or cold machine) then asked the unlocked parent where the mouse was, and printed
-  "Looper must be locked". It locks the parent for that now.
-- **Shortcut characters fit in menus.** A shortcut's character was drawn flush against the
-  menu's right edge, so wide ones (W, M) were cut off; a third of the font size is left
-  after it.
-- **A keymap without a configured layout.** With no layout set and no `setxkbmap` (a
-  Wayland-only system), `get_key_map()` failed and left its outputs untouched, and Tracker
-  crashed on startup reading them. It builds the keymap from xkbcommon's defaults
-  (`XKB_DEFAULT_*`, else us), as the compositor does.
-- **Leaving a window is a `B_EXITED_VIEW`.** When the pointer leaves a window (X11
-  `LeaveNotify`, Wayland pointer leave), the view that was under it gets a `B_MOUSE_MOVED`
-  with `B_EXITED_VIEW`, as on Haiku, and no idle event follows. Before it heard nothing, so a
-  tooltip shown for it stayed on screen after the pointer had moved to another window.
-  (Tested on X11; the Wayland side hasn't been tried with a real pointer yet.)
-
-### Wayland
-
-- **A panel can sit away from its corner.** Wayland windows can't place themselves, so a
-  corner panel (a layer-shell surface) always sat in its corner. One with the private
-  `kWindowPanelOffsetFlag` turns `MoveTo()` into margins from that corner, worked out
-  from the screen `BScreen` reports, so the notification window sits beside the Deskbar.
-  The margins follow the panel's size as it grows, and the compositor's echo of an
-  earlier size no longer undoes a newer one.
-- **Touch screens work.** Wayland gives touch to apps as touch, never as a mouse, and only
-  window frames handled it, so a finger did nothing in an app. Now the first finger on a
-  window drives the mouse, as a tablet does on Haiku: a tap is a left click, a finger that
-  moves is the left button held while it drags, and one held still for 0.6 seconds is a
-  right click, which opens context menus (a tray icon's, say); tap an item in it. Dragged
-  from one menu into a submenu, it
-  reaches the submenu where the compositor really put it (flipped or slid at the screen's
-  edge), not where the app asked for it; a mouse dragged with its button held does the
-  same. `HOKKU_TOUCH_DEBUG=1` prints what touch and the pointer do.
-  Tested with KWin's fake input and on a touch screen in Plasma.
-- **A click counts where it happened.** `GetMouse()` falls back on the last position a
-  motion reported, and presses didn't update it, so the first click after the pointer
-  entered a window was judged where it had last moved: a menu bar opened the wrong menu, or
-  none.
-- **A tap or click on a menu item with a submenu opens it.** Menu tracking judged a press
-  by where the pointer was before it moved, so a finger landing on an item (a move and a
-  press at once) counted as a click outside and closed the menu; and releasing on an item
-  with a submenu closed the menu instead of opening the submenu, as Haiku does.
-- **Wayland: menus are placed by the compositor.** Wayland doesn't tell an app where its
-  windows are, and `BScreen` there covers one output, so `BMenu` moved pop-ups by a wrong
-  amount trying to keep them on screen: with two monitors, a `BMenuField`'s pop-up on one of
-  them opened far off to the side and was never seen. Menus now leave that to the
-  compositor, which may flip, slide and resize them, horizontally as well as vertically.
-- **Wayland: no crash when a frameless window's view is replaced.** Destroying a window's
-  root widget (a frameless window's top view, such as an alert's) left the window's main
-  surface pointing at the freed widget, and a resize already queued for the window then used
-  it: the app crashed right after showing the window. The surface and the window now forget
-  the widget, and the places that use it check for none.
-- **Wayland: window frames in an AppImage.** The frame's button images were looked for only
-  where Hokku was configured to install (or in `COSMOE_DATA_DIR`), so a relocated copy (an
-  AppImage, a staged install) couldn't build its client-side frame, and its windows had
-  none wherever the compositor doesn't draw one (GNOME, and the Gonx frame everywhere). The
-  backend now uses the data folder libbe finds next to itself.
-- **Wayland: panels have no window frame.** Once the frame's images were found, a panel
-  (the notification window) got a client-side frame too: its size went into the window's,
-  which the panel's size limits took back, again and again, so the notifications were cut
-  off, sat over the Deskbar, and an empty frame showed behind them. Panels and the desktop
-  are never framed now.
-
-- **Wayland: the desktop and the Deskbar come back after a text console.** A layer-shell
-  surface belongs to an output, and labwc removes the outputs while the session is switched
-  to a text console (and adds new ones on the way back), so the Tracker desktop and the
-  Deskbar never came back. A layer surface whose output is gone, or that the compositor
-  closes, is now made again when an output appears, as if the window were hidden and shown.
-  That includes one started while a text console has the screen (a Deskbar starting as the
-  user switched to one quit), and such a window is told about the screen it gets, so the
-  Deskbar places itself on it instead of off the left edge of a screen of no width.
-  Meanwhile `BScreen::Frame()` is the last screen (or 1024x768 if there was none) instead
-  of an empty rectangle, so a Tracker started then no longer piles the desktop icons at 0,0.
-
-### Desktop integration
-
-- **Hokku next to another desktop.** Installed beside Plasma, GNOME or any other desktop,
-  Hokku is one more choice on the login screen, named "Hokku". The other desktop's menus
-  don't list the parts of Hokku's own desktop (Tracker, Deskbar and the preferences that
-  only Hokku's desktop uses: `OnlyShowIn=cosmoe`), while Hokku's apps stay listed
-  everywhere and claim no file types. The session takes the system keyboard layout (from
-  `localectl`'s X11 setting, Debian's `/etc/default/keyboard` or `/etc/vconsole.conf`)
-  instead of always us, and `cosmoe-portals.conf` picks its portal backends: wlroots' for
-  screenshots and screen sharing, GTK's or KDE's for the rest, whichever is installed.
-- **The desktop session on Arch, and on real GPUs.** `cosmoe-desktop.sh` builds the first
-  login's MIME database from pacman packages too (`hokku` or `cosmoe` and their `-apps` and
-  `-desktop`, or the AUR's `-git` ones), not only from dpkg and rpm, and from their files
-  only: package lists name directories, and scanning `/usr` took minutes. The system
-  database is layered under the user's, so the types the apps claim keep their icons. It
-  finds polkit-gnome's agent where Arch and Fedora put it, starts mako only when Hokku's
-  notifications are off (`HOKKU_NOTIFICATIONS=0`), and uses the pixman renderer and software
-  cursors, a VirtualBox workaround, only under VirtualBox.
-- **`BRoster::GetAppList()` lists each app once.** On Wayland the display also lists
-  windowed apps under a team < 0, so apps showed up twice (and `hey` couldn't reach the
-  second). Apps are listed by their real team, and the display's only for apps that didn't
-  register (Linux apps).
-- **`BDeskbar::Frame()` answers.** It asked the Deskbar for its frame without a timeout,
-  which hung Tracker, so it had been switched off and always returned an empty rectangle;
-  it asks again now, giving up after half a second.
-- **The Deskbar menu is never empty.** It names its folder by an absolute path, so a moved
-  or staged install (an AppImage, say) and a run from the build folder got a menu with
-  nothing in it, not even About or Shutdown. A moved install now finds the menu beside
-  `menu_entries`, whose links to the apps are relative, and without one the menu shows its
-  standard items and your own Deskbar folder.
-- **About this system says Hokku**, with what Hokku adds, Cosmoe and Haiku credited, and
-  the Linux kernel's release where the kernel's build date was.
-- **Notifications without a shell.** `BNotification::Send()` ran `system("notify-send \"<title>\"
-  \"<content>\"")`, so a title or content with quotes or `$(...)` (a chat line, a file name
-  from the network) ran commands, and the window waited for `notify-send`. Both are now
-  arguments to a detached `notify-send` (`osascript` on macOS), never seen by a shell.
-- **`BRoster::Launch()` opens files, folders and URLs with the desktop.** Only Cosmoe apps
-  could be launched, so "open file", "show in folder" and clicked links did nothing. When no
-  Cosmoe app handles the document, URL (`application/x-vnd.Be.URL.*`, `text/x-email`) or the
-  `be:url`/refs of the launch message, it now runs `xdg-open`, detached, without the variables
-  an AppImage's AppRun set for the bundle.
-- **Launched apps aren't left as zombies.** `BRoster::Launch()` started an app as a child of
-  the app launching it and never waited for it, so every app started from the Deskbar or
-  Tracker stayed `<defunct>` after quitting until the Deskbar or Tracker quit. Apps are now
-  started detached, as `xdg-open` is, and nothing has to wait for them, as on Haiku.
-- **The Deskbar drops apps that quit before it noticed their window.** An app already running
-  when the Deskbar starts (the Terminal opened at login) is listed by its process, and the
-  display reports only its window's quit, so it stayed in the Deskbar. When an app quits, the
-  Deskbar now also drops the listed processes that are gone.
-- **Every app in the Deskbar has its icon.** Now and then an app was listed without one, its
-  label where the icon goes; the cause hasn't been found. When an app's entry gets no usable
-  icon, the Deskbar now fetches it again.
-- **`BScreen::GetBitmap()` and `ReadBitmap()`.** They were missing; on X11 they copy the
-  screen into a `B_RGB32` bitmap (Wayland doesn't let clients read the screen, so there they
-  return `B_UNSUPPORTED`). `BScreen::Frame()` now ends on the last pixel, as on Haiku, instead
-  of one past it.
-- **`BScreen::WaitForRetrace()`.** It was missing. The display server doesn't tell apps
-  when the screen refreshes, so it waits for the next tick of a 60 Hz clock, which paces an
-  animation as a retrace would (GLTeapot's "Limit FPS to refresh rate").
-- **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
-  `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
-  the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
-  an app started. Colours and the desktop colour are now saved with the appearance settings
-  and fonts with the font settings, and apps started afterwards use them (running apps keep
-  theirs until restarted). A dark control look still brings its own colours.
-  `_set_system_font_()`, the private call Appearance and theme tools use on Haiku, exists.
-  Apps no longer print `ControlLook add-on loaded from ...` when they start.
-
-### Files, storage and network
-
-- **Node monitor code compiles unchanged.** Haiku code reads `msg->FindInt64("node", &ref.node)`
-  and `FindInt32("device", &ref.device)`; on Linux `ino_t` and `dev_t` are `unsigned long`, so
-  that didn't compile. `BMessage` now has those overloads. `BDirectory(const node_ref*)` and
-  `SetTo(const node_ref*)` exist too: they find the directory where `watch_node()` does (a
-  watch, or a `BNode`/`BEntry` the app has open).
-- **`watch_node()` works.** It finds a path for the node (from an existing watch, or a node
-  or directory the app has open, as a `BEntry` or `BNode` does) and watches that. Node
-  monitor messages carry `device`/`node`/`directory` as int32/int64 like Haiku's, and
-  `FindInt32()`/`FindInt64()` and `FindDevice()`/`FindInode()` each accept the other's
-  fields. `name` is still a full path (see below).
-- **Recent documents and folders are shared.** Each app kept its own lists in memory, so the
-  Deskbar's Recent documents and Recent folders were always empty. As Haiku's registrar
-  does, they are now kept for all apps, in `~/.config/cosmoe/roster/recent_documents` and
-  `recent_folders` (one `signature<TAB>path` per line, the newest first), and survive a
-  restart. Folders opened in Tracker and documents opened in an app show up in the Deskbar.
-  Recent applications are kept the same way, in `recent_apps`: apps are added when they
-  start, except background apps, Tracker and the Deskbar (as on Haiku) and command line
-  tools (executables without a signature of their own).
-- **Opening a file is not a change.** A file opened for writing and closed without writing
-  sent `B_STAT_CHANGED`, so StyledEdit said a file "was modified by another application"
-  when anything (the Deskbar's recent documents, say) had only opened it. Only writes do now.
-- **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
-  node). File panel titles and Open With show the leaf name. In app code, use
-  `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
-- **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from every entry but the
-  last. A user translator now hides the system one of the same name instead of both loading.
-  If no translator loads at all, the directories searched are printed to stderr.
-  `BDirectory::GetNextRef()` reports errors and fills in the parent directory's device and
-  node, like `BEntry::GetRef()`.
-- **`BNetworkRoute` works on Linux.** `<NetworkRoute.h>` didn't compile (glibc has no
-  `route_entry`) and the class wasn't built, so apps asking for the default gateway (for
-  UPnP or NAT-PMP port mapping, say) didn't link. It now reads `/proc/net/route` and
-  `/proc/net/ipv6_route`; `GetDefaultRoute()`/`GetDefaultGateway()` return the default
-  route with the lowest metric, as the kernel uses. `BNetworkInterface` and
-  `BNetworkRoster` are still not there.
-
-### Logs and debugging
-
-- **Quiet logs.** `system_beep()` wrote a terminal bell and `beep event "..." requested.` to
-  standard output for every event, and the resource reader printed `read_exactly: ...` and
-  `InitContainer: Caught Exception` when a file had no resources (a settings file opened
-  write-only, say), which Haiku handles silently. Both are gone.
-- **`debugger()` and the `<Debug.h>` helpers say something.** `debug_printf()` formatted its
-  text and threw it away, so `debugger()` calls (a locked-looper violation, say) were silent;
-  they now go to standard error, followed by a backtrace (Haiku would stop the app in its
-  debugger there). `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and `_setDebugFlag()`,
-  which Haiku declares and old Be code calls directly, exist now.
-
-### Build and install
-
-- **Smaller AppImages: a build without the apps.** `-Denable_apps=false` leaves out
-  `src/apps` and `src/preferences` and installs only the catalogs of the libraries and
-  add-ons, so an app bundling Hokku doesn't carry Tracker, the preferences and the rest of
-  the bundled apps. The default is still to build everything.
-- **Installing.** The Wayland session file goes to `/usr/share/wayland-sessions` only for
-  `/usr` and `/usr/local` prefixes, and inside the prefix otherwise, so non-root installs
-  finish. Staged (`DESTDIR`) installs no longer delete `libbe.so` from the build machine's
-  `/usr/local/lib`, and the apps' MIME entries record where they're installed, not their
-  path under `DESTDIR` (with that, `BRoster::FindApp()` couldn't find them from a package).
-- **Installed apps are typed as apps.** Each app is typed while it's installed, but the
-  system MIME database was installed after the apps, so on a machine without one (a package
-  build) `mimeset` typed them all `application/octet-stream`: the Deskbar then took an app
-  it launched for a document and listed it under Recent documents. The database is now
-  installed first and the apps are typed from it; the types they claim are copied from it
-  rather than created empty.
-- **Installs and types apps on ext4.** ext4 keeps at most 4 KiB of attributes per file, and
-  Tracker, Chart and Showcase need more once `mimeset` has copied their icons and version
-  info from their resources, so `mimeset` failed on them and stopped `meson install`
-  (Ubuntu and Debian couldn't install Hokku). Those attributes are only copies that
-  `BAppFileInfo` falls back from to the resources, so one that doesn't fit is now left out
-  and the rest are written: all the apps are typed, with their icons read from the binary.
+Each brought fixes with it; they are listed under All changes from Cosmoe below.
 
 ## Building
 
@@ -639,6 +150,8 @@ make install
 The build goes into `builddir`, and programs are installed to `/usr/local/bin`. To bundle
 Hokku with one app, leave the apps out (`meson setup builddir -Denable_apps=false`, or
 `meson configure builddir -Denable_apps=false` on an existing build directory).
+`packaging/appimage/build-appimage.sh APP` builds Hokku and packs one of its own apps as an
+AppImage.
 
 For the tray, `xembedsniproxy` (part of Plasma) or `snixembed` brings in XEmbed icons; both
 are optional.
@@ -705,6 +218,9 @@ app's `haiku-app.env` can point `COSMOE_REPO` and `COSMOE_TAG` at another fork o
 caches the build by the commit the branch points at, so a new Hokku commit is picked up on
 the next build.
 
+An app that also builds for Haiku puts Hokku-only calls (such as `BNotification`'s actions)
+under `#ifdef APP_COSMOE`.
+
 ## Problems
 
 Problems found with Hokku are fixed here, as new commits on `hokku`, with the smallest
@@ -716,3 +232,372 @@ fixed.
 
 To Bill Hayden and the Cosmoe contributors, who brought the Haiku API to other systems, and
 to the Haiku project, whose work made both possible.
+
+## All changes from Cosmoe
+
+### The Deskbar and its tray
+
+- **The desktop's tray icons.** On Linux the Deskbar starts `TrayBridge`
+  (`src/apps/traybridge`), a StatusNotifierItem host that puts each of the desktop's tray
+  icons in the tray as a replicant: KDE and Qt apps, GTK apps using libappindicator or
+  libayatana-appindicator, Electron apps (Signal, Slack...), VPN clients, update notifiers.
+  - A click activates the app, a middle click is its secondary action, the wheel scrolls,
+    and a right click opens the app's own menu (`com.canonical.dbusmenu`) with icons,
+    checkmarks, radio items, submenus and disabled entries. The app hears when the menu
+    opens and closes.
+  - Icon, attention, overlay, tooltip and status changes come in live. Passive icons are
+    hidden, as Plasma hides them; `HOKKU_TRAY_SHOW_PASSIVE=1` shows them.
+  - Icons come from the app's pixmaps or the icon theme (KDE's, GNOME's or GTK's setting,
+    Breeze in an unchanged Plasma session, or `HOKKU_ICON_THEME`). SVG icons are drawn with
+    librsvg when it's installed, and KDE's symbolic icons take the system colours.
+  - On a desktop that already has a tray (Plasma, Xfce), TrayBridge registers with that
+    desktop's StatusNotifierWatcher as one more host, so the icons are in both trays.
+    Elsewhere it is the watcher.
+  - Old XEmbed icons (Wine, older GTK 2 and Java apps) come through `xembedsniproxy` or
+    `snixembed` when one is installed (`HOKKU_TRAY_XEMBED=0` to skip).
+  - `HOKKU_TRAYBRIDGE=0` keeps it from starting. A restarted Deskbar finds TrayBridge
+    running and gets its icons.
+  - Tested in a Plasma 6 Wayland session, on X11 and on sway.
+- **Screen brightness.** On a machine with a backlight, the tray has a brightness control
+  (`src/apps/deskbar/BrightnessItem.cpp`): a click on the sun opens a slider, the wheel
+  steps by 5%, and the tooltip tells the level. It sets the backlight through logind
+  (`SetBrightness`, no root or udev rule needed), reads it from `/sys/class/backlight`
+  preferring the firmware device as systemd does, and never goes below 1%.
+- **Linux applications in the Deskbar menu.** Every `.desktop` file the desktop itself
+  would show (honouring `NoDisplay`, `Hidden`, `OnlyShowIn`/`NotShowIn` and `TryExec`, your
+  own overriding the system's), in submenus by freedesktop main category, with icons.
+  Choosing one starts it through GIO. The list is read again when a folder changes.
+- **A Gonx tab for the menu button** with the Gonx look, saying "Hokku", instead of the
+  Cosmoe rocket.
+- **The Deskbar menu is never empty.** It named its folder by an absolute path, so a moved
+  or staged install (an AppImage) or a run from the build folder got a menu with nothing in
+  it, not even About or Shutdown. A moved install now finds the menu beside
+  `menu_entries`, and without one the menu shows its standard items and your own Deskbar
+  folder.
+- **The Deskbar drops apps that quit before it noticed their window** (the Terminal opened
+  at login, say): when an app quits, it also drops listed processes that are gone.
+- **Every app in the Deskbar has its icon.** When an entry gets no usable icon, the
+  Deskbar fetches it again.
+- **`BDeskbar::Frame()` answers.** It had been switched off because it could hang Tracker;
+  it asks the Deskbar again, giving up after half a second.
+- **`BDeskbar::AddItem()` returns Deskbar's error** instead of `B_NAME_NOT_FOUND`.
+
+### Notifications
+
+- **Haiku's `notification_server` and Notifications preferences.** The Deskbar starts it
+  on Linux (`HOKKU_NOTIFICATIONS=0` leaves it off). Notifications are grouped by app beside
+  the Deskbar, with icons, progress bars and the important type marked; they time out and
+  update in place when sent again with the same ID.
+- **`BNotification::Send()`** goes to it when it runs, and to the desktop's notifications
+  (`notify-send`) when it doesn't. It used to run `system("notify-send ...")`, so quotes or
+  `$(...)` in a title ran commands, and the window waited; now the text goes as arguments to
+  a detached `notify-send` (`osascript` on macOS), never seen by a shell.
+- **Action buttons.** A Hokku extension: `AddAction(label, message[, target])` adds a button
+  that sends the message to the target (the app by default) and closes the notification;
+  `CountActions()`, `ActionLabelAt()`, `ActionMessageAt()` and `ActionTargetAt()` read them.
+  The class keeps its size. Renku OS has the same API
+  ([RenkuOS/Source#233](https://github.com/RenkuOS/Source/pull/233)); Haiku doesn't.
+- **The desktop's apps' notifications.** It serves `org.freedesktop.Notifications` when no
+  other notification server does (under Plasma or GNOME their own popups keep them, until
+  they stop). Icons, critical urgency, progress hints, replacement IDs, the default action,
+  other actions as buttons (Reply, Mark read...) and close reasons all map across.
+- **The preferences** set on/off, width, timeout and position, and mute any app; changes
+  apply at once. Every app that sent one is listed, the desktop's apps too.
+
+### Looks and themes
+
+- **The Gonx look.** `gonx-theme apply` switches to the whole
+  [Gonx](https://github.com/idumych/gonx) look and `gonx-theme revert` goes back.
+  - Window frame: titled, document and floating windows get the Gonx tab, flap and rounded
+    corners on Wayland, and modal windows (alerts) the Gonx border, moved by dragging it.
+    The frame is client-side, so the compositor leaves its own title bar off. On X11 the
+    window manager draws frames. `setdecor Gonx` and `setdecor Default` switch only the
+    frame.
+  - Controls: `GonxControlLook.so`, the same code as the Renku add-on; `setcontrollook`
+    chooses it on its own.
+  - Colours, fonts (Noto Sans at 9 and 11 points) and the desktop colour.
+- **Haiku's window frame.** `setdecor Haiku` gives Hokku windows app_server's Default
+  decorator on Wayland (the yellow tab, bevelled border, resize notches and a document
+  window's knob), ported to cairo and drawn client-side. `Default` stays the desktop's own
+  frames.
+- **Document windows resize from the frame's knob** in the Gonx and Haiku frames; the
+  content's widget used to take the pointer there.
+- **Standalone apps keep the desktop's frames.** An app run from its AppImage takes the
+  rest of the look but keeps the desktop's window frames (Hokku's default frame where the
+  compositor draws none).
+- **Themes.** Appearance has a Themes tab, and `hokku-theme` does the same from a shell
+  (`list`, `apply NAME`, `save NAME`, `current`, `shadows on|off`). A theme sets:
+  - the window decorator (Default, Haiku or Gonx) and the control look;
+  - the system colours and the plain, bold, fixed and menu fonts;
+  - the desktop colour and a wallpaper;
+  - for other Linux apps: labwc's frames (a themerc written to
+    `~/.config/labwc/themerc-override`, yours kept as `.orig`; Haiku and Gonx name their
+    frame with `window.decorator`, which
+    [Hokku OS's labwc](https://github.com/idumych/hokku-os/tree/main/packages/labwc-hokku)
+    draws with Hokku's own frame code), the GTK, icon and cursor themes, GTK's font, and the
+    Qt style (qt5ct, qt6ct, Kvantum).
+
+  Hokku ships Haiku and Gonx in `/usr/share/cosmoe/themes`; *Save current look* keeps yours
+  in `~/.config/cosmoe/themes` (a folder with a `theme.ini`, see
+  `src/preferences/appearance/Theme.h`). Running apps take new colours, fonts and frames; a
+  new control look shows when they restart.
+- **Haiku and Gonx for GTK 3 and Qt.** GTK themes in `/usr/share/themes` and Kvantum themes
+  for Qt 5 and 6 in `/usr/share/Kvantum`, generated (`data/linux/gtk/generate.py`,
+  `data/linux/kvantum/generate.py`) from the control looks' own colours and shapes. The
+  Hokku session hands Qt apps the theme's style and GTK's font and icons
+  (`QT_STYLE_OVERRIDE`, `QT_QPA_PLATFORMTHEME=gtk3`) and keeps GTK's scroll bars beside the
+  content (`GTK_OVERLAY_SCROLLING=0`). GTK 4/libadwaita apps keep their own look.
+- **Window shadows and BeOS's pointer.** Windows in the Haiku and Gonx frames cast a soft
+  shadow (`gonx_frame_paint_shadow()`; Hokku OS's labwc draws the same under other apps'
+  windows). The pointer is BeOS's hand and I-beam, as the Xcursor themes `Hokku` and
+  `Hokku-Shadow` (`data/linux/cursors/generate.py`). Appearance's *Look and feel* tab turns
+  window and pointer shadows on and off together. Hokku apps ask the compositor for their
+  standard cursors (cursor-shape protocol), following its cursor theme.
+- **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
+  `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
+  the built-in colours, and the fonts saved by Appearance were replaced by the defaults when
+  an app started. They are now saved and used by apps started afterwards. A dark control
+  look still brings its own colours. `_set_system_font_()`, Haiku's private call for
+  Appearance and theme tools, exists. Apps no longer print `ControlLook add-on loaded
+  from ...`.
+- **About this system says Hokku**, with what Hokku adds, a large Gonx badge
+  (`src/apps/deskbar/gonx-logo.py`), Cosmoe and Haiku credited, and the Linux kernel's
+  release where the kernel's build date was.
+
+### Drawing
+
+- **Font styles chosen like Haiku.** Styles lighter than Book get `B_LIGHT_FACE`, Black and
+  Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
+  a face the canonical one wins. Before, every weight below Bold counted as regular and the
+  first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
+- **Underline and strikeout are drawn.** `B_UNDERSCORE_FACE` and `B_STRIKEOUT_FACE` stay in
+  the font's face and are drawn by `DrawString()`, so `BTextView` runs show them.
+- **Rotated text turns about its pen location**, as in app_server. The rotation was applied
+  about the view's origin, so rotated text landed away from where it was drawn (a vertical
+  ruler's numbers fell outside its view).
+- **Views moved by a layout are redrawn whole.** A layout pass could move children between
+  `Invalidate()` and the update, leaving half-drawn buttons and remnants of earlier frames.
+  The update now takes the children from their current frames.
+- **A resize can't leave a window's last drawing off screen.** On X11 the backend's redraw
+  for a resize could run before the new backing surface existed, so the window showed its
+  earlier content until something else drew. The window now asks for a redraw when the
+  surface changes.
+- **The text caret blinks under the backing-surface lock.** `InvertRect()` drew without the
+  lock the backend holds while copying to the screen, so a copy could catch the inversion
+  halfway.
+- **`B_OP_MIN` and `B_OP_MAX` compare brightness**, as app_server does. Cairo's DARKEN and
+  LIGHTEN compare each channel on its own, so a gray wash over a red icon (how many BeOS
+  apps grey out a disabled button) gave pink.
+- **Lines, rects and polygons sit on the pixels app_server uses.** Unless a view is
+  `B_SUBPIXEL_PRECISE`, coordinates are rounded down to whole pixels; an even pen size is
+  centred on the pixel edge, so a line of pen size 2 covers two rows instead of a blurred
+  three; thick lines get butt caps; a filled polygon's points are pixel corners, and
+  triangles go through pixel centres.
+- **Patterns leave their low color out in `B_OP_OVER`.** Transparent pattern pixels kept
+  their color without alpha, which Cairo (premultiplied) added to what was underneath: a
+  stipple over text painted the low color between its dots.
+- **8-bit and 32-bit bitmaps are transparent where Haiku's are.** Outside `B_OP_COPY`,
+  `B_TRANSPARENT_MAGIC_CMAP8` and `B_TRANSPARENT_MAGIC_RGBA32` pixels are left out, and
+  `B_OP_ALPHA` uses a `B_RGB32` bitmap's alpha. Icons drawn with `B_OP_OVER` showed a white
+  box before.
+- **A view bitmap's `Bits()` and its views' drawing stay in step.** On Haiku they are the
+  same memory; here they are two copies, and pixels written through `Bits()` were lost
+  unless the app locked the bitmap in between. The bitmap now tracks which copy changed.
+  Test: `src/tests/kits/interface/bbitmap/BitmapBitsSyncTest`.
+- **Rect tracking's outline is on the screen.** `BeginRectTracking()` drew into the
+  window, so the outline vanished once the pointer left it (a menu torn off into a floater).
+  On X11 it is now drawn over everything, as app_server does; Wayland keeps drawing it in
+  the window. It also starts from where the pointer is now, not where it was pressed.
+- **A removed view is repainted over.** Nothing redrew the area a view left when it was
+  removed, so it stayed on screen; `BView::RemoveChild()` now invalidates it.
+
+### OpenGL
+
+- **`BGLView`** (`libopengl.so`, `<opengl/GLView.h>`, Haiku's API): `LockGL()`,
+  `UnlockGL()`, `SwapBuffers()` and `GetGLProcAddress()` from any thread. It renders with
+  EGL (Mesa's surfaceless platform when there is one, otherwise the default display, so
+  NVIDIA's driver works too) into an off-screen buffer that the view draws, on X11 and
+  Wayland alike. It's built when EGL and `GL/gl.h` are found. `DirectConnected()` and
+  `EnableDirectMode()` exist and do nothing; `CopyPixelsIn()`/`Out()`, overlays and
+  `BGLScreen` aren't there yet. `SwapBuffers()` posts the frame to the window rather than
+  locking it, so pointer motion no longer drops GLTeapot from about 700 frames per second
+  to 9-80.
+- **GLTeapot**, Haiku's OpenGL demo, is included (Deskbar: Demos).
+- **`BScreen::WaitForRetrace()`** waits for the next tick of a 60 Hz clock, since the
+  display server doesn't tell apps when the screen refreshes.
+
+### Windows, menus and input
+
+- **New windows open at their frame's position**, as app_server places them. They were
+  left where the window manager put them (a pop-up slider meant for its control came up
+  in the screen's corner).
+- **Popup windows.** A `kMenuWindowFeel` window with `kWindowPopupGrabFlag`, made a popup
+  of its parent with `BPrivate::set_popup_window_parent()` (`WindowPrivate.h`), opens
+  beside the parent, takes the pointer and keyboard (an `xdg_popup` grab on Wayland), and
+  is sent `B_QUIT_REQUESTED` when the user clicks elsewhere. On X11 it isn't grabbed.
+- **Pop-up menus stay open after the press that opened them**, and Escape or a click
+  outside closes them. A `BPopUpMenu::Go()` on the window's own thread blocks that window,
+  so its press, release and Escape never reached the menu; they are now counted as they
+  arrive from the backend. A right click's context menu no longer chooses the first item
+  the pointer crosses.
+- **X11: a deactivated pop-up stays up.** Menus are deactivated as they open, which lowered
+  them under the window they pop up from.
+- **`GetMouse()` reports the buttons as they are now**, even while the window is busy: a
+  view tracking the mouse in `MouseDown()` never saw the button come up and looped forever.
+  Presses and releases also update the position it falls back on, so the first click after
+  entering a window counts where it happened.
+- **App-wide pointer events.** Views that call `SetEventMask(B_POINTER_EVENTS)` get every
+  pointer motion, in whatever window they live, as on Haiku. Tooltips rely on this to close
+  when the mouse moves; before, they stayed on screen for good. Events go to the listening
+  view itself, without holding a lock while sending, and a busy window drops them rather
+  than blocking the display thread.
+- **Leaving a window is a `B_EXITED_VIEW`**, so a tooltip shown for a view doesn't stay
+  after the pointer moves to another window.
+- **Pointer events don't walk an unlocked window.** The display thread looked up the view
+  under the pointer without the window's lock. It now takes the lock only if it is free;
+  otherwise the window thread finds the view itself. A modal `BAlert::Go()` can't deadlock
+  against it.
+- **Opening a menu doesn't read the menu bar unlocked**, and a menu that fills slowly (the
+  Deskbar's, on a cold machine) locks its parent before asking where the mouse is. Both
+  printed "Looper must be locked".
+- **Shortcut characters fit in menus.** Wide ones (W, M) were cut off at the right edge.
+- **Very short clicks no longer freeze a window.** Deleting a `BMessageRunner` right after
+  creating it deadlocked its looper, and `BTextView` does exactly that on a zero-length
+  click (touchpad tap, xdotool, remote desktop).
+- **A keymap without a configured layout.** With no layout set and no `setxkbmap` (a
+  Wayland-only system), `get_key_map()` failed and Tracker crashed on startup. It builds
+  the keymap from xkbcommon's defaults (`XKB_DEFAULT_*`, else us).
+
+### Wayland and touch
+
+- **Touch screens work.** The first finger on a window drives the mouse, as a tablet does
+  on Haiku: a tap is a left click, a moving finger drags, and one held still for 0.6
+  seconds is a right click. Dragged from a menu into a submenu, it reaches the submenu where
+  the compositor really put it; a mouse drag does the same. Tapping or releasing on an item
+  with a submenu opens the submenu, as on Haiku. `HOKKU_TOUCH_DEBUG=1` prints what touch and
+  the pointer do. Tested with KWin's fake input and on a touch screen in Plasma.
+- **Menus are placed by the compositor**, which may flip, slide and resize them. `BMenu`'s
+  own placement, with no real window positions, put a `BMenuField`'s pop-up off screen on a
+  second monitor.
+- **A panel can sit away from its corner.** A layer-shell surface with the private
+  `kWindowPanelOffsetFlag` turns `MoveTo()` into margins from its corner, so the
+  notification window sits beside the Deskbar. The margins follow the panel as it grows.
+- **Panels have no window frame**, so the notifications aren't cut off or framed.
+- **Window frames in an AppImage.** The frame's images are found in the data folder next to
+  libbe, so a relocated copy draws its client-side frame.
+- **The desktop and the Deskbar come back after a text console.** labwc removes the outputs
+  while a text console has the screen, and layer surfaces went with them. They are made
+  again when an output appears, including for a Deskbar started meanwhile, and
+  `BScreen::Frame()` is the last screen rather than empty, so Tracker no longer piles the
+  desktop icons at 0,0.
+- **No crash when a frameless window's view is replaced.** The window's surface kept
+  pointing at the freed root widget (an alert's top view) and a queued resize used it.
+
+### Desktop integration
+
+- **Hokku next to another desktop.** Installed beside Plasma, GNOME or another desktop,
+  Hokku is one more choice on the login screen. The other desktop's menus don't list
+  Hokku's own desktop parts (`OnlyShowIn=cosmoe`), while Hokku's apps stay listed and claim
+  no file types. The session takes the system keyboard layout (from `localectl`,
+  `/etc/default/keyboard` or `/etc/vconsole.conf`), and `cosmoe-portals.conf` picks portal
+  backends: wlroots' for screenshots and screen sharing, GTK's or KDE's for the rest.
+- **The desktop session on Arch, and on real GPUs.** `cosmoe-desktop.sh` builds the first
+  login's MIME database from pacman packages too, not only dpkg and rpm, and from their
+  files only (scanning `/usr` took minutes), layered over the system database. It finds
+  polkit-gnome's agent on Arch and Fedora, starts mako only when Hokku's notifications are
+  off, and uses the pixman renderer and software cursors only under VirtualBox.
+- **`BRoster::Launch()` opens files, folders and URLs with the desktop.** When no Cosmoe app
+  handles a document, URL or `be:url`, it runs `xdg-open`, detached, without the variables
+  an AppImage's AppRun set.
+- **Launched apps aren't left as zombies.** Apps are started detached, so nothing has to
+  wait for them, as on Haiku.
+- **Apps without windows are seen.** `BRoster::GetAppInfo()`, `IsRunning()` and
+  `GetAppList()` find running apps that have no window, and `BMessenger::IsValid()` is true
+  for a messenger into another running app, so `hey` reaches the Deskbar, Tracker's desktop
+  and the servers (`hey Deskbar BeMn` opens the Deskbar menu). `GetAppList()` lists each app
+  once, by its real team.
+- **Recent documents, folders and apps are shared**, as Haiku's registrar keeps them, in
+  `~/.config/cosmoe/roster/recent_documents`, `recent_folders` and `recent_apps` (one
+  `signature<TAB>path` per line, newest first), and survive a restart. Background apps,
+  Tracker, the Deskbar and command line tools aren't recent apps.
+- **`BShelf` works again.** Cosmoe had replaced it with stubs (`AddReplicant()` always
+  failed), likely because `<AutoLock.h>` collides with `<Autolock.h>` on macOS's
+  case-insensitive file system. Haiku's implementation is back, using `<AutoLocker.h>`.
+- **`BScreen::GetBitmap()` and `ReadBitmap()`** copy the screen into a `B_RGB32` bitmap on
+  X11 (Wayland doesn't let clients read the screen: `B_UNSUPPORTED`). `BScreen::Frame()`
+  ends on the last pixel, as on Haiku.
+
+### Kernel, files, storage and network
+
+- **Areas are shared between processes on Linux.** Each area is a POSIX shared memory
+  object in a registry all of a user's processes share (`/hokku-areas-<uid>`). As on Haiku,
+  area IDs are unique across teams, `find_area()` and `get_area_info()` see every team's
+  areas, `clone_area()` maps the same pages, protections are enforced, and a team's areas
+  are freed when it exits, or by the next team after a crash. `_kern_transfer_area()`
+  returns the area's ID, so `BMessage`'s pass-by-area works. macOS and Windows keep
+  per-process areas. Test: `area_shared_test`.
+- **Semaphores are fair, as on Haiku.** POSIX semaphores don't queue their waiters, so a
+  looper releasing and reacquiring its lock between messages starved other threads (up to
+  81 ms, 0.3 ms now). Each semaphore is now a count and a queue. Also: `B_ABSOLUTE_TIMEOUT`
+  isn't read as wall-clock time, `delete_sem()` wakes its waiters, `B_RELEASE_ALL` and
+  `B_RELEASE_IF_WAITING_ONLY` work, and a killed thread leaves the queue.
+- **Every thread has its own ID.** `find_thread(NULL)` gave `B_NAME_NOT_FOUND` for threads
+  not started by `spawn_thread()` (a `BMessageRunner`'s), so they shared one ID and a
+  `BLocker` took one's lock as another's. A window's message queue broke and the Terminal
+  stopped showing what was typed.
+- **`watch_node()` works.** It finds a path for the node (an existing watch, or a node the
+  app has open) and watches that. Node monitor messages carry `device`/`node`/`directory`
+  as int32/int64 like Haiku's, and either getter reads either field.
+- **Node monitor code compiles unchanged.** `BMessage` has `FindInt64("node", &ref.node)`
+  and `FindInt32("device", &ref.device)` overloads for Linux's `ino_t` and `dev_t`, and
+  `BDirectory(const node_ref*)` and `SetTo(const node_ref*)` exist.
+- **Opening a file is not a change.** Closing a file without writing sent
+  `B_STAT_CHANGED`, so StyledEdit said files "were modified by another application".
+- **Closing a directory no longer leaks a descriptor.** One leaked per `BDirectory` or
+  `BEntry`; the Deskbar leaked about ten each time its menu opened, until its menu came up
+  empty. `BDirectory` also no longer closes its descriptor twice.
+- **`entry_ref::name` is a full path**, as in Cosmoe (Linux can't find a directory from its
+  node). File panel titles and Open With show the leaf name. In app code, use
+  `BPath(&ref).Leaf()` or `BEntry::GetName()`, which are portable to Haiku.
+- **Translators.** `TRANSLATORS=/a:/b` no longer drops a character from each entry; a user
+  translator hides the system one of the same name; if none load, the directories searched
+  are printed. `BDirectory::GetNextRef()` reports errors and fills in the parent's device
+  and node.
+- **`BNetworkRoute` works on Linux**, reading `/proc/net/route` and `/proc/net/ipv6_route`;
+  `GetDefaultRoute()`/`GetDefaultGateway()` return the default route with the lowest
+  metric. `BNetworkInterface` and `BNetworkRoster` aren't there yet.
+
+### Logs and debugging
+
+- **Quiet logs.** `system_beep()` no longer writes a bell and `beep event ...` to standard
+  output, and the resource reader no longer prints `read_exactly: ...` and `InitContainer:
+  Caught Exception` for files without resources.
+- **`debugger()` and the `<Debug.h>` helpers say something.** `debugger()` messages go to
+  standard error with a backtrace (Haiku would stop the app in its debugger).
+  `_debuggerAssert()`, `_debugPrintf()`, `_sPrintf()` and `_setDebugFlag()`, which old Be
+  code calls directly, exist.
+
+### Build and install
+
+- **Haiku Makefiles link unchanged.** `libmedia`, `libtranslation` and `libnetwork` are
+  installed as linker scripts that link libbe, where those kits live here.
+- **`BAboutWindow` is public**, in `headers/os/interface` and `InterfaceKit.h`, as in Renku;
+  `<private/interface/AboutWindow.h>` still works.
+- **Smaller AppImages: a build without the apps.** `-Denable_apps=false` leaves out
+  `src/apps` and `src/preferences`, so an app bundling Hokku doesn't carry Tracker and the
+  rest.
+- **AppImages of Hokku's own apps.** `packaging/appimage/build-appimage.sh APP` packs an app
+  with what it links, both display backends, its catalog and the Noto fonts. CI builds
+  GLTeapot this way for x86_64 and aarch64 and starts it under X11 and Wayland.
+- **Installing.** The Wayland session file goes inside the prefix unless it is `/usr` or
+  `/usr/local`, so non-root installs finish. Staged (`DESTDIR`) installs no longer delete
+  `libbe.so` from the build machine, and apps' MIME entries record where they're installed,
+  not their staging path.
+- **Installed apps are typed as apps.** The system MIME database is installed before the
+  apps, so `mimeset` no longer types them `application/octet-stream` in a package build.
+- **Installs and types apps on ext4.** ext4 keeps at most 4 KiB of attributes per file, and
+  `mimeset` failed on Tracker, Chart and Showcase, stopping `meson install` on Ubuntu and
+  Debian. An attribute that doesn't fit is now left out; `BAppFileInfo` reads it from the
+  resources instead.
+- **CI runs the kernel and unit tests.** The kernel tests had all been skipped, since the
+  downloaded build lost its executable bits.
