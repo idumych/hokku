@@ -1643,11 +1643,12 @@ BView::BeginRectTracking(BRect startRect, uint32 style)
 	if (!_CheckOwnerLock() || fOwner == NULL)
 		return;
 
+	// app_server starts from where the pointer is now, not where the
+	// message being handled had it (a tracking loop in MouseDown() begins
+	// long after the press)
 	BPoint mouseWhere;
 	uint32 buttons = 0;
-	BMessage* current = fOwner->CurrentMessage();
-	if (current == NULL || current->FindPoint("be:view_where", &mouseWhere) != B_OK)
-		GetMouse(&mouseWhere, &buttons, false);
+	GetMouse(&mouseWhere, &buttons, false);
 
 	fOwner->_StartRectTracking(ConvertToWindow(startRect), style,
 		ConvertToWindow(mouseWhere));
