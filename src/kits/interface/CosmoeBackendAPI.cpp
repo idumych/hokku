@@ -92,6 +92,27 @@ cosmoe_display_get_screen_dimensions(cosmoe_display_t display, cosmoe_rectangle*
 }
 
 
+bool
+cosmoe_display_show_tracking_outline(cosmoe_display_t display, int32_t x,
+	int32_t y, int32_t width, int32_t height)
+{
+	CosmoeBackend* backend = GetBackend();
+	if (backend == NULL || display == NULL)
+		return false;
+	return backend->DisplayShowTrackingOutline((backend_display_t)display, x, y,
+		width, height);
+}
+
+
+void
+cosmoe_display_hide_tracking_outline(cosmoe_display_t display)
+{
+	CosmoeBackend* backend = GetBackend();
+	if (backend != NULL && display != NULL)
+		backend->DisplayHideTrackingOutline((backend_display_t)display);
+}
+
+
 status_t
 cosmoe_display_read_screen(cosmoe_display_t display, int32_t x, int32_t y,
 	int32_t width, int32_t height, void* bits, int32_t bytesPerRow)

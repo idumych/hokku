@@ -315,6 +315,14 @@ display_minimize_window(struct display *display, int32_t window_id,
 status_t
 display_close_window(struct display *display, int32_t window_id);
 
+/* rect tracking's dashed outline on the screen: four one-pixel
+ * override-redirect windows, its edges, above everything */
+void
+display_show_tracking_outline(struct display *display, int x, int y,
+	int width, int height);
+void
+display_hide_tracking_outline(struct display *display);
+
 status_t
 display_read_screen(struct display *display, int32_t x, int32_t y,
 	int32_t width, int32_t height, void *bits, int32_t bytes_per_row);

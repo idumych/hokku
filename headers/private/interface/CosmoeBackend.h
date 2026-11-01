@@ -215,6 +215,21 @@ public:
 		return B_UNSUPPORTED;
 	}
 
+	// A dashed outline on the screen, over every window: rect tracking
+	// (BView::BeginRectTracking()) as app_server draws it, anywhere on the
+	// screen. False if the backend can't place one there (Wayland); the
+	// window then draws the outline inside itself.
+	virtual bool DisplayShowTrackingOutline(backend_display_t display,
+		int32_t x, int32_t y, int32_t width, int32_t height)
+	{
+		(void)display; (void)x; (void)y; (void)width; (void)height;
+		return false;
+	}
+	virtual void DisplayHideTrackingOutline(backend_display_t display)
+	{
+		(void)display;
+	}
+
 	// Copy part of the screen into B_RGB32 pixels (BScreen::ReadBitmap()).
 	// Wayland doesn't let a client read the screen, so most backends can't.
 	virtual status_t DisplayReadScreen(backend_display_t display, int32_t x,

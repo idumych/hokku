@@ -500,6 +500,11 @@ screen_handler(void *data)
 }
 
 
+// the window whose rect tracking outline is on the screen (the backend
+// draws it there, as app_server does; one at a time, like the pointer)
+static BWindow* sScreenOutlineWindow = NULL;
+
+
 static inline BRect
 _NormalizedRect(BRect rect)
 {
@@ -520,6 +525,9 @@ BWindow::_DrawPointerTrackingOverlayLocked(cairo_t* cr)
 
 	BRect rect = _NormalizedRect(fTrackingCurrentRect);
 	if (!rect.IsValid())
+		return;
+	// (on the screen instead, out of the window too)
+	if (fPointerTrackingMode == TRACKING_RECT && sScreenOutlineWindow == this)
 		return;
 
 	if (fPointerTrackingMode == TRACKING_DRAG
@@ -4586,6 +4594,14 @@ BWindow::_UpdateTrackingRectLocked()
 		} else {
 			fTrackingCurrentRect = fRectTrackingStartRect.OffsetByCopy(delta);
 		}
+		// the outline on the screen where the backend can put it there
+		BRect screen = _NormalizedRect(fTrackingCurrentRect).OffsetByCopy(fFrame.LeftTop());
+		if (be_app != NULL && be_app->Display() != NULL
+			&& cosmoe_display_show_tracking_outline(be_app->Display(),
+				(int32_t)floorf(screen.left), (int32_t)floorf(screen.top),
+				screen.IntegerWidth() + 1, screen.IntegerHeight() + 1)) {
+			sScreenOutlineWindow = this;
+		}
 		return;
 	}
 
@@ -4615,6 +4631,11 @@ BWindow::_ClearTrackingStateLocked()
 	delete fTrackingDragBitmap;
 	fTrackingDragBitmap = NULL;
 
+	if (sScreenOutlineWindow == this) {
+		if (be_app != NULL && be_app->Display() != NULL)
+			cosmoe_display_hide_tracking_outline(be_app->Display());
+		sScreenOutlineWindow = NULL;
+	}
 	fPointerTrackingMode = TRACKING_NONE;
 	fRectTrackingStyle = B_TRACK_WHOLE_RECT;
 	fRectTrackingStartRect = BRect();

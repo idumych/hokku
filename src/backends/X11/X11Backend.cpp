@@ -263,6 +263,18 @@ public:
 		return display_close_window((struct display*)display, windowID);
 	}
 
+	virtual bool DisplayShowTrackingOutline(backend_display_t display,
+		int32_t x, int32_t y, int32_t width, int32_t height)
+	{
+		display_show_tracking_outline((struct display*)display, x, y, width, height);
+		return true;
+	}
+
+	virtual void DisplayHideTrackingOutline(backend_display_t display)
+	{
+		display_hide_tracking_outline((struct display*)display);
+	}
+
 	virtual status_t DisplayReadScreen(backend_display_t display, int32_t x,
 		int32_t y, int32_t width, int32_t height, void* bits,
 		int32_t bytesPerRow)

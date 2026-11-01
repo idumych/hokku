@@ -134,6 +134,10 @@ void cosmoe_display_get_screen_dimensions(cosmoe_display_t display, cosmoe_recta
 status_t cosmoe_display_read_screen(cosmoe_display_t display, int32_t x,
 	int32_t y, int32_t width, int32_t height, void* bits, int32_t bytesPerRow);
 void cosmoe_display_set_port(cosmoe_display_t display, int32_t sender_port_id, int32_t receiver_port_id);
+// rect tracking's outline on the screen (false: the backend can't)
+bool cosmoe_display_show_tracking_outline(cosmoe_display_t display, int32_t x,
+	int32_t y, int32_t width, int32_t height);
+void cosmoe_display_hide_tracking_outline(cosmoe_display_t display);
 
 // Window decorator for client-side frames. name is "Default" or a built-in
 // decorator ("Haiku", "Gonx"); the colours and fonts come from the system's

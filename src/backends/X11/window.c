@@ -3902,6 +3902,61 @@ scale_mask(unsigned long pixel, unsigned long mask)
 	return (uint32_t)((value * 255) / mask);
 }
 
+/* rect tracking's outline (BView::BeginRectTracking): app_server draws it
+ * over everything, wherever the pointer takes it. Its four edges are
+ * override-redirect windows one pixel thick whose background is a 4 x 4
+ * checker of black and white, so each edge shows dashes as the in-window
+ * outline does. */
+static Window sOutlineEdges[4];
+static Pixmap sOutlineDashes;
+
+void
+display_show_tracking_outline(struct display *display, int x, int y,
+	int width, int height)
+{
+	Display *xdisplay = display->xdisplay;
+	Window root = RootWindow(xdisplay, display->screen);
+	if (sOutlineEdges[0] == 0) {
+		sOutlineDashes = XCreatePixmap(xdisplay, root, 8, 8,
+			DefaultDepth(xdisplay, display->screen));
+		GC gc = XCreateGC(xdisplay, sOutlineDashes, 0, NULL);
+		XSetForeground(xdisplay, gc, WhitePixel(xdisplay, display->screen));
+		XFillRectangle(xdisplay, sOutlineDashes, gc, 0, 0, 8, 8);
+		XSetForeground(xdisplay, gc, BlackPixel(xdisplay, display->screen));
+		XFillRectangle(xdisplay, sOutlineDashes, gc, 0, 0, 4, 4);
+		XFillRectangle(xdisplay, sOutlineDashes, gc, 4, 4, 4, 4);
+		XFreeGC(xdisplay, gc);
+		XSetWindowAttributes attrs;
+		attrs.override_redirect = True;
+		attrs.background_pixmap = sOutlineDashes;
+		for (int i = 0; i < 4; i++)
+			sOutlineEdges[i] = XCreateWindow(xdisplay, root, 0, 0, 1, 1, 0,
+				CopyFromParent, InputOutput, CopyFromParent,
+				CWOverrideRedirect | CWBackPixmap, &attrs);
+	}
+	if (width < 1)
+		width = 1;
+	if (height < 1)
+		height = 1;
+	XMoveResizeWindow(xdisplay, sOutlineEdges[0], x, y, width, 1);
+	XMoveResizeWindow(xdisplay, sOutlineEdges[1], x, y + height - 1, width, 1);
+	XMoveResizeWindow(xdisplay, sOutlineEdges[2], x, y, 1, height);
+	XMoveResizeWindow(xdisplay, sOutlineEdges[3], x + width - 1, y, 1, height);
+	for (int i = 0; i < 4; i++)
+		XMapRaised(xdisplay, sOutlineEdges[i]);
+	XFlush(xdisplay);
+}
+
+void
+display_hide_tracking_outline(struct display *display)
+{
+	if (sOutlineEdges[0] == 0)
+		return;
+	for (int i = 0; i < 4; i++)
+		XUnmapWindow(display->xdisplay, sOutlineEdges[i]);
+	XFlush(display->xdisplay);
+}
+
 status_t
 display_read_screen(struct display *display, int32_t x, int32_t y,
 	int32_t width, int32_t height, void *bits, int32_t bytes_per_row)
