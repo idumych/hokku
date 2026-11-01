@@ -4594,12 +4594,12 @@ BWindow::_UpdateTrackingRectLocked()
 		} else {
 			fTrackingCurrentRect = fRectTrackingStartRect.OffsetByCopy(delta);
 		}
-		// the outline on the screen where the backend can put it there
-		BRect screen = _NormalizedRect(fTrackingCurrentRect).OffsetByCopy(fFrame.LeftTop());
+		// the outline over every window where the backend can draw it
+		BRect outline = _NormalizedRect(fTrackingCurrentRect);
 		if (be_app != NULL && be_app->Display() != NULL
-			&& cosmoe_display_show_tracking_outline(be_app->Display(),
-				(int32_t)floorf(screen.left), (int32_t)floorf(screen.top),
-				screen.IntegerWidth() + 1, screen.IntegerHeight() + 1)) {
+			&& cosmoe_window_show_tracking_outline(be_app->Display(), fWindowToken,
+				(int32_t)floorf(outline.left), (int32_t)floorf(outline.top),
+				outline.IntegerWidth() + 1, outline.IntegerHeight() + 1)) {
 			sScreenOutlineWindow = this;
 		}
 		return;
@@ -4633,7 +4633,7 @@ BWindow::_ClearTrackingStateLocked()
 
 	if (sScreenOutlineWindow == this) {
 		if (be_app != NULL && be_app->Display() != NULL)
-			cosmoe_display_hide_tracking_outline(be_app->Display());
+			cosmoe_window_hide_tracking_outline(be_app->Display(), fWindowToken);
 		sScreenOutlineWindow = NULL;
 	}
 	fPointerTrackingMode = TRACKING_NONE;

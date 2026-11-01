@@ -786,6 +786,19 @@ public:
 		if (y) *y = 0;
 	}
 
+	// (a popup of the window: Wayland has no screen coordinates)
+	virtual bool WindowShowTrackingOutline(backend_window_t window,
+		int32_t x, int32_t y, int32_t width, int32_t height)
+	{
+		return window_show_tracking_outline((struct window*)window, x, y,
+			width, height) != 0;
+	}
+
+	virtual void WindowHideTrackingOutline(backend_window_t window)
+	{
+		window_hide_tracking_outline((struct window*)window);
+	}
+
 	virtual void WindowSetPosition(backend_window_t window, int32_t x, int32_t y)
 	{
 		/* Wayland does not support absolute window move; only a corner

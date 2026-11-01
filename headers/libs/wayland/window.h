@@ -465,6 +465,14 @@ window_uses_panel(struct window *window);
 void
 window_set_panel_offset(struct window *window, int32_t x, int32_t y);
 
+/* rect tracking's outline over every window, out of `window` as well: a
+ * popup of it at (x, y) of its content; 0 if it can't be made */
+int
+window_show_tracking_outline(struct window *window, int x, int y, int width,
+	int height);
+void
+window_hide_tracking_outline(struct window *window);
+
 int
 window_uses_client_side_decorations(struct window *window);
 

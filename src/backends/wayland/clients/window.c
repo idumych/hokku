@@ -6712,6 +6712,224 @@ window_update_panel_margins(struct window *window, uint32_t width,
  * corner. One that asked to keep its offset (the notification window,
  * beside the Deskbar) is moved by margins from that corner instead, worked
  * out from where it is moved to on the screen BScreen reports. */
+/* Rect tracking's outline (BView::BeginRectTracking): app_server draws it
+ * over everything, wherever the pointer takes it. Wayland gives a client no
+ * global coordinates, so here it is a popup of the tracking window, placed
+ * in that window's terms (out of it as well), without a grab or input, its
+ * buffer transparent but for a border of 4-pixel black and white dashes. */
+struct tracking_outline {
+	struct window *parent;
+	struct wl_surface *surface;
+	struct xdg_surface *xdg_surface;
+	struct xdg_popup *xdg_popup;
+	struct wl_buffer *buffer;	/* shown */
+	int width, height;			/* asked for, drawn on the next configure */
+	uint32_t token;
+};
+
+static struct tracking_outline sOutline;
+static pthread_mutex_t sOutlineLock = PTHREAD_MUTEX_INITIALIZER;
+
+static void
+outline_buffer_release(void *data, struct wl_buffer *buffer)
+{
+	(void)data;
+	wl_buffer_destroy(buffer);
+}
+
+static const struct wl_buffer_listener outline_buffer_listener = {
+	outline_buffer_release
+};
+
+static void
+outline_draw(struct display *display)
+{
+	int width = sOutline.width, height = sOutline.height;
+	int stride = width * 4;
+	void *data;
+	struct wl_shm_pool *pool = make_shm_pool(display, stride * height, &data);
+	if (pool == NULL)
+		return;
+	uint32_t *pixels = data;
+	memset(pixels, 0, (size_t)stride * height);
+	for (int x = 0; x < width; x++) {
+		uint32_t color = (x / 4) % 2 == 0 ? 0xff000000 : 0xffffffff;
+		pixels[x] = color;
+		pixels[(height - 1) * width + x] = color;
+	}
+	for (int y = 0; y < height; y++) {
+		uint32_t color = (y / 4) % 2 == 0 ? 0xff000000 : 0xffffffff;
+		pixels[y * width] = color;
+		pixels[y * width + width - 1] = color;
+	}
+	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0, width, height,
+		stride, WL_SHM_FORMAT_ARGB8888);
+	wl_shm_pool_destroy(pool);
+	munmap(data, (size_t)stride * height);
+	if (buffer == NULL)
+		return;
+	/* the compositor gives each buffer back once a newer one is shown */
+	wl_buffer_add_listener(buffer, &outline_buffer_listener, NULL);
+	wl_surface_attach(sOutline.surface, buffer, 0, 0);
+	wl_surface_damage(sOutline.surface, 0, 0, width, height);
+	wl_surface_commit(sOutline.surface);
+	sOutline.buffer = buffer;
+}
+
+static void
+outline_xdg_surface_configure(void *data, struct xdg_surface *xdg_surface,
+	uint32_t serial)
+{
+	struct display *display = data;
+	pthread_mutex_lock(&sOutlineLock);
+	if (sOutline.xdg_surface == xdg_surface) {
+		xdg_surface_ack_configure(xdg_surface, serial);
+		outline_draw(display);
+	}
+	pthread_mutex_unlock(&sOutlineLock);
+}
+
+static const struct xdg_surface_listener outline_xdg_surface_listener = {
+	outline_xdg_surface_configure
+};
+
+static void
+outline_popup_configure(void *data, struct xdg_popup *popup, int32_t x,
+	int32_t y, int32_t width, int32_t height)
+{
+	(void)data; (void)popup; (void)x; (void)y; (void)width; (void)height;
+}
+
+static void
+outline_popup_done(void *data, struct xdg_popup *popup)
+{
+	(void)data; (void)popup;
+}
+
+static void
+outline_popup_repositioned(void *data, struct xdg_popup *popup, uint32_t token)
+{
+	(void)data; (void)popup; (void)token;
+}
+
+static const struct xdg_popup_listener outline_popup_listener = {
+	outline_popup_configure,
+	outline_popup_done,
+	outline_popup_repositioned
+};
+
+/* the popup's place: its top left at (x, y) of the parent's content, as an
+ * anchor point kept inside the parent's window geometry (xdg_positioner
+ * wants it there) and an offset for the rest */
+static struct xdg_positioner *
+outline_positioner(struct window *parent, int x, int y, int width, int height)
+{
+	struct rectangle geometry;
+	window_get_geometry(parent, &geometry);
+	int ax = x, ay = y;
+	if (parent->frame != NULL && parent->frame->frame != NULL) {
+		int32_t ix = 0, iy = 0;
+		frame_interior(parent->frame->frame, &ix, &iy, NULL, NULL);
+		ax += ix - geometry.x;
+		ay += iy - geometry.y;
+	}
+	int cx = ax < 0 ? 0 : ax >= geometry.width ? geometry.width - 1 : ax;
+	int cy = ay < 0 ? 0 : ay >= geometry.height ? geometry.height - 1 : ay;
+	if (cx < 0)
+		cx = 0;
+	if (cy < 0)
+		cy = 0;
+	struct xdg_positioner *positioner
+		= xdg_wm_base_create_positioner(parent->display->xdg_shell);
+	xdg_positioner_set_size(positioner, width, height);
+	xdg_positioner_set_anchor_rect(positioner, cx, cy, 1, 1);
+	xdg_positioner_set_anchor(positioner, XDG_POSITIONER_ANCHOR_TOP_LEFT);
+	xdg_positioner_set_gravity(positioner, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
+	xdg_positioner_set_offset(positioner, ax - cx, ay - cy);
+	xdg_positioner_set_constraint_adjustment(positioner,
+		XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_NONE);
+	return positioner;
+}
+
+static void
+outline_destroy_locked(void)
+{
+	if (sOutline.xdg_popup != NULL)
+		xdg_popup_destroy(sOutline.xdg_popup);
+	if (sOutline.xdg_surface != NULL)
+		xdg_surface_destroy(sOutline.xdg_surface);
+	if (sOutline.surface != NULL)
+		wl_surface_destroy(sOutline.surface);
+	memset(&sOutline, 0, sizeof(sOutline));
+}
+
+int
+window_show_tracking_outline(struct window *window, int x, int y, int width,
+	int height)
+{
+	struct display *display = window != NULL ? window->display : NULL;
+	if (display == NULL || display->xdg_shell == NULL || window->xdg_surface == NULL
+		|| window->layer_surface != NULL)
+		return 0;
+	if (width < 1)
+		width = 1;
+	if (height < 1)
+		height = 1;
+
+	pthread_mutex_lock(&sOutlineLock);
+	if (sOutline.xdg_popup != NULL && sOutline.parent == window
+		&& wl_proxy_get_version((struct wl_proxy *)sOutline.xdg_popup)
+			>= XDG_POPUP_REPOSITION_SINCE_VERSION) {
+		/* moved: repositioned, drawn anew on the configure that follows */
+		struct xdg_positioner *positioner = outline_positioner(window, x, y,
+			width, height);
+		sOutline.width = width;
+		sOutline.height = height;
+		xdg_popup_reposition(sOutline.xdg_popup, positioner, ++sOutline.token);
+		xdg_positioner_destroy(positioner);
+		wl_surface_commit(sOutline.surface);
+		wl_display_flush(display->display);
+		pthread_mutex_unlock(&sOutlineLock);
+		return 1;
+	}
+	outline_destroy_locked();
+	sOutline.parent = window;
+	sOutline.width = width;
+	sOutline.height = height;
+	sOutline.surface = wl_compositor_create_surface(display->compositor);
+	/* no input: the pointer stays with the window tracking it */
+	struct wl_region *none = wl_compositor_create_region(display->compositor);
+	wl_surface_set_input_region(sOutline.surface, none);
+	wl_region_destroy(none);
+	sOutline.xdg_surface = xdg_wm_base_get_xdg_surface(display->xdg_shell,
+		sOutline.surface);
+	xdg_surface_add_listener(sOutline.xdg_surface, &outline_xdg_surface_listener,
+		display);
+	struct xdg_positioner *positioner = outline_positioner(window, x, y, width,
+		height);
+	sOutline.xdg_popup = xdg_surface_get_popup(sOutline.xdg_surface,
+		window->xdg_surface, positioner);
+	xdg_positioner_destroy(positioner);
+	xdg_popup_add_listener(sOutline.xdg_popup, &outline_popup_listener, NULL);
+	wl_surface_commit(sOutline.surface);
+	wl_display_flush(display->display);
+	pthread_mutex_unlock(&sOutlineLock);
+	return 1;
+}
+
+void
+window_hide_tracking_outline(struct window *window)
+{
+	pthread_mutex_lock(&sOutlineLock);
+	if (sOutline.parent == window) {
+		struct display *display = window->display;
+		outline_destroy_locked();
+		if (display != NULL)
+			wl_display_flush(display->display);
+	}
+	pthread_mutex_unlock(&sOutlineLock);
+}
+
 void
 window_set_panel_offset(struct window *window, int32_t x, int32_t y)
 {

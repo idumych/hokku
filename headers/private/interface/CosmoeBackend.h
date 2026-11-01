@@ -215,19 +215,19 @@ public:
 		return B_UNSUPPORTED;
 	}
 
-	// A dashed outline on the screen, over every window: rect tracking
-	// (BView::BeginRectTracking()) as app_server draws it, anywhere on the
-	// screen. False if the backend can't place one there (Wayland); the
-	// window then draws the outline inside itself.
-	virtual bool DisplayShowTrackingOutline(backend_display_t display,
+	// Rect tracking's dashed outline (BView::BeginRectTracking()) over
+	// every window, as app_server draws it, even out of `window`: x, y,
+	// width and height in the window's content coordinates. False if the
+	// backend can't; the window then draws the outline inside itself.
+	virtual bool WindowShowTrackingOutline(backend_window_t window,
 		int32_t x, int32_t y, int32_t width, int32_t height)
 	{
-		(void)display; (void)x; (void)y; (void)width; (void)height;
+		(void)window; (void)x; (void)y; (void)width; (void)height;
 		return false;
 	}
-	virtual void DisplayHideTrackingOutline(backend_display_t display)
+	virtual void WindowHideTrackingOutline(backend_window_t window)
 	{
-		(void)display;
+		(void)window;
 	}
 
 	// Copy part of the screen into B_RGB32 pixels (BScreen::ReadBitmap()).
