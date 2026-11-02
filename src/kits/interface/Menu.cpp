@@ -1767,7 +1767,10 @@ BMenu::_Show(bool selectFirstItem, bool keyDown)
 			// parent window on backends that require transient popup parenting.
 			parentWindow = popUp->_InvokerWindow();
 		}
-		if (parentWindow != NULL) {
+		// A window that isn't on screen (a bitmap's, or a remote
+		// replicant's, whose view is shown by another app) can't parent a
+		// popup: open it on its own at its screen position.
+		if (parentWindow != NULL && !parentWindow->IsOffscreenWindow()) {
 			window->_SetParentWindow(parentWindow);
 		}
 

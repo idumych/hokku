@@ -6361,9 +6361,12 @@ BWindow::_SendShowOrHideMessage()
 		// Show (or create-then-show for deferred popups).
 
 		if (fWindowToken == B_NULL_TOKEN) {
-			if (fFeel == kMenuWindowFeel && fParentWindow) {
+			if (fFeel == kMenuWindowFeel) {
 				// Popup: backend will be created by MoveTo() once position is known.
 				// Record that a show was requested so MoveTo() knows to complete it.
+				// With or without a parent: a menu opened from a window that
+				// isn't on screen (a remote replicant's) has none, and on X11
+				// it opens on its own (MoveTo() refuses that on Wayland).
 				STRACE(("_SendShowOrHideMessage: deferring popup creation for '%s' until MoveTo() sets position\n", Name()));
 				fHadShow = true;
 				return;
