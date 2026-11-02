@@ -10,6 +10,7 @@
 
 
 class BMessage;
+class BPopUpMenu;
 
 
 /*!	Remote replicants: a replicant whose code its host can't load.
@@ -25,17 +26,29 @@ class BMessage;
 
 	Host to app (by signature):
 		kMsgRemoteReplicantStart	"archive" (message), "host" (messenger),
-									"screen_origin" (point)
+									"screen_origin" (point), "export_menus"
+									(bool: see below)
 	App to host:
 		kMsgRemoteReplicantStarted	"replicant" (messenger to the window),
 									"area" (int32), "width", "height" (int32)
 		kMsgRemoteReplicantFailed	"error" (int32)
 		kMsgRemoteReplicantPixels	the area holds new pixels
+		kMsgRemoteReplicantMenu		"menu" (message): the popup menu the
+									replicant opened, for the host to show
 	Host to replicant:
 		kMsgRemoteReplicantEvent	"event" (a B_MOUSE_* message in the
 									replicant's coordinates), "screen_origin"
 		kMsgRemoteReplicantMoved	"screen_origin"
 		kMsgRemoteReplicantStop		the host let it go
+		kMsgRemoteReplicantMenuChoice	"path" (int32s: item indices from the
+									top menu down): the user chose that item
+
+	Menus: an app's popup menu can't be shown over another app's window on
+	Wayland, so with "export_menus" the replicant's BPopUpMenu::Go() sends
+	the menu to the host instead, which shows it itself (Deskbar as a menu
+	of its own, TrayExport to the tray as a dbusmenu). A menu message has an
+	"item" message per item: "label" (string), "enabled", "marked",
+	"separator" (bools), and "submenu" (a menu message) when it has one.
 */
 
 
@@ -49,7 +62,9 @@ enum {
 	kMsgRemoteReplicantPixels	= '_rrP',
 	kMsgRemoteReplicantEvent	= '_rrE',
 	kMsgRemoteReplicantMoved	= '_rrM',
-	kMsgRemoteReplicantStop		= '_rrQ'
+	kMsgRemoteReplicantStop		= '_rrQ',
+	kMsgRemoteReplicantMenu		= '_rrN',
+	kMsgRemoteReplicantMenuChoice = '_rrC'
 };
 
 
@@ -69,6 +84,11 @@ static const size_t kRemoteReplicantPixelOffset = 64;
 
 // App side: runs the replicant a host asked for. Called by BApplication.
 void start_remote_replicant(BMessage* request);
+
+// App side: if the calling thread is a remote replicant's whose host shows
+// its menus, sends menu to the host and returns true (BPopUpMenu::Go()
+// then returns without showing it).
+bool export_remote_replicant_menu(BPopUpMenu* menu);
 
 
 }	// namespace BPrivate

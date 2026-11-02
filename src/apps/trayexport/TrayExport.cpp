@@ -25,8 +25,10 @@
 #include <unistd.h>
 
 #include <condition_variable>
+#include <algorithm>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -51,6 +53,10 @@ using namespace BPrivate;
 
 static const uint32 kMsgCheck = 'teCk';
 static const uint32 kMsgTrayEvent = 'teEv';
+static const uint32 kMsgMenuRequest = 'teMq';
+static const uint32 kMsgMenuChosen = 'teMc';
+// How long a tray waits for the replicant's menu before it opens nothing.
+static const guint kMenuTimeoutMs = 500;
 static const bigtime_t kCheckInterval = 1000000;
 // Trays fetch the whole icon on every NewIcon: no more than this often.
 static const bigtime_t kMinIconInterval = 66000;
@@ -58,6 +64,8 @@ static const bigtime_t kMinIconInterval = 66000;
 static const char* kItemInterface = "org.kde.StatusNotifierItem";
 static const char* kWatcherName = "org.kde.StatusNotifierWatcher";
 static const char* kItemPath = "/StatusNotifierItem";
+static const char* kMenuPath = "/MenuBar";
+static const char* kMenuInterface = "com.canonical.dbusmenu";
 
 enum {
 	kEventActivate,
@@ -100,6 +108,7 @@ static const char* kIntrospection =
 	"  <property name='AttentionIconPixmap' type='a(iiay)' access='read'/>"
 	"  <property name='ToolTip' type='(sa(iiay)ss)' access='read'/>"
 	"  <property name='ItemIsMenu' type='b' access='read'/>"
+	"  <property name='Menu' type='o' access='read'/>"
 	"  <method name='Activate'><arg type='i' direction='in'/>"
 	"   <arg type='i' direction='in'/></method>"
 	"  <method name='SecondaryActivate'><arg type='i' direction='in'/>"
@@ -112,6 +121,34 @@ static const char* kIntrospection =
 	"  <signal name='NewTitle'/>"
 	"  <signal name='NewToolTip'/>"
 	"  <signal name='NewStatus'><arg type='s'/></signal>"
+	" </interface>"
+	" <interface name='com.canonical.dbusmenu'>"
+	"  <property name='Version' type='u' access='read'/>"
+	"  <property name='TextDirection' type='s' access='read'/>"
+	"  <property name='Status' type='s' access='read'/>"
+	"  <property name='IconThemePath' type='as' access='read'/>"
+	"  <method name='GetLayout'><arg type='i' direction='in'/>"
+	"   <arg type='i' direction='in'/><arg type='as' direction='in'/>"
+	"   <arg type='u' direction='out'/><arg type='(ia{sv}av)' direction='out'/>"
+	"  </method>"
+	"  <method name='GetGroupProperties'><arg type='ai' direction='in'/>"
+	"   <arg type='as' direction='in'/><arg type='a(ia{sv})' direction='out'/>"
+	"  </method>"
+	"  <method name='GetProperty'><arg type='i' direction='in'/>"
+	"   <arg type='s' direction='in'/><arg type='v' direction='out'/></method>"
+	"  <method name='Event'><arg type='i' direction='in'/>"
+	"   <arg type='s' direction='in'/><arg type='v' direction='in'/>"
+	"   <arg type='u' direction='in'/></method>"
+	"  <method name='EventGroup'><arg type='a(isvu)' direction='in'/>"
+	"   <arg type='ai' direction='out'/></method>"
+	"  <method name='AboutToShow'><arg type='i' direction='in'/>"
+	"   <arg type='b' direction='out'/></method>"
+	"  <method name='AboutToShowGroup'><arg type='ai' direction='in'/>"
+	"   <arg type='ai' direction='out'/><arg type='ai' direction='out'/>"
+	"  </method>"
+	"  <signal name='LayoutUpdated'><arg type='u'/><arg type='i'/></signal>"
+	"  <signal name='ItemsPropertiesUpdated'><arg type='a(ia{sv})'/>"
+	"   <arg type='a(ias)'/></signal>"
 	" </interface>"
 	"</node>";
 
@@ -141,6 +178,28 @@ on_glib(std::function<void()> f)
 class Item;
 
 
+/*!	The replicant's last menu, as a tree of dbusmenu nodes (id 0 is the
+	root). Built on the BApplication thread, read on the GLib thread.
+*/
+struct MenuNode {
+	std::string			label;
+	bool				enabled = true;
+	bool				marked = false;
+	bool				separator = false;
+	std::vector<int32>	children;
+	std::vector<int32>	path;		// item indices, for the replicant
+};
+
+struct MenuModel {
+	std::mutex			lock;
+	uint32				revision = 1;
+	std::vector<MenuNode> nodes = std::vector<MenuNode>(1);
+	// AboutToShow(0) calls waiting for the replicant's menu
+	std::vector<GDBusMethodInvocation*> waiting;
+	std::vector<GDBusConnection*> connections;	// to announce new layouts
+};
+
+
 /*!	One icon: a square piece of an item. Lives on the GLib thread once
 	exported; its pixmaps are written by the BApplication thread under
 	fLock.
@@ -165,6 +224,8 @@ struct Tile {
 	bool				signalPending = false;
 	GSource*			pendingSignal = NULL;
 	bool				announced = false;
+	std::shared_ptr<MenuModel> menu;
+	guint				menuRegistration = 0;
 };
 
 
@@ -214,6 +275,8 @@ get_property(GDBusConnection*, const gchar*, const gchar*, const gchar*,
 	}
 	if (strcmp(name, "ItemIsMenu") == 0)
 		return g_variant_new_boolean(FALSE);
+	if (strcmp(name, "Menu") == 0)
+		return g_variant_new_object_path(kMenuPath);
 	// IconName, OverlayIconName, AttentionIconName
 	return g_variant_new_string("");
 }
@@ -253,6 +316,248 @@ static const GDBusInterfaceVTable kVTable = {
 };
 
 
+//	#pragma mark - dbusmenu
+
+
+static std::string
+escape_mnemonic(const std::string& label)
+{
+	// dbusmenu treats "_" as a mnemonic marker
+	std::string escaped;
+	for (char c : label) {
+		if (c == '_')
+			escaped += '_';
+		escaped += c;
+	}
+	return escaped;
+}
+
+
+// Lock held.
+static GVariant*
+node_properties(MenuModel* model, int32 id)
+{
+	GVariantBuilder properties;
+	g_variant_builder_init(&properties, G_VARIANT_TYPE("a{sv}"));
+	if (id < 0 || id >= (int32)model->nodes.size())
+		return g_variant_builder_end(&properties);
+	const MenuNode& node = model->nodes[id];
+	if (id == 0 || !node.children.empty()) {
+		g_variant_builder_add(&properties, "{sv}", "children-display",
+			g_variant_new_string("submenu"));
+	}
+	if (id != 0) {
+		if (node.separator) {
+			g_variant_builder_add(&properties, "{sv}", "type",
+				g_variant_new_string("separator"));
+		} else {
+			g_variant_builder_add(&properties, "{sv}", "label",
+				g_variant_new_string(escape_mnemonic(node.label).c_str()));
+			g_variant_builder_add(&properties, "{sv}", "enabled",
+				g_variant_new_boolean(node.enabled));
+			if (node.marked) {
+				g_variant_builder_add(&properties, "{sv}", "toggle-type",
+					g_variant_new_string("checkmark"));
+				g_variant_builder_add(&properties, "{sv}", "toggle-state",
+					g_variant_new_int32(1));
+			}
+		}
+		g_variant_builder_add(&properties, "{sv}", "visible",
+			g_variant_new_boolean(TRUE));
+	}
+	return g_variant_builder_end(&properties);
+}
+
+
+// Lock held.
+static GVariant*
+node_layout(MenuModel* model, int32 id, int32 depth)
+{
+	GVariantBuilder children;
+	g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
+	if (depth != 0 && id >= 0 && id < (int32)model->nodes.size()) {
+		for (int32 child : model->nodes[id].children) {
+			g_variant_builder_add(&children, "v",
+				node_layout(model, child, depth < 0 ? -1 : depth - 1));
+		}
+	}
+	return g_variant_new("(i@a{sv}@av)", id, node_properties(model, id),
+		g_variant_builder_end(&children));
+}
+
+
+// On the GLib thread: answer the trays waiting to show the menu.
+static void
+answer_waiting(MenuModel* model, bool updated)
+{
+	std::vector<GDBusMethodInvocation*> waiting;
+	uint32 revision;
+	std::vector<GDBusConnection*> connections;
+	{
+		std::lock_guard<std::mutex> _(model->lock);
+		waiting.swap(model->waiting);
+		revision = model->revision;
+		connections = model->connections;
+	}
+	for (GDBusMethodInvocation* invocation : waiting) {
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(b)", updated));
+	}
+	if (updated) {
+		for (GDBusConnection* connection : connections) {
+			g_dbus_connection_emit_signal(connection, NULL, kMenuPath,
+				kMenuInterface, "LayoutUpdated",
+				g_variant_new("(ui)", revision, 0), NULL);
+		}
+	}
+}
+
+
+static void
+menu_method_call(GDBusConnection*, const gchar*, const gchar*, const gchar*,
+	const gchar* method, GVariant* parameters,
+	GDBusMethodInvocation* invocation, gpointer data)
+{
+	Tile* tile = (Tile*)data;
+	MenuModel* model = tile->menu.get();
+
+	if (strcmp(method, "GetLayout") == 0) {
+		gint32 parent, depth;
+		g_variant_get(parameters, "(ii@as)", &parent, &depth, NULL);
+		std::lock_guard<std::mutex> _(model->lock);
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(u@(ia{sv}av))", model->revision,
+				node_layout(model, parent, depth)));
+	} else if (strcmp(method, "GetGroupProperties") == 0) {
+		GVariantIter* ids;
+		g_variant_get(parameters, "(ai@as)", &ids, NULL);
+		GVariantBuilder result;
+		g_variant_builder_init(&result, G_VARIANT_TYPE("a(ia{sv})"));
+		gint32 id;
+		{
+			std::lock_guard<std::mutex> _(model->lock);
+			while (g_variant_iter_next(ids, "i", &id)) {
+				g_variant_builder_add(&result, "(i@a{sv})", id,
+					node_properties(model, id));
+			}
+		}
+		g_variant_iter_free(ids);
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(@a(ia{sv}))", g_variant_builder_end(&result)));
+	} else if (strcmp(method, "GetProperty") == 0) {
+		gint32 id;
+		const gchar* name;
+		g_variant_get(parameters, "(i&s)", &id, &name);
+		GVariant* value = NULL;
+		{
+			std::lock_guard<std::mutex> _(model->lock);
+			GVariant* properties = node_properties(model, id);
+			value = g_variant_lookup_value(properties, name, NULL);
+			g_variant_unref(g_variant_ref_sink(properties));
+		}
+		if (value == NULL) {
+			g_dbus_method_invocation_return_dbus_error(invocation,
+				"com.canonical.dbusmenu.Error.UnknownProperty", name);
+		} else {
+			g_dbus_method_invocation_return_value(invocation,
+				g_variant_new("(v)", value));
+			g_variant_unref(value);
+		}
+	} else if (strcmp(method, "Event") == 0 || strcmp(method, "EventGroup") == 0) {
+		std::vector<std::pair<gint32, std::string>> events;
+		if (strcmp(method, "Event") == 0) {
+			gint32 id;
+			const gchar* event;
+			g_variant_get(parameters, "(i&s@vu)", &id, &event, NULL, NULL);
+			events.push_back({id, event});
+		} else {
+			GVariantIter* iter;
+			g_variant_get(parameters, "(a(isvu))", &iter);
+			gint32 id;
+			const gchar* event;
+			while (g_variant_iter_next(iter, "(i&svu)", &id, &event, NULL,
+					NULL))
+				events.push_back({id, event});
+			g_variant_iter_free(iter);
+		}
+		for (auto& event : events) {
+			if (event.second != "clicked")
+				continue;
+			BMessage chosen(kMsgMenuChosen);
+			chosen.AddInt32("item", tile->itemID);
+			std::lock_guard<std::mutex> _(model->lock);
+			if (event.first <= 0 || event.first >= (int32)model->nodes.size())
+				continue;
+			for (int32 index : model->nodes[event.first].path)
+				chosen.AddInt32("path", index);
+			be_app->PostMessage(&chosen);
+		}
+		if (strcmp(method, "Event") == 0)
+			g_dbus_method_invocation_return_value(invocation, NULL);
+		else {
+			g_dbus_method_invocation_return_value(invocation,
+				g_variant_new("(@ai)",
+					g_variant_new_array(G_VARIANT_TYPE_INT32, NULL, 0)));
+		}
+	} else if (strcmp(method, "AboutToShow") == 0) {
+		gint32 id;
+		g_variant_get(parameters, "(i)", &id);
+		if (id != 0) {
+			// The whole tree comes at once: submenus are up to date.
+			g_dbus_method_invocation_return_value(invocation,
+				g_variant_new("(b)", FALSE));
+			return;
+		}
+		// The menu is the replicant's to make: click it as the tray would
+		// have, and answer when its menu arrives (or nothing does).
+		{
+			std::lock_guard<std::mutex> _(model->lock);
+			model->waiting.push_back(invocation);
+		}
+		BMessage request(kMsgMenuRequest);
+		request.AddInt32("item", tile->itemID);
+		request.AddInt32("tile", tile->index);
+		be_app->PostMessage(&request);
+		std::shared_ptr<MenuModel>* keep = new std::shared_ptr<MenuModel>(
+			tile->menu);
+		GSource* timeout = g_timeout_source_new(kMenuTimeoutMs);
+		g_source_set_callback(timeout, [](gpointer data) -> gboolean {
+			answer_waiting(((std::shared_ptr<MenuModel>*)data)->get(), false);
+			return G_SOURCE_REMOVE;
+		}, keep, [](gpointer data) {
+			delete (std::shared_ptr<MenuModel>*)data;
+		});
+		g_source_attach(timeout, sContext);
+		g_source_unref(timeout);
+	} else if (strcmp(method, "AboutToShowGroup") == 0) {
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(@ai@ai)",
+				g_variant_new_array(G_VARIANT_TYPE_INT32, NULL, 0),
+				g_variant_new_array(G_VARIANT_TYPE_INT32, NULL, 0)));
+	} else
+		g_dbus_method_invocation_return_value(invocation, NULL);
+}
+
+
+static GVariant*
+menu_get_property(GDBusConnection*, const gchar*, const gchar*, const gchar*,
+	const gchar* name, GError**, gpointer)
+{
+	if (strcmp(name, "Version") == 0)
+		return g_variant_new_uint32(3);
+	if (strcmp(name, "TextDirection") == 0)
+		return g_variant_new_string("ltr");
+	if (strcmp(name, "Status") == 0)
+		return g_variant_new_string("normal");
+	return g_variant_new_array(G_VARIANT_TYPE_STRING, NULL, 0);
+}
+
+
+static const GDBusInterfaceVTable kMenuVTable = {
+	menu_method_call, menu_get_property, NULL, {0}
+};
+
+
 // On the GLib thread: put a tile on the bus and announce it to the tray.
 static bool
 export_tile(Tile* tile)
@@ -276,6 +581,18 @@ export_tile(Tile* tile)
 			error->message);
 		g_error_free(error);
 		return false;
+	}
+	tile->menuRegistration = g_dbus_connection_register_object(
+		tile->connection, kMenuPath, sNodeInfo->interfaces[1], &kMenuVTable,
+		tile, NULL, &error);
+	if (tile->menuRegistration == 0) {
+		fprintf(stderr, "TrayExport: can't export a menu: %s\n",
+			error->message);
+		g_clear_error(&error);
+	}
+	{
+		std::lock_guard<std::mutex> _(tile->menu->lock);
+		tile->menu->connections.push_back(tile->connection);
 	}
 	tile->busName = g_dbus_connection_get_unique_name(tile->connection);
 
@@ -339,6 +656,16 @@ unexport_tile(Tile* tile)
 	if (tile->pendingSignal != NULL)
 		g_source_destroy(tile->pendingSignal);
 	if (tile->connection != NULL) {
+		{
+			std::lock_guard<std::mutex> _(tile->menu->lock);
+			auto& connections = tile->menu->connections;
+			connections.erase(std::remove(connections.begin(),
+				connections.end(), tile->connection), connections.end());
+		}
+		if (tile->menuRegistration != 0) {
+			g_dbus_connection_unregister_object(tile->connection,
+				tile->menuRegistration);
+		}
 		if (tile->registration != 0) {
 			g_dbus_connection_unregister_object(tile->connection,
 				tile->registration);
@@ -406,6 +733,8 @@ public:
 			bool				Export();
 			void				Check();
 			void				Event(BMessage* event);
+			void				RequestMenu(int32 tile);
+			void				MenuChosen(BMessage* message);
 
 	virtual	void				MessageReceived(BMessage* message);
 
@@ -416,6 +745,10 @@ private:
 			void				_CopyPixels();
 			void				_Send(uint32 what, BPoint where,
 									BPoint screen, int32 buttons);
+			void				_SetMenu(BMessage* message);
+			void				_AddNodes(BMessage* archive, int32 parent,
+									std::vector<int32> path,
+									std::vector<MenuNode>& nodes);
 
 			int32				fID;
 			BString				fName;
@@ -424,6 +757,7 @@ private:
 			int32				fWidth;
 			int32				fHeight;
 			std::vector<Tile*>	fTiles;
+			std::shared_ptr<MenuModel> fMenu;
 
 			BMessenger			fReplicant;
 			area_id				fArea;
@@ -443,7 +777,8 @@ Item::Item(int32 id, const BMessage& archive)
 	fArea(-1),
 	fAreaBase(NULL),
 	fStarting(false),
-	fStartTime(0)
+	fStartTime(0),
+	fMenu(std::make_shared<MenuModel>())
 {
 	BRect frame = archive.GetRect("_frame", BRect(0, 0, 15, 15));
 	fWidth = frame.IntegerWidth() + 1;
@@ -468,6 +803,7 @@ Item::Item(int32 id, const BMessage& archive)
 			fName.String(), i + 1);
 		tile->id = tileID.String();
 		tile->title = appName.String();
+		tile->menu = fMenu;
 		fTiles.push_back(tile);
 	}
 }
@@ -545,6 +881,9 @@ Item::MessageReceived(BMessage* message)
 		case kMsgRemoteReplicantPixels:
 			_CopyPixels();
 			break;
+		case kMsgRemoteReplicantMenu:
+			_SetMenu(message);
+			break;
 		default:
 			BHandler::MessageReceived(message);
 	}
@@ -590,6 +929,75 @@ Item::Event(BMessage* event)
 
 
 void
+Item::RequestMenu(int32 index)
+{
+	// The tray is about to open the menu: a right click on the tile makes
+	// the replicant open it, and it comes back as kMsgRemoteReplicantMenu.
+	if (!fReplicant.IsValid())
+		return;
+	int32 tileWidth = fWidth / (int32)fTiles.size();
+	BPoint where(index * tileWidth + tileWidth / 2, fHeight / 2);
+	_Send(B_MOUSE_DOWN, where, B_ORIGIN, B_SECONDARY_MOUSE_BUTTON);
+	_Send(B_MOUSE_UP, where, B_ORIGIN, 0);
+}
+
+
+void
+Item::MenuChosen(BMessage* message)
+{
+	if (!fReplicant.IsValid())
+		return;
+	BMessage choice(kMsgRemoteReplicantMenuChoice);
+	int32 index;
+	for (int32 i = 0; message->FindInt32("path", i, &index) == B_OK; i++)
+		choice.AddInt32("path", index);
+	fReplicant.SendMessage(&choice);
+}
+
+
+void
+Item::_AddNodes(BMessage* archive, int32 parent, std::vector<int32> path,
+	std::vector<MenuNode>& nodes)
+{
+	BMessage entry;
+	for (int32 i = 0; archive->FindMessage("item", i, &entry) == B_OK; i++) {
+		int32 id = (int32)nodes.size();
+		nodes.push_back(MenuNode());
+		nodes[parent].children.push_back(id);
+		MenuNode& node = nodes[id];
+		node.path = path;
+		node.path.push_back(i);
+		node.separator = entry.GetBool("separator", false);
+		node.label = entry.GetString("label", "");
+		node.enabled = entry.GetBool("enabled", true);
+		node.marked = entry.GetBool("marked", false);
+		BMessage submenu;
+		if (entry.FindMessage("submenu", &submenu) == B_OK)
+			_AddNodes(&submenu, id, nodes[id].path, nodes);
+	}
+}
+
+
+void
+Item::_SetMenu(BMessage* message)
+{
+	BMessage archive;
+	if (message->FindMessage("menu", &archive) != B_OK)
+		return;
+	std::vector<MenuNode> nodes(1);
+	_AddNodes(&archive, 0, std::vector<int32>(), nodes);
+	{
+		std::lock_guard<std::mutex> _(fMenu->lock);
+		fMenu->nodes.swap(nodes);
+		fMenu->revision++;
+	}
+	TRACE("\"%s\" menu: %zu items\n", Name(), fMenu->nodes.size() - 1);
+	std::shared_ptr<MenuModel> menu = fMenu;
+	on_glib([menu]() { answer_waiting(menu.get(), true); });
+}
+
+
+void
 Item::_Send(uint32 what, BPoint where, BPoint screen, int32 buttons)
 {
 	BMessage event(what);
@@ -620,6 +1028,8 @@ Item::_Start()
 	start.AddMessage("archive", &fArchive);
 	start.AddMessenger("host", BMessenger(this));
 	start.AddPoint("screen_origin", B_ORIGIN);
+	// Its menus go to the tray as a dbusmenu, which works on Wayland too.
+	start.AddBool("export_menus", true);
 	if (app.SendMessage(&start, (BHandler*)NULL, 0) == B_OK) {
 		fStarting = true;
 		fStartTime = system_time();
@@ -892,6 +1302,22 @@ TrayExportApp::MessageReceived(BMessage* message)
 			if (Item* item = _Find(message))
 				_Remove(item);
 			break;
+
+		case kMsgMenuRequest:
+		{
+			auto found = fItems.find(message->GetInt32("item", -1));
+			if (found != fItems.end())
+				found->second->RequestMenu(message->GetInt32("tile", 0));
+			break;
+		}
+
+		case kMsgMenuChosen:
+		{
+			auto found = fItems.find(message->GetInt32("item", -1));
+			if (found != fItems.end())
+				found->second->MenuChosen(message);
+			break;
+		}
 
 		case kMsgTrayEvent:
 		{

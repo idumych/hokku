@@ -14,6 +14,7 @@
 
 
 class BBitmap;
+class BMenu;
 class BMessageRunner;
 
 
@@ -50,6 +51,9 @@ private:
 			void				_Disconnect();
 			void				_CopyPixels();
 			void				_Forward(BPoint where);
+			void				_ShowMenu(BMessage* message);
+	static	void				_AddMenuItems(BMenu* menu, BMessage* archive,
+									BMessage* path, BHandler* target);
 
 			BMessage			fReplicantArchive;
 			BString				fSignature;

@@ -12,7 +12,10 @@
 
 #include <Archivable.h>
 #include <Message.h>
+#include <MenuItem.h>
 #include <Messenger.h>
+#include <PopUpMenu.h>
+#include <SeparatorItem.h>
 #include <OS.h>
 #include <View.h>
 #include <Window.h>
@@ -51,10 +54,13 @@ debugging()
 class RemoteReplicantWindow : public BWindow {
 public:
 								RemoteReplicantWindow(BView* replicant,
-									const BMessenger& host, BPoint origin);
+									const BMessenger& host, BPoint origin,
+									bool exportMenus);
 	virtual						~RemoteReplicantWindow();
 
 			status_t			InitCheck() const { return fArea; }
+			bool				ExportsMenus() const { return fExportMenus; }
+			void				ExportMenu(BPopUpMenu* menu);
 			area_id				Area() const { return fArea; }
 
 	virtual	void				DispatchMessage(BMessage* message,
@@ -64,17 +70,22 @@ public:
 private:
 			void				_SetOrigin(BPoint origin);
 			void				_Publish();
+			void				_ReleaseMenu();
+			void				_ChooseMenuItem(BMessage* message);
+	static	void				_ArchiveMenu(BMenu* menu, BMessage* into);
 
 			BView*				fReplicant;
 			BMessenger			fHost;
 			area_id				fArea;
 			uint8*				fAreaBase;
 			size_t				fAreaSize;
+			bool				fExportMenus;
+			BPopUpMenu*			fMenu;		// the last menu sent to the host
 };
 
 
 RemoteReplicantWindow::RemoteReplicantWindow(BView* replicant,
-	const BMessenger& host, BPoint origin)
+	const BMessenger& host, BPoint origin, bool exportMenus)
 	:
 	// The offscreen constructor: no window in the display server, but a
 	// looper of its own once Run() is called, so the replicant's messages,
@@ -84,7 +95,9 @@ RemoteReplicantWindow::RemoteReplicantWindow(BView* replicant,
 	fHost(host),
 	fArea(-1),
 	fAreaBase(NULL),
-	fAreaSize(0)
+	fAreaSize(0),
+	fExportMenus(exportMenus),
+	fMenu(NULL)
 {
 	// Not a bitmap's window: draw through the normal _UPDATE_ cycle, and
 	// count as shown (a hidden window's views don't draw), without the
@@ -119,6 +132,7 @@ RemoteReplicantWindow::RemoteReplicantWindow(BView* replicant,
 
 RemoteReplicantWindow::~RemoteReplicantWindow()
 {
+	_ReleaseMenu();
 	TRACE("stopped \"%s\"\n", fReplicant->Name());
 	if (fArea >= 0)
 		delete_area(fArea);
@@ -183,6 +197,10 @@ RemoteReplicantWindow::MessageReceived(BMessage* message)
 
 		case kMsgRemoteReplicantStop:
 			Quit();
+			break;
+
+		case kMsgRemoteReplicantMenuChoice:
+			_ChooseMenuItem(message);
 			break;
 
 		default:
@@ -259,6 +277,93 @@ RemoteReplicantWindow::_Publish()
 }
 
 
+/*static*/ void
+RemoteReplicantWindow::_ArchiveMenu(BMenu* menu, BMessage* into)
+{
+	for (int32 i = 0; i < menu->CountItems(); i++) {
+		BMenuItem* item = menu->ItemAt(i);
+		BMessage entry;
+		if (dynamic_cast<BSeparatorItem*>(item) != NULL)
+			entry.AddBool("separator", true);
+		else {
+			entry.AddString("label", item->Label() != NULL ? item->Label() : "");
+			entry.AddBool("enabled", item->IsEnabled());
+			entry.AddBool("marked", item->IsMarked());
+			if (item->Submenu() != NULL) {
+				BMessage submenu;
+				_ArchiveMenu(item->Submenu(), &submenu);
+				entry.AddMessage("submenu", &submenu);
+			}
+		}
+		into->AddMessage("item", &entry);
+	}
+}
+
+
+void
+RemoteReplicantWindow::ExportMenu(BPopUpMenu* menu)
+{
+	if (menu != fMenu)
+		_ReleaseMenu();
+	fMenu = menu;
+	BMessage message(kMsgRemoteReplicantMenu);
+	BMessage archive;
+	_ArchiveMenu(menu, &archive);
+	message.AddMessage("menu", &archive);
+	TRACE("menu with %" B_PRId32 " items to the host\n", menu->CountItems());
+	fHost.SendMessage(&message);
+}
+
+
+void
+RemoteReplicantWindow::_ReleaseMenu()
+{
+	// A menu that would have deleted itself after showing is ours now;
+	// otherwise its owner keeps it.
+	if (fMenu != NULL && fMenu->AsyncAutoDestruct())
+		delete fMenu;
+	fMenu = NULL;
+}
+
+
+void
+RemoteReplicantWindow::_ChooseMenuItem(BMessage* message)
+{
+	if (fMenu == NULL)
+		return;
+	BMenu* menu = fMenu;
+	BMenuItem* item = NULL;
+	int32 index;
+	for (int32 i = 0; message->FindInt32("path", i, &index) == B_OK; i++) {
+		if (menu == NULL)
+			return;
+		item = menu->ItemAt(index);
+		if (item == NULL)
+			return;
+		menu = item->Submenu();
+	}
+	if (item != NULL && item->IsEnabled()) {
+		TRACE("menu item \"%s\" chosen\n", item->Label());
+		// BMenuItem::Invoke() is for BMenu; through BInvoker it's the same
+		// call, filling in "when", "source" and "index" as a menu does.
+		static_cast<BInvoker*>(item)->Invoke();
+	}
+	_ReleaseMenu();
+}
+
+
+bool
+export_remote_replicant_menu(BPopUpMenu* menu)
+{
+	RemoteReplicantWindow* window = dynamic_cast<RemoteReplicantWindow*>(
+		BLooper::LooperForThread(find_thread(NULL)));
+	if (window == NULL || !window->ExportsMenus())
+		return false;
+	window->ExportMenu(menu);
+	return true;
+}
+
+
 void
 start_remote_replicant(BMessage* request)
 {
@@ -284,7 +389,7 @@ start_remote_replicant(BMessage* request)
 	}
 
 	RemoteReplicantWindow* window = new RemoteReplicantWindow(view, host,
-		origin);
+		origin, request->GetBool("export_menus", false));
 	if (window->InitCheck() < B_OK) {
 		BMessage failed(kMsgRemoteReplicantFailed);
 		failed.AddInt32("error", window->InitCheck());

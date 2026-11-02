@@ -11,6 +11,8 @@
 
 #include <PopUpMenu.h>
 
+#include <RemoteReplicant.h>
+
 #include <new>
 
 #include <Application.h>
@@ -337,6 +339,11 @@ BMenuItem*
 BPopUpMenu::_Go(BPoint where, bool autoInvoke, bool startOpened,
 	BRect* _specialRect, bool async)
 {
+	// A remote replicant's menu, shown by its host (RemoteReplicant.h): the
+	// chosen item is invoked later, when the host says which.
+	if (BPrivate::export_remote_replicant_menu(this))
+		return NULL;
+
 	if (fTrackThread >= B_OK) {
 		// we already have an active menu, wait for it to go away before
 		// spawning another

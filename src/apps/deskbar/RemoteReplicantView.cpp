@@ -9,7 +9,10 @@
 #include "RemoteReplicantView.h"
 
 #include <Bitmap.h>
+#include <MenuItem.h>
 #include <MessageRunner.h>
+#include <PopUpMenu.h>
+#include <SeparatorItem.h>
 #include <Roster.h>
 #include <Window.h>
 
@@ -40,6 +43,7 @@ debugging()
 } while (0)
 
 static const uint32 kMsgCheck = 'rrCk';
+static const uint32 kMsgMenuChoice = 'rrCh';
 static const char* kArchiveField = "remote:archive";
 static const char* kSignatureField = "remote:signature";
 // How often to look for the app again while it isn't running, and to
@@ -216,6 +220,21 @@ RemoteReplicantView::MessageReceived(BMessage* message)
 			_CopyPixels();
 			break;
 
+		case kMsgRemoteReplicantMenu:
+			_ShowMenu(message);
+			break;
+
+		case kMsgMenuChoice:
+			if (fReplicant.IsValid()) {
+				BMessage choice(kMsgRemoteReplicantMenuChoice);
+				int32 index;
+				for (int32 i = 0;
+						message->FindInt32("path", i, &index) == B_OK; i++)
+					choice.AddInt32("path", index);
+				fReplicant.SendMessage(&choice);
+			}
+			break;
+
 		case kMsgCheck:
 			if (fReplicant.IsValid())
 				break;
@@ -260,6 +279,8 @@ RemoteReplicantView::_Start()
 	start.AddMessage("archive", &fReplicantArchive);
 	start.AddMessenger("host", BMessenger(this));
 	start.AddPoint("screen_origin", ConvertToScreen(B_ORIGIN));
+	// We show its menus: an app can't open one over us on Wayland.
+	start.AddBool("export_menus", true);
 	if (app.SendMessage(&start, (BHandler*)NULL, 0) == B_OK) {
 		fStarting = true;
 		fStartTime = system_time();
@@ -332,6 +353,55 @@ RemoteReplicantView::_CopyPixels()
 			rowBytes);
 	}
 	Invalidate();
+}
+
+
+/*static*/ void
+RemoteReplicantView::_AddMenuItems(BMenu* menu, BMessage* archive,
+	BMessage* path, BHandler* target)
+{
+	BMessage entry;
+	for (int32 i = 0; archive->FindMessage("item", i, &entry) == B_OK; i++) {
+		if (entry.GetBool("separator", false)) {
+			menu->AddSeparatorItem();
+			continue;
+		}
+		BMessage itemPath(*path);
+		itemPath.AddInt32("path", i);
+		BMessage submenuArchive;
+		BMenuItem* item;
+		if (entry.FindMessage("submenu", &submenuArchive) == B_OK) {
+			BMenu* submenu = new BMenu(entry.GetString("label", ""));
+			_AddMenuItems(submenu, &submenuArchive, &itemPath, target);
+			item = new BMenuItem(submenu);
+		} else {
+			BMessage* choice = new BMessage(itemPath);
+			choice->what = kMsgMenuChoice;
+			item = new BMenuItem(entry.GetString("label", ""), choice);
+			item->SetTarget(target);
+		}
+		item->SetEnabled(entry.GetBool("enabled", true));
+		item->SetMarked(entry.GetBool("marked", false));
+		menu->AddItem(item);
+	}
+}
+
+
+void
+RemoteReplicantView::_ShowMenu(BMessage* message)
+{
+	BMessage archive;
+	if (message->FindMessage("menu", &archive) != B_OK)
+		return;
+	BPopUpMenu* menu = new BPopUpMenu(Name(), false, false);
+	menu->SetFont(be_plain_font);
+	BMessage path;
+	_AddMenuItems(menu, &archive, &path, this);
+	menu->SetAsyncAutoDestruct(true);
+	// Below the item, as Deskbar's other tray menus open
+	BPoint where = ConvertToScreen(Bounds().LeftBottom() + BPoint(0, 1));
+	TRACE("showing a menu of %" B_PRId32 " items\n", menu->CountItems());
+	menu->Go(where, true, true, ConvertToScreen(Bounds()), true);
 }
 
 
