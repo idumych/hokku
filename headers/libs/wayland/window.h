@@ -94,6 +94,11 @@ window_get_decorator_size(struct window *window, int *borderWidth, int *tabHeigh
 int
 window_is_custom(struct window *window);
 
+/* Where the compositor placed a popup: its surface origin in its parent's
+ * surface coordinates. False for other windows, or before it's placed. */
+bool
+window_get_popup_offset(struct window *window, int *x, int *y);
+
 void
 window_set_move_handler(struct window *window, void (*handler)(struct window*, int, int, void*), void *user_data);
 

@@ -69,6 +69,7 @@ public:
 			const BString&		ControlLook() const;
 			const BString&		Decorator() const;
 			bool				WindowShadows() const;
+			bool				MenuSnake() const;
 			rgb_color			DesktopColor() const;
 
 protected:
@@ -109,6 +110,7 @@ public:
 			status_t			SetControlLook(const char* path);
 			status_t			SetDecorator(const char* name);
 			status_t			SetWindowShadows(bool shadows);
+			status_t			SetMenuSnake(bool snake);
 			void				SetDesktopColor(rgb_color color);
 
 private:

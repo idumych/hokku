@@ -46,6 +46,7 @@
 #include <binary_compatibility/Interface.h>
 #include <BMCPrivate.h>
 #include <CosmoeBackendAPI.h>
+#include <DecoratorPrivate.h>
 
 
 // Hokku: how many menus are tracking now. A BPopUpMenu::Go() on a window's
@@ -122,11 +123,20 @@ public:
 	// allows us to draw submenus in the same direction as their parents.
 	bool				frameShiftedLeft;
 
+	// Hokku: the ZSnake (Dano's hidden menu effect, B_UI_MENU_ZSNAKE): a
+	// submenu joins its selected item to the item it hangs from with a
+	// band along its edge. Where that item was when the submenu opened, in
+	// screen and in its window's coordinates.
+	bool				snake;
+	BRect				snakeSuperitemScreen;
+	BRect				snakeSuperitemWindow;
+
 	ExtraMenuData()
 	{
 		trackingHook = NULL;
 		trackingState = NULL;
 		frameShiftedLeft = false;
+		snake = false;
 	}
 };
 
@@ -498,6 +508,7 @@ BMenu::Draw(BRect updateRect)
 
 	DrawBackground(updateRect);
 	DrawItems(updateRect);
+	_DrawSnake(updateRect);
 }
 
 
@@ -1705,6 +1716,17 @@ BMenu::_Show(bool selectFirstItem, bool keyDown)
 		SupermenuLocker locker(fSuper);
 		fSuperbounds = fSuper->ConvertToScreen(fSuper->Bounds());
 		window = fSuper->_MenuWindow();
+
+		fExtraMenuData->snake = false;
+		if (fSuperitem != NULL && fSuper->Window() != NULL
+			&& fSuper->Layout() == B_ITEMS_IN_COLUMN
+			&& BPrivate::get_menu_snake()) {
+			BRect frame = fSuper->ConvertToScreen(fSuperitem->Frame());
+			fExtraMenuData->snakeSuperitemScreen = frame;
+			fExtraMenuData->snakeSuperitemWindow
+				= frame.OffsetByCopy(-fSuper->Window()->Frame().LeftTop());
+			fExtraMenuData->snake = true;
+		}
 	}
 
 	// Otherwise, create a new one
@@ -3338,6 +3360,15 @@ BMenu::_SelectItem(BMenuItem* item, bool showSubmenu, bool selectFirstItem, bool
 		fSelected = item;
 		if (fSelected != NULL)
 			fSelected->Select(true);
+
+		// the snake's band runs from the superitem to the selection
+		BRect superFrame;
+		if (Window() != NULL && _SnakeSuperitemFrame(superFrame)) {
+			BRect band = _SnakeBand(superFrame);
+			band.top = Bounds().top;
+			band.bottom = Bounds().bottom;
+			Invalidate(band);
+		}
 	}
 
 	if (fSelected != NULL && showSubmenu) {
@@ -3367,6 +3398,112 @@ BMenu::_SelectItem(BMenuItem* item, bool showSubmenu, bool selectFirstItem, bool
 			}
 		}
 	}
+}
+
+
+//	#pragma mark - ZSnake
+
+
+/*!	Where the item this submenu hangs from is, in this menu's coordinates.
+	On Wayland the compositor places the submenu (it may flip it to the
+	other side or slide it), so this asks the backend where it ended up.
+*/
+bool
+BMenu::_SnakeSuperitemFrame(BRect& frame)
+{
+	if (!fExtraMenuData->snake || fSuper == NULL || Window() == NULL)
+		return false;
+
+	BWindow* superWindow = fSuper->Window();
+	int32 x, y;
+	if (superWindow != NULL && be_app != NULL
+		&& cosmoe_window_get_popup_offset(be_app->Display(),
+			Window()->WindowToken(), &x, &y)) {
+		int32 superH = 0, superV = 0, ownH = 0, ownV = 0;
+		cosmoe_window_get_topview_offset(be_app->Display(),
+			superWindow->WindowToken(), &superH, &superV);
+		cosmoe_window_get_topview_offset(be_app->Display(),
+			Window()->WindowToken(), &ownH, &ownV);
+		BRect inWindow = fExtraMenuData->snakeSuperitemWindow.OffsetByCopy(
+			superH - x - ownH, superV - y - ownV);
+		frame = ConvertFromScreen(
+			inWindow.OffsetByCopy(Window()->Frame().LeftTop()));
+	} else
+		frame = ConvertFromScreen(fExtraMenuData->snakeSuperitemScreen);
+	return true;
+}
+
+
+/*!	The band along the edge facing the supermenu, from the superitem's row to
+	the selected item's: Dano's is three pixels between one pixel outlines,
+	at its 12 point plain font.
+*/
+BRect
+BMenu::_SnakeBand(BRect& superFrame)
+{
+	const BRect bounds = Bounds();
+	const float width = std::max(5.0f, roundf(be_plain_font->Size() * 5 / 12));
+	BRect band(bounds);
+	if (superFrame.left + superFrame.right < bounds.left + bounds.right)
+		band.right = bounds.left + width - 1;
+	else
+		band.left = bounds.right - width + 1;
+	return band;
+}
+
+
+void
+BMenu::_DrawSnake(BRect updateRect)
+{
+	BRect superFrame;
+	if (fSelected == NULL || fLayout != B_ITEMS_IN_COLUMN
+		|| !_SnakeSuperitemFrame(superFrame))
+		return;
+
+	const BRect bounds = Bounds();
+	const BRect item = fSelected->Frame();
+	// side by side, the two highlights touch already
+	if (superFrame.bottom >= item.top && superFrame.top <= item.bottom)
+		return;
+
+	const bool superOnLeft = superFrame.left + superFrame.right
+		< bounds.left + bounds.right;
+	const bool superAbove = superFrame.bottom < item.top;
+	const uint32 outerBorder = superOnLeft
+		? BControlLook::B_LEFT_BORDER : BControlLook::B_RIGHT_BORDER;
+	const uint32 innerBorder = superOnLeft
+		? BControlLook::B_RIGHT_BORDER : BControlLook::B_LEFT_BORDER;
+	const rgb_color base = ui_color(B_MENU_SELECTED_BACKGROUND_COLOR);
+	const BRect band = _SnakeBand(superFrame);
+
+	PushState();
+
+	// The superitem's highlight carried on into this menu: no edge on the
+	// outer side, where it meets the supermenu.
+	BRect joint(band.left, std::max(superFrame.top, bounds.top),
+		band.right, std::min(superFrame.bottom, bounds.bottom));
+	if (joint.IsValid()) {
+		be_control_look->DrawMenuItemBackground(this, joint, updateRect, base,
+			BControlLook::B_ACTIVATED, innerBorder
+				| BControlLook::B_TOP_BORDER | BControlLook::B_BOTTOM_BORDER);
+	}
+
+	// The band, over the joint's and the item's facing edges, so its fill
+	// runs into both: their outlines meet its sides.
+	BRect run(band);
+	if (superAbove) {
+		run.top = std::max(superFrame.bottom, bounds.top);
+		run.bottom = item.top;
+	} else {
+		run.top = item.bottom;
+		run.bottom = std::min(superFrame.top, bounds.bottom);
+	}
+	if (run.IsValid()) {
+		be_control_look->DrawMenuItemBackground(this, run, updateRect, base,
+			BControlLook::B_ACTIVATED, outerBorder | innerBorder);
+	}
+
+	PopState();
 }
 
 

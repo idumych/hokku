@@ -1090,6 +1090,17 @@ public:
 		widget_set_buffer_scale((struct widget*)widget, scale);
 	}
 
+	virtual bool WindowGetPopupOffset(backend_window_t window, int32_t* x,
+		int32_t* y)
+	{
+		int px, py;
+		if (!window_get_popup_offset((struct window*)window, &px, &py))
+			return false;
+		*x = px;
+		*y = py;
+		return true;
+	}
+
 	virtual int32_t WindowGetDisplayScale(backend_window_t window)
 	{
 		if (!window)

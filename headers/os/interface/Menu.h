@@ -261,6 +261,9 @@ private:
 									bool selectFirstItem = false,
 									bool keyDown = false);
 			bool				_SelectNextItem(BMenuItem* item, bool forward);
+			bool				_SnakeSuperitemFrame(BRect& frame);
+			BRect				_SnakeBand(BRect& superFrame);
+			void				_DrawSnake(BRect updateRect);
 			BMenuItem*			_NextItem(BMenuItem* item, bool forward) const;
 			void				_SetIgnoreHidden(bool ignoreHidden)
 									{ fIgnoreHidden = ignoreHidden; }

@@ -41,6 +41,8 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 - **Themes for the whole desktop.** Haiku's look or [Gonx](https://github.com/idumych/gonx)
   in one step: window frame, controls, colours, fonts, wallpaper, shadows and the BeOS
   pointer, carried over to GTK 3 and Qt apps too.
+- **BeOS Dano's ZSnake.** The hidden menu effect of the unreleased BeOS 5.1: a submenu's
+  selection joined to the item it opened from, one path through every level.
 - **Wayland and touch.** Client-side Haiku and Gonx frames, borderless (skinned) windows
   that move themselves, menus the compositor places, corner panels, and touch screens (tap to click, long press for a right click).
 - **A desktop session beside others.** "Hokku" on the login screen next to Plasma or GNOME,
@@ -56,6 +58,12 @@ once:
 ![Haiku's look: Appearance, Network Connections and V4L2 Test Bench, each in Haiku's frame, on Haiku's blue desktop](docs/screenshots/theme-haiku.png)
 
 ![Gonx: the same three windows in the Gonx frame, on the Gonx desktop](docs/screenshots/theme-gonx.png)
+
+ZSnake in the Deskbar, and its switch in Appearance:
+
+| ZSnake in the Deskbar | The switch in Appearance |
+|---|---|
+| ![The Deskbar's menu in the Gonx look with Preferences open: the Preferences highlight carries on into the submenu as a band down its left edge, which ends in the highlight of Tracker, its last item (shown at twice the size)](docs/screenshots/zsnake-deskbar.png) | ![Appearance's Look and feel tab: the control look, the scroll bar arrow style, and the boxes for window shadows and for joining submenus to the item they open from (ZSnake), both ticked](docs/screenshots/zsnake-appearance.png) |
 
 <details>
 <summary>More screenshots</summary>
@@ -395,6 +403,14 @@ to the Haiku project, whose work made both possible.
   `Hokku-Shadow` (`data/linux/cursors/generate.py`). Appearance's *Look and feel* tab turns
   window and pointer shadows on and off together. Hokku apps ask the compositor for their
   standard cursors (cursor-shape protocol), following its cursor theme.
+- **ZSnake, from BeOS Dano.** Dano hid it in its Menu preferences (Ctrl+Alt+Shift showed
+  "Show ZSnake!"): the selection runs as one path from a menu's item, along the open
+  submenu's edge, to the submenu's selected item, a step for each level. In Hokku a submenu
+  draws the band along its edge facing the item it opened from, with the control look's menu
+  highlight, so it takes Haiku's, Gonx's or Be's look. On Wayland the band follows the submenu
+  wherever the compositor placed it (`cosmoe_window_get_popup_offset()`). Appearance's
+  *Look and feel* tab turns it on (*Join submenus to the item they open from*); it's off by
+  default, as in Dano, and menus in running apps show it once they restart.
 - **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
   `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
   the built-in colours, and the fonts saved by Appearance were replaced by the defaults when

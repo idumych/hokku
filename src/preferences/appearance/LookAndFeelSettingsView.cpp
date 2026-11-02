@@ -67,6 +67,7 @@ static const int32 kMsgArrowStyleSingle = 'mass';
 static const int32 kMsgArrowStyleDouble = 'masd';
 
 static const int32 kMsgShadows = 'shdw';
+static const int32 kMsgMenuSnake = 'msnk';
 
 static const bool kDefaultDoubleScrollBarArrowsSetting = false;
 
@@ -83,10 +84,12 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 	fArrowStyleSingle(NULL),
 	fArrowStyleDouble(NULL),
 	fShadowsCheckBox(NULL),
+	fMenuSnakeCheckBox(NULL),
 	fSavedControlLook(NULL),
 	fCurrentControlLook(NULL),
 	fSavedDoubleArrowsValue(_DoubleScrollBarArrows()),
-	fSavedShadows(BPrivate::get_window_shadows())
+	fSavedShadows(BPrivate::get_window_shadows()),
+	fSavedMenuSnake(BPrivate::get_menu_snake())
 {
 	BPrivate::get_control_look(fCurrentControlLook);
 	fSavedControlLook = fCurrentControlLook;
@@ -141,6 +144,16 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 	fShadowsCheckBox->SetToolTip(
 		B_TRANSLATE("Running applications' windows change when they restart"));
 
+	// Hokku: Dano's hidden ZSnake, a band from a submenu's selection to the
+	// item it opened from
+	fMenuSnakeCheckBox = new BCheckBox("menu snake",
+		B_TRANSLATE("Join submenus to the item they open from (ZSnake)"),
+		new BMessage(kMsgMenuSnake));
+	fMenuSnakeCheckBox->SetValue(
+		fSavedMenuSnake ? B_CONTROL_ON : B_CONTROL_OFF);
+	fMenuSnakeCheckBox->SetToolTip(
+		B_TRANSLATE("Running applications' menus change when they restart"));
+
 	// control layout
 	BLayoutBuilder::Grid<>(this, B_USE_DEFAULT_SPACING, B_USE_DEFAULT_SPACING)
 		.Add(fControlLookMenuField->CreateLabelLayoutItem(), 0, 0)
@@ -149,7 +162,8 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 		.Add(scrollBarLabel, 0, 1)
 		.Add(arrowStyleBox, 1, 1)
 		.Add(fShadowsCheckBox, 1, 2)
-		.AddGlue(0, 3)
+		.Add(fMenuSnakeCheckBox, 1, 3)
+		.AddGlue(0, 4)
 		.SetInsets(B_USE_WINDOW_SPACING);
 
 	// TODO : Decorator Preview Image?
@@ -174,6 +188,7 @@ LookAndFeelSettingsView::AttachedToWindow()
 	fArrowStyleSingle->SetTarget(this);
 	fArrowStyleDouble->SetTarget(this);
 	fShadowsCheckBox->SetTarget(this);
+	fMenuSnakeCheckBox->SetTarget(this);
 
 	if (fSavedDoubleArrowsValue)
 		fArrowStyleDouble->SetValue(B_CONTROL_ON);
@@ -236,6 +251,10 @@ LookAndFeelSettingsView::MessageReceived(BMessage* message)
 
 		case kMsgShadows:
 			_SetShadows(fShadowsCheckBox->Value() == B_CONTROL_ON);
+			break;
+
+		case kMsgMenuSnake:
+			_SetMenuSnake(fMenuSnakeCheckBox->Value() == B_CONTROL_ON);
 			break;
 
 		default:
@@ -366,12 +385,24 @@ LookAndFeelSettingsView::_SetShadows(bool shadows)
 }
 
 
+void
+LookAndFeelSettingsView::_SetMenuSnake(bool snake)
+{
+	if (BPrivate::get_menu_snake() != snake)
+		BPrivate::set_menu_snake(snake);
+	fMenuSnakeCheckBox->SetValue(snake ? B_CONTROL_ON : B_CONTROL_OFF);
+
+	Window()->PostMessage(kMsgUpdate);
+}
+
+
 bool
 LookAndFeelSettingsView::IsDefaultable()
 {
 	return fCurrentControlLook.Length() != 0
 		|| _DoubleScrollBarArrows() != false
-		|| !BPrivate::get_window_shadows();
+		|| !BPrivate::get_window_shadows()
+		|| BPrivate::get_menu_snake();
 }
 
 
@@ -381,6 +412,7 @@ LookAndFeelSettingsView::SetDefaults()
 	_SetControlLook(BString(""));
 	_SetDoubleScrollBarArrows(false);
 	_SetShadows(true);
+	_SetMenuSnake(false);
 }
 
 
@@ -389,7 +421,8 @@ LookAndFeelSettingsView::IsRevertable()
 {
 	return fCurrentControlLook != fSavedControlLook
 		|| _DoubleScrollBarArrows() != fSavedDoubleArrowsValue
-		|| BPrivate::get_window_shadows() != fSavedShadows;
+		|| BPrivate::get_window_shadows() != fSavedShadows
+		|| BPrivate::get_menu_snake() != fSavedMenuSnake;
 }
 
 
@@ -400,5 +433,6 @@ LookAndFeelSettingsView::Revert()
 		_SetControlLook(fSavedControlLook);
 		_SetDoubleScrollBarArrows(fSavedDoubleArrowsValue);
 		_SetShadows(fSavedShadows);
+		_SetMenuSnake(fSavedMenuSnake);
 	}
 }

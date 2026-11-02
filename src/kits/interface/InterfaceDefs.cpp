@@ -1956,6 +1956,22 @@ set_window_shadows(bool shadows)
 }
 
 
+bool
+get_menu_snake()
+{
+	DesktopSettings settings;
+	return settings.MenuSnake();
+}
+
+
+status_t
+set_menu_snake(bool snake)
+{
+	LockedDesktopSettings settings;
+	return settings.SetMenuSnake(snake);
+}
+
+
 static void
 set_rgb(uint8_t out[3], rgb_color color)
 {

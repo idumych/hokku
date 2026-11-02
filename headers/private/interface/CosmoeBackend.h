@@ -366,6 +366,12 @@ public:
 	virtual void WidgetSetBufferScale(backend_widget_t widget, int32_t scale) = 0;
 	// Get the display scale percent for this window (100, 200, 300, etc.)
 	virtual int32_t WindowGetDisplayScale(backend_window_t window) = 0;
+	// Hokku: where a popup ended up, its origin in its parent window's
+	// surface coordinates, when the window system placed it (Wayland may
+	// flip or slide it); false where the Interface Kit's own idea of
+	// window positions holds.
+	virtual bool WindowGetPopupOffset(backend_window_t window, int32_t* x,
+		int32_t* y) { (void)window; (void)x; (void)y; return false; }
 
 	virtual status_t WindowSetNativeMenuBar(backend_window_t window,
 		const ::cosmoe_native_menu_item* items, int32_t count,

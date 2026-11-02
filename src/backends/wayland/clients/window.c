@@ -5177,6 +5177,21 @@ popup_chain_offset(struct window *window, struct window **root,
 	return true;
 }
 
+bool
+window_get_popup_offset(struct window *window, int *x, int *y)
+{
+	struct rectangle parent_geometry, geometry;
+
+	if (window == NULL || window->popup_parent == NULL
+	    || !window->popup_placed)
+		return false;
+	window_get_geometry(window->popup_parent, &parent_geometry);
+	window_get_geometry(window, &geometry);
+	*x = window->popup_x + parent_geometry.x - geometry.x;
+	*y = window->popup_y + parent_geometry.y - geometry.y;
+	return true;
+}
+
 static bool
 surface_contains(struct window *window, float x, float y)
 {

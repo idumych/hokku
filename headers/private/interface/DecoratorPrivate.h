@@ -24,6 +24,11 @@ status_t preview_decorator(const BString& name, BWindow* window);
 bool get_window_shadows();
 status_t set_window_shadows(bool shadows);
 
+// Hokku: Dano's ZSnake, a band joining a submenu's selection to the item
+// it hangs from (menus opened afterwards show it)
+bool get_menu_snake();
+status_t set_menu_snake(bool snake);
+
 // Cosmoe: tells the backend which decorator to draw this app's frames with.
 status_t apply_decorator(void* display);
 

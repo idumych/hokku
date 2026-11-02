@@ -88,6 +88,7 @@ DesktopSettingsPrivate::_SetDefaults()
 	fAcceptFirstClick = true;
 	fShowAllDraggers = true;
 	fWindowShadows = true;
+	fMenuSnake = false;
 
 	// init scrollbar info
 	fScrollBarInfo.proportional = true;
@@ -320,6 +321,10 @@ DesktopSettingsPrivate::_Load()
 			if (settings.FindBool("window shadows", &windowShadows) == B_OK)
 				fWindowShadows = windowShadows;
 
+			bool menuSnake;
+			if (settings.FindBool("menu snake", &menuSnake) == B_OK)
+				fMenuSnake = menuSnake;
+
 			int32 desktopColor;
 			if (settings.FindInt32("desktop color", &desktopColor) == B_OK)
 				fDesktopColor = _ColorFromInt32(desktopColor);
@@ -477,6 +482,7 @@ DesktopSettingsPrivate::Save(uint32 mask)
 			settings.AddString("control look", fControlLook);
 			settings.AddString("decorator", fDecorator);
 			settings.AddBool("window shadows", fWindowShadows);
+			settings.AddBool("menu snake", fMenuSnake);
 			settings.AddInt32("desktop color", _ColorToInt32(fDesktopColor));
 
 			for (int32 i = 0; i < kColorWhichCount; i++) {
@@ -807,6 +813,21 @@ DesktopSettingsPrivate::WindowShadows() const
 }
 
 
+status_t
+DesktopSettingsPrivate::SetMenuSnake(bool snake)
+{
+	fMenuSnake = snake;
+	return Save(kAppearanceSettings);
+}
+
+
+bool
+DesktopSettingsPrivate::MenuSnake() const
+{
+	return fMenuSnake;
+}
+
+
 void
 DesktopSettingsPrivate::SetDesktopColor(rgb_color color)
 {
@@ -982,6 +1003,13 @@ DesktopSettings::WindowShadows() const
 }
 
 
+bool
+DesktopSettings::MenuSnake() const
+{
+	return fSettings->MenuSnake();
+}
+
+
 rgb_color
 DesktopSettings::DesktopColor() const
 {
@@ -1113,6 +1141,13 @@ status_t
 LockedDesktopSettings::SetWindowShadows(bool shadows)
 {
 	return fSettings->SetWindowShadows(shadows);
+}
+
+
+status_t
+LockedDesktopSettings::SetMenuSnake(bool snake)
+{
+	return fSettings->SetMenuSnake(snake);
 }
 
 

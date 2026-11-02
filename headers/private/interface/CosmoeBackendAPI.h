@@ -202,6 +202,10 @@ bool cosmoe_backend_supports_native_menus();
 void cosmoe_window_set_buffer_scale(cosmoe_display_t display, int32_t token, int32_t scale);
 // Returns display scale in percent (100, 200, 300, etc.).
 int32_t cosmoe_window_get_display_scale(cosmoe_display_t display, int32_t token);
+// Hokku: where the window system placed a popup, its origin in its parent
+// window's surface coordinates; false if the backend doesn't say.
+bool cosmoe_window_get_popup_offset(cosmoe_display_t display, int32_t token,
+	int32_t* x, int32_t* y);
 
 // Native menu support
 status_t cosmoe_window_set_native_menubar(cosmoe_display_t display,
