@@ -46,7 +46,7 @@ app_dirs = [
 ]
 
 if is_linux
-    app_dirs += ['tracker', 'traybridge', 'notification_server']
+    app_dirs += ['tracker', 'traybridge', 'trayexport', 'notification_server']
 endif
 
 foreach app_dir : app_dirs

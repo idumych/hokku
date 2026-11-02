@@ -12,7 +12,10 @@
 
 #include <Deskbar.h>
 
+#include <dlfcn.h>
+#include <spawn.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <Messenger.h>
 #include <Message.h>
@@ -20,6 +23,9 @@
 #include <Rect.h>
 #include <InterfaceDefs.h>
 #include <Node.h>
+#include <OS.h>
+#include <Roster.h>
+#include <String.h>
 
 #include <DeskbarPrivate.h>
 
@@ -62,10 +68,67 @@ get_deskbar_frame(BRect* frame)
 //	#pragma mark - BDeskbar
 
 
+#ifdef __linux__
+extern char** environ;
+
+// Without Hokku's Deskbar (in a Plasma, GNOME or sway session), items go to
+// TrayExport, which shows them in the desktop's own tray and answers the
+// same requests.
+static const char* kTrayExportSignature = "application/x-vnd.Hokku-TrayExport";
+
+
+static BMessenger
+tray_export(bool launch)
+{
+	BMessenger exporter(kTrayExportSignature);
+	if (exporter.IsValid() || !launch)
+		return exporter;
+	if (be_roster->Launch(kTrayExportSignature) != B_OK) {
+		// Not in the MIME database yet (a fresh home, a build tree): next
+		// to this libbe (bin/ beside lib/, as installed or in an AppImage),
+		// then $PATH.
+		pid_t pid;
+		bool started = false;
+		Dl_info info;
+		if (dladdr((void*)&tray_export, &info) != 0 && info.dli_fname != NULL) {
+			BString path(info.dli_fname);
+			int32 slash = path.FindLast('/');
+			if (slash >= 0) {
+				path.Truncate(slash);
+				path << "/../bin/TrayExport";
+				char* argv[] = { (char*)path.String(), NULL };
+				started = access(path.String(), X_OK) == 0
+					&& posix_spawn(&pid, path.String(), NULL, NULL, argv,
+						environ) == 0;
+			}
+		}
+		if (!started) {
+			char* argv[] = { (char*)"TrayExport", NULL };
+			if (posix_spawnp(&pid, "TrayExport", NULL, NULL, argv, environ)
+					!= 0)
+				return exporter;
+		}
+	}
+	for (int i = 0; i < 40 && !exporter.IsValid(); i++) {
+		snooze(50000);
+		exporter = BMessenger(kTrayExportSignature);
+	}
+	return exporter;
+}
+#endif
+
+
 BDeskbar::BDeskbar()
 	:
 	fMessenger(new BMessenger(kDeskbarSignature))
 {
+#ifdef __linux__
+	if (!fMessenger->IsValid()) {
+		BMessenger exporter = tray_export(false);
+		if (exporter.IsValid())
+			*fMessenger = exporter;
+	}
+#endif
 }
 
 
@@ -357,6 +420,11 @@ BDeskbar::MaxItemHeight() const
 status_t
 BDeskbar::AddItem(BView* view, int32* _id)
 {
+#ifdef __linux__
+	if (!fMessenger->IsValid())
+		*fMessenger = tray_export(true);
+#endif
+
 	BMessage archive;
 	status_t result = view->Archive(&archive);
 	if (result < B_OK)
