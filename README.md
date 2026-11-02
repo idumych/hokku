@@ -28,6 +28,10 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 - **Drawing like app_server.** Pixel-exact lines and polygons, Haiku's transfer modes and
   bitmap transparency, underline and strikeout, rotated text, and fonts chosen as Haiku
   chooses them.
+- **Apps' Deskbar replicants.** An app's own Deskbar item (PowerPlay's VU meter, say) runs
+  in Hokku's Deskbar, or, in Plasma, GNOME or sway, in the desktop's own tray, menu included.
+- **Audio through the Media Kit.** `BMediaFile` and `BSoundPlayer` play WAV, MP3, FLAC and
+  Ogg Vorbis as float, with a null output for headless tests.
 - **The desktop's tray icons in the Deskbar.** KDE, Qt, GTK and Electron apps' icons, with
   their menus, tooltips and live updates, next to Plasma's or Xfce's own tray or on their own.
 - **More in the Deskbar.** A screen brightness control on laptops, a menu of the desktop's
@@ -37,8 +41,8 @@ Cosmoe builds against Hokku. Licence: MIT, as upstream (see License.md).
 - **Themes for the whole desktop.** Haiku's look or [Gonx](https://github.com/idumych/gonx)
   in one step: window frame, controls, colours, fonts, wallpaper, shadows and the BeOS
   pointer, carried over to GTK 3 and Qt apps too.
-- **Wayland and touch.** Client-side Haiku and Gonx frames, menus the compositor places,
-  corner panels, and touch screens (tap to click, long press for a right click).
+- **Wayland and touch.** Client-side Haiku and Gonx frames, borderless (skinned) windows
+  that move themselves, menus the compositor places, corner panels, and touch screens (tap to click, long press for a right click).
 - **A desktop session beside others.** "Hokku" on the login screen next to Plasma or GNOME,
   without cluttering their menus.
 
@@ -106,6 +110,9 @@ Shipped on Linux with Hokku; each also runs on Renku OS and Haiku.
 - [LinShare](https://github.com/idumych/linshare), atomozero's
   [HiShare](https://github.com/atomozero/HiShare) (the modernized BeShare file-sharing and
   chat client) for Linux.
+- [PowerPlay](https://github.com/idumych/powerplay), an audio player in the spirit of
+  SoundPlay, with Winamp skins, a library window and a VU meter in the Deskbar or the
+  desktop's tray.
 
 Each brought fixes with it; they are listed under All changes from Cosmoe below.
 
@@ -237,6 +244,27 @@ to the Haiku project, whose work made both possible.
 
 ### The Deskbar and its tray
 
+- **Apps' Deskbar replicants (remote replicants).** On Haiku the Deskbar loads an app's
+  executable as an add-on to run its replicant; Linux can't load an executable into another
+  process. When the Deskbar can't find a replicant's class, a stand-in
+  (`RemoteReplicantView`) asks the app named by the archive's `add_on` to run it. The app
+  runs the view in an offscreen window of its own (its messages and runners work as
+  written) and copies what it draws into a shared area; the stand-in shows those pixels and
+  forwards the pointer and wheel.
+  - The replicant's popup menu is sent to the host as data (labels, marks, separators,
+    submenus) and shown by the host, so it works on Wayland too; the chosen item goes back
+    to the app.
+  - When the app quits, the item keeps its last picture. A click starts the app again (from
+    where it last ran, `/proc/<pid>/exe`, when its signature isn't installed), and its menu
+    offers "Start <app>" and "Remove from Deskbar".
+  - `COSMOE_DEBUG_REMOTE_REPLICANTS` traces both sides.
+- **TrayExport: Deskbar items in the desktop's own tray.** Without Hokku's Deskbar (in a
+  Plasma, GNOME or sway session), `BDeskbar` talks to TrayExport, starting it if needed, and
+  it shows each item as StatusNotifierItems. Trays show square icons, so a wide item is cut
+  into square tiles (PowerPlay's 48×16 meter: one icon per needle). Clicks, right clicks,
+  middle clicks and the wheel on a tile reach the replicant where that tile is, and its menu
+  is offered as a `com.canonical.dbusmenu`. Tested on X11 and headless sway, and with a test
+  StatusNotifierWatcher driving it as Plasma does; not yet in a real Plasma or GNOME panel.
 - **The desktop's tray icons.** On Linux the Deskbar starts `TrayBridge`
   (`src/apps/traybridge`), a StatusNotifierItem host that puts each of the desktop's tray
   icons in the tray as a replicant: KDE and Qt apps, GTK apps using libappindicator or
@@ -304,6 +332,20 @@ to the Haiku project, whose work made both possible.
 - **The preferences** set on/off, width, timeout and position, and mute any app; changes
   apply at once. Every app that sent one is listed, the desktop's apps too.
 
+### Audio
+
+- **Decoded audio is float.** Tracks said they held float but kept the file's own format,
+  so 16-bit WAVs came out as noise (and NaN that broke meters). Files now decode to float;
+  `DecodedFormat()` honours a requested sample format (char, uchar, short, int, float,
+  double) and `ReadFrames()` converts to it.
+- **Ogg Vorbis plays.** stb_vorbis 1.22 (public domain or MIT) is vendored unmodified in
+  `third_party/stb_vorbis` and built into libmedia's miniaudio; `BMediaFile` couldn't open
+  `.ogg` files before. Opus doesn't play yet.
+- **`COSMOE_AUDIO_BACKEND=null`** plays into miniaudio's null device, paced in real time:
+  for tests and headless runs that mustn't reach a sound card.
+- Not yet: `BMediaFile` decodes a whole file when it opens it, so a long file takes a
+  moment and the memory of its decoded audio.
+
 ### Looks and themes
 
 - **The Gonx look.** `gonx-theme apply` switches to the whole
@@ -370,6 +412,9 @@ to the Haiku project, whose work made both possible.
   Heavy get `B_HEAVY_FACE`, condensed widths `B_CONDENSED_FACE`, and when several styles share
   a face the canonical one wins. Before, every weight below Bold counted as regular and the
   first match was used, so `SetFamilyAndFace("Noto Serif", B_REGULAR_FACE)` drew Thin.
+- **`BFont::GetHeight()` keeps the fractions**, as Haiku's: ascent, descent and leading had
+  come back as whole points (Liberation Serif 12: 11, 3, 0 instead of 10.69, 2.60, 0.51), so
+  apps that round each laid lines out a point short.
 - **Underline and strikeout are drawn.** `B_UNDERSCORE_FACE` and `B_STRIKEOUT_FACE` stay in
   the font's face and are drawn by `DrawString()`, so `BTextView` runs show them.
 - **Rotated text turns about its pen location**, as in app_server. The rotation was applied
@@ -404,10 +449,16 @@ to the Haiku project, whose work made both possible.
   same memory; here they are two copies, and pixels written through `Bits()` were lost
   unless the app locked the bitmap in between. The bitmap now tracks which copy changed.
   Test: `src/tests/kits/interface/bbitmap/BitmapBitsSyncTest`.
+- **`B_RGBA32` bitmaps keep their alpha when views draw into them.** Every pixel came back
+  opaque, so an icon drawn on a transparent bitmap was a solid square. `B_RGB32` bitmaps
+  stay opaque, as on Haiku.
+- **`BWindow::Flush()` and `Sync()` put what was drawn on screen.** They did nothing, so
+  drawing outside `Draw()` (an animation in a loop) waited for the next update.
 - **Rect tracking's outline is on the screen.** `BeginRectTracking()` drew into the
   window, so the outline vanished once the pointer left it (a menu torn off into a floater).
-  On X11 it is now drawn over everything, as app_server does; Wayland keeps drawing it in
-  the window. It also starts from where the pointer is now, not where it was pressed.
+  It is now drawn over everything, as app_server does: on X11 as four edge windows, on
+  Wayland as a popup of the tracking window that takes no input. It also starts from where
+  the pointer is now, not where it was pressed.
 - **A removed view is repainted over.** Nothing redrew the area a view left when it was
   removed, so it stayed on screen; `BView::RemoveChild()` now invalidates it.
 
@@ -418,8 +469,9 @@ to the Haiku project, whose work made both possible.
   EGL (Mesa's surfaceless platform when there is one, otherwise the default display, so
   NVIDIA's driver works too) into an off-screen buffer that the view draws, on X11 and
   Wayland alike. It's built when EGL and `GL/gl.h` are found. `DirectConnected()` and
-  `EnableDirectMode()` exist and do nothing; `CopyPixelsIn()`/`Out()`, overlays and
-  `BGLScreen` aren't there yet. `SwapBuffers()` posts the frame to the window rather than
+  `EnableDirectMode()` exist and do nothing. `CopyPixelsOut()` copies the last frame
+  into a `B_RGB32` or `B_RGBA32` bitmap, as Haiku's renderers do; `CopyPixelsIn()`,
+  overlays and `BGLScreen` aren't there yet. `SwapBuffers()` posts the frame to the window rather than
   locking it, so pointer motion no longer drops GLTeapot from about 700 frames per second
   to 9-80.
 - **GLTeapot**, Haiku's OpenGL demo, is included (Deskbar: Demos).
@@ -430,7 +482,9 @@ to the Haiku project, whose work made both possible.
 
 - **New windows open at their frame's position**, as app_server places them. They were
   left where the window manager put them (a pop-up slider meant for its control came up
-  in the screen's corner).
+  in the screen's corner). On X11 the position is the content's, as on Haiku
+  (`StaticGravity`); window managers put the title bar there, so windows landed a title
+  bar low and centred ones sat off centre.
 - **Popup windows.** A `kMenuWindowFeel` window with `kWindowPopupGrabFlag`, made a popup
   of its parent with `BPrivate::set_popup_window_parent()` (`WindowPrivate.h`), opens
   beside the parent, takes the pointer and keyboard (an `xdg_popup` grab on Wayland), and
@@ -439,9 +493,19 @@ to the Haiku project, whose work made both possible.
   outside closes them. A `BPopUpMenu::Go()` on the window's own thread blocks that window,
   so its press, release and Escape never reached the menu; they are now counted as they
   arrive from the backend. A right click's context menu no longer chooses the first item
-  the pointer crosses.
+  the pointer crosses, and a menu closed by Escape or a click elsewhere chooses nothing
+  (it chose the item last under the pointer).
 - **X11: a deactivated pop-up stays up.** Menus are deactivated as they open, which lowered
   them under the window they pop up from.
+- **X11: pop-up menus without a parent window open** (`BPopUpMenu::Go()` from a window
+  that isn't on screen, such as a replicant's).
+- **Legacy cursors look as on Haiku.** In BeOS cursor data the hot spot is y, then x, and a
+  pixel with only its image bit set is black; Hokku had the hot spot swapped and left such
+  pixels out, so some cursors pointed off or didn't show.
+- **`BClipboard` keeps the whole message.** The system clipboard carries only text, so
+  other fields were lost, and a commit without text left the clipboard to whoever had it.
+  A commit now always takes the system clipboard and `Lock()` gives the message back while
+  the system clipboard still holds its text.
 - **`GetMouse()` reports the buttons as they are now**, even while the window is busy: a
   view tracking the mouse in `MouseDown()` never saw the button come up and looped forever.
   Presses and releases also update the position it falls back on, so the first click after
@@ -476,6 +540,11 @@ to the Haiku project, whose work made both possible.
   the compositor really put it; a mouse drag does the same. Tapping or releasing on an item
   with a submenu opens the submenu, as on Haiku. `HOKKU_TOUCH_DEBUG=1` prints what touch and
   the pointer do. Tested with KWin's fake input and on a touch screen in Plasma.
+- **Borderless windows.** `B_NO_BORDER_WINDOW_LOOK` windows (a skinned player, a splash
+  screen) got the compositor's title bar and the 200×160 minimum size of framed windows.
+  They now have no frame and keep their size, and an app moving one with `MoveTo()` while
+  a button is down starts the compositor's interactive move, since Wayland apps can't place
+  windows.
 - **Menus are placed by the compositor**, which may flip, slide and resize them. `BMenu`'s
   own placement, with no real window positions, put a `BMenuField`'s pop-up off screen on a
   second monitor.
@@ -530,7 +599,8 @@ to the Haiku project, whose work made both possible.
   case-insensitive file system. Haiku's implementation is back, using `<AutoLocker.h>`.
 - **`BScreen::GetBitmap()` and `ReadBitmap()`** copy the screen into a `B_RGB32` bitmap on
   X11 (Wayland doesn't let clients read the screen: `B_UNSUPPORTED`). `BScreen::Frame()`
-  ends on the last pixel, as on Haiku.
+  ends on the last pixel, as on Haiku. `BScreen::GetMode()` gives the screen's size with a
+  60 Hz timing, so apps can work out the refresh rate.
 
 ### Kernel, files, storage and network
 
