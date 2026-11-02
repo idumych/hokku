@@ -36,6 +36,8 @@ All rights reserved.
 
 #include "StatusView.h"
 
+#include "RemoteReplicantView.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -1010,10 +1012,32 @@ TReplicantTray::AddIcon(BMessage* archive, int32* id, const entry_ref* addOn)
 		// this is a work-around for buggy replicants that change their size in
 		// AttachedToWindow() (such as "SVM")
 
+	// A replicant whose class Deskbar doesn't have (an app's: Linux won't
+	// load the app's executable here) runs in its app, and a stand-in shows
+	// it here (see RemoteReplicant.h).
+	// The shelf owns what it's given once added (and the caller lets go of
+	// the archive then), so the stand-in's archive is on the heap and the
+	// original is ours to delete.
+	BMessage* remoteArchive = NULL;
+	if (find_instantiation_func(archive) == NULL) {
+		remoteArchive = new BMessage;
+		if (RemoteReplicantView::Wrap(archive, remoteArchive) != B_OK) {
+			delete remoteArchive;
+			remoteArchive = NULL;
+		}
+	}
+
 	// TODO: check for name collisions?
-	status = fShelf->AddReplicant(archive, BPoint(1, 1));
-	if (status != B_OK)
+	status = fShelf->AddReplicant(
+		remoteArchive != NULL ? remoteArchive : archive, BPoint(1, 1));
+	if (status != B_OK) {
+		delete remoteArchive;
 		return status;
+	}
+	if (remoteArchive != NULL) {
+		delete archive;
+		archive = remoteArchive;
+	}
 
 	int32 count = ReplicantCount();
 	BView* view;

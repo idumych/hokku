@@ -28,6 +28,7 @@ app_srcs = files(
     'Switcher.cpp',
     'CalendarMenuWindow.cpp',
 	'ScreenCornerSelector.cpp',
+    'RemoteReplicantView.cpp',
     'TrayBridgeItem.cpp',
     'BitmapMenuItem.cpp',
 )

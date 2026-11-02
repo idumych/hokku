@@ -45,6 +45,7 @@ extern "C" void __libbe_initialize_before();
 #include <AutoLocker.h>
 #include <BitmapPrivate.h>
 #include <DraggerPrivate.h>
+#include <RemoteReplicant.h>
 #include <LinuxRemoteAppMessenger.h>
 #include <MessengerPrivate.h>
 #include <LooperList.h>
@@ -1098,6 +1099,12 @@ BApplication::DispatchMessage(BMessage* message, BHandler* handler)
 	switch (message->what) {
 		case B_ARGV_RECEIVED:
 			_ArgvReceived(message);
+			break;
+
+		case BPrivate::kMsgRemoteReplicantStart:
+			// A host (Deskbar) that can't load our replicant's code asks us
+			// to run it (see RemoteReplicant.h).
+			BPrivate::start_remote_replicant(message);
 			break;
 
 		case B_REFS_RECEIVED:

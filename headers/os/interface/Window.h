@@ -28,6 +28,7 @@ class BMessenger;
 class BView;
 
 namespace BPrivate {
+	class RemoteReplicantWindow;
 	class ToolTipWindow;
 	void set_popup_window_parent(BWindow* popUp, BWindow* parent);
 }
@@ -321,6 +322,7 @@ private:
 	friend class BDirectWindow;
 	friend class BFilePanel;
 	friend class BWindowStack;
+	friend class BPrivate::RemoteReplicantWindow;
 
 	friend void _set_menu_sem_(BWindow* w, sem_id sem);
 	friend void BPrivate::set_popup_window_parent(BWindow* popUp,

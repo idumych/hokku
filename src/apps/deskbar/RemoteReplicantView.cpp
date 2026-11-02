@@ -1,0 +1,363 @@
+/*
+ * Copyright 2026, Hokku contributors.
+ * Distributed under the terms of the MIT License.
+ *
+ * The host side of remote replicants (see RemoteReplicant.h).
+ */
+
+
+#include "RemoteReplicantView.h"
+
+#include <Bitmap.h>
+#include <MessageRunner.h>
+#include <Roster.h>
+#include <Window.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <RemoteReplicant.h>
+
+
+using namespace BPrivate;
+
+
+static bool
+debugging()
+{
+	static int sDebug = -1;
+	if (sDebug < 0)
+		sDebug = getenv("COSMOE_DEBUG_REMOTE_REPLICANTS") != NULL ? 1 : 0;
+	return sDebug == 1;
+}
+
+#define TRACE(...) do { \
+	if (debugging()) { \
+		fprintf(stderr, "Deskbar remote replicant: "); \
+		fprintf(stderr, __VA_ARGS__); \
+	} \
+} while (0)
+
+static const uint32 kMsgCheck = 'rrCk';
+static const char* kArchiveField = "remote:archive";
+static const char* kSignatureField = "remote:signature";
+// How often to look for the app again while it isn't running, and to
+// notice that it quit.
+static const bigtime_t kCheckInterval = 1000000;
+
+
+RemoteReplicantView::RemoteReplicantView(BMessage* archive)
+	:
+	BView(archive->FindRect("_frame"), archive->FindString("_name"),
+		B_FOLLOW_NONE, B_WILL_DRAW | B_FRAME_EVENTS),
+	fCheckRunner(NULL),
+	fArea(-1),
+	fAreaBase(NULL),
+	fBitmap(NULL),
+	fStarting(false),
+	fStartTime(0),
+	fButtons(0)
+{
+	archive->FindMessage(kArchiveField, &fReplicantArchive);
+	fSignature = archive->FindString(kSignatureField);
+	SetViewColor(B_TRANSPARENT_COLOR);
+}
+
+
+RemoteReplicantView::~RemoteReplicantView()
+{
+	_Disconnect();
+	delete fBitmap;
+}
+
+
+/*static*/ status_t
+RemoteReplicantView::Wrap(const BMessage* replicantArchive, BMessage* into)
+{
+	const char* signature;
+	if (replicantArchive->FindString("add_on", &signature) != B_OK)
+		return B_BAD_VALUE;
+
+	into->MakeEmpty();
+	into->what = replicantArchive->what;
+	into->AddString("class", "RemoteReplicantView");
+	into->AddString("_name", replicantArchive->GetString("_name", ""));
+	into->AddRect("_frame", replicantArchive->GetRect("_frame",
+		BRect(0, 0, 15, 15)));
+	into->AddString(kSignatureField, signature);
+	into->AddMessage(kArchiveField, replicantArchive);
+	return B_OK;
+}
+
+
+/*static*/ BArchivable*
+RemoteReplicantView::Instantiate(BMessage* archive)
+{
+	if (!validate_instantiation(archive, "RemoteReplicantView"))
+		return NULL;
+	return new RemoteReplicantView(archive);
+}
+
+
+status_t
+RemoteReplicantView::Archive(BMessage* into, bool deep) const
+{
+	return Wrap(&fReplicantArchive, into);
+}
+
+
+void
+RemoteReplicantView::AttachedToWindow()
+{
+	BView::AttachedToWindow();
+	TRACE("\"%s\" attached, %gx%g at %g,%g in %s\n", Name(),
+		Bounds().Width() + 1, Bounds().Height() + 1, Frame().left, Frame().top,
+		Parent() != NULL ? Parent()->Name() : "?");
+	BMessage check(kMsgCheck);
+	fCheckRunner = new BMessageRunner(BMessenger(this), &check,
+		kCheckInterval);
+	_Start();
+}
+
+
+void
+RemoteReplicantView::DetachedFromWindow()
+{
+	delete fCheckRunner;
+	fCheckRunner = NULL;
+	if (fReplicant.IsValid())
+		fReplicant.SendMessage(kMsgRemoteReplicantStop);
+	_Disconnect();
+	BView::DetachedFromWindow();
+}
+
+
+void
+RemoteReplicantView::Draw(BRect updateRect)
+{
+	// The tray's own background, then whatever the replicant drew; the
+	// last picture stays while the app isn't running.
+	BView* parent = Parent();
+	SetHighColor(parent != NULL ? parent->ViewColor()
+		: ui_color(B_PANEL_BACKGROUND_COLOR));
+	FillRect(updateRect);
+	if (fBitmap != NULL) {
+		SetDrawingMode(B_OP_ALPHA);
+		SetBlendingMode(B_PIXEL_ALPHA, B_ALPHA_OVERLAY);
+		DrawBitmap(fBitmap, B_ORIGIN);
+		SetDrawingMode(B_OP_COPY);
+	}
+}
+
+
+void
+RemoteReplicantView::FrameMoved(BPoint newPosition)
+{
+	if (fReplicant.IsValid()) {
+		BMessage moved(kMsgRemoteReplicantMoved);
+		moved.AddPoint("screen_origin", ConvertToScreen(B_ORIGIN));
+		fReplicant.SendMessage(&moved);
+	}
+}
+
+
+void
+RemoteReplicantView::MouseDown(BPoint where)
+{
+	TRACE("mouse down at %g,%g (%s)\n", where.x, where.y,
+		fReplicant.IsValid() ? "forwarding" : "app not running");
+	if (!fReplicant.IsValid()) {
+		// Nothing runs the replicant: start the app, as clicking an app's
+		// replicant usually leads to it.
+		if (fSignature.Length() > 0 && !be_roster->IsRunning(fSignature))
+			be_roster->Launch(fSignature);
+		return;
+	}
+	if (Window()->CurrentMessage() != NULL)
+		fButtons = Window()->CurrentMessage()->GetInt32("buttons", 0);
+	SetMouseEventMask(B_POINTER_EVENTS, B_LOCK_WINDOW_FOCUS);
+	_Forward(where);
+}
+
+
+void
+RemoteReplicantView::MouseUp(BPoint where)
+{
+	fButtons = 0;
+	_Forward(where);
+}
+
+
+void
+RemoteReplicantView::MouseMoved(BPoint where, uint32 transit,
+	const BMessage* dragMessage)
+{
+	_Forward(where);
+}
+
+
+void
+RemoteReplicantView::MessageReceived(BMessage* message)
+{
+	switch (message->what) {
+		case kMsgRemoteReplicantStarted:
+			_Started(message);
+			break;
+
+		case kMsgRemoteReplicantFailed:
+			fprintf(stderr, "Deskbar: %s can't run its replicant \"%s\": %s\n",
+				fSignature.String(), Name(),
+				strerror(message->GetInt32("error", B_ERROR)));
+			fStarting = false;
+			break;
+
+		case kMsgRemoteReplicantPixels:
+			_CopyPixels();
+			break;
+
+		case kMsgCheck:
+			if (fReplicant.IsValid())
+				break;
+			if (fArea >= 0) {
+				// The app quit: keep the last picture, wait for it again.
+				_Disconnect();
+			}
+			if (!fStarting || system_time() - fStartTime > 5 * kCheckInterval)
+				_Start();
+			break;
+
+		case B_MOUSE_WHEEL_CHANGED:
+			if (fReplicant.IsValid()) {
+				BMessage forward(kMsgRemoteReplicantEvent);
+				BMessage event(*message);
+				BPoint where;
+				uint32 buttons;
+				GetMouse(&where, &buttons, false);
+				event.RemoveName("where");
+				event.AddPoint("where", where);
+				forward.AddMessage("event", &event);
+				forward.AddPoint("screen_origin", ConvertToScreen(B_ORIGIN));
+				fReplicant.SendMessage(&forward);
+			}
+			break;
+
+		default:
+			BView::MessageReceived(message);
+	}
+}
+
+
+void
+RemoteReplicantView::_Start()
+{
+	BMessenger app(fSignature.String());
+	TRACE("start \"%s\" in %s: %s\n", Name(), fSignature.String(),
+		app.IsValid() ? "running" : "not running");
+	if (!app.IsValid())
+		return;
+	BMessage start(kMsgRemoteReplicantStart);
+	start.AddMessage("archive", &fReplicantArchive);
+	start.AddMessenger("host", BMessenger(this));
+	start.AddPoint("screen_origin", ConvertToScreen(B_ORIGIN));
+	if (app.SendMessage(&start, (BHandler*)NULL, 0) == B_OK) {
+		fStarting = true;
+		fStartTime = system_time();
+	}
+}
+
+
+void
+RemoteReplicantView::_Started(BMessage* message)
+{
+	_Disconnect();
+	fStarting = false;
+
+	area_id source = message->GetInt32("area", -1);
+	void* base = NULL;
+	area_id area = clone_area("remote replicant", &base, B_ANY_ADDRESS,
+		B_READ_AREA, source);
+	TRACE("started; area %" B_PRId32 " cloned as %" B_PRId32 "\n", source,
+		area);
+	if (area < 0)
+		return;
+	const remote_replicant_header* header
+		= (const remote_replicant_header*)base;
+	if (header->magic != kRemoteReplicantMagic) {
+		delete_area(area);
+		return;
+	}
+	fArea = area;
+	fAreaBase = (const uint8*)base;
+	message->FindMessenger("replicant", &fReplicant);
+
+	BRect bounds(0, 0, header->width - 1, header->height - 1);
+	if (fBitmap == NULL || fBitmap->Bounds() != bounds) {
+		delete fBitmap;
+		fBitmap = new BBitmap(bounds, B_RGBA32);
+	}
+	_CopyPixels();
+}
+
+
+void
+RemoteReplicantView::_Disconnect()
+{
+	if (fArea >= 0)
+		delete_area(fArea);
+	fArea = -1;
+	fAreaBase = NULL;
+	fReplicant = BMessenger();
+}
+
+
+void
+RemoteReplicantView::_CopyPixels()
+{
+	if (fAreaBase == NULL || fBitmap == NULL)
+		return;
+	const remote_replicant_header* header
+		= (const remote_replicant_header*)fAreaBase;
+	const uint8* source = fAreaBase + kRemoteReplicantPixelOffset;
+	uint8* target = (uint8*)fBitmap->Bits();
+	int32 targetRow = fBitmap->BytesPerRow();
+	int32 rowBytes = header->width * 4;
+	if (rowBytes > targetRow)
+		rowBytes = targetRow;
+	int32 rows = fBitmap->Bounds().IntegerHeight() + 1;
+	if (rows > header->height)
+		rows = header->height;
+	for (int32 y = 0; y < rows; y++) {
+		memcpy(target + y * targetRow, source + y * header->bytes_per_row,
+			rowBytes);
+	}
+	Invalidate();
+}
+
+
+void
+RemoteReplicantView::_Forward(BPoint where)
+{
+	if (!fReplicant.IsValid() || Window() == NULL)
+		return;
+	BMessage* current = Window()->CurrentMessage();
+	if (current == NULL)
+		return;
+
+	BMessage event(current->what);
+	event.AddPoint("where", where);
+	event.AddInt64("when", current->GetInt64("when", system_time()));
+	event.AddInt32("buttons", current->GetInt32("buttons", fButtons));
+	event.AddInt32("modifiers", current->GetInt32("modifiers", modifiers()));
+	if (current->what == B_MOUSE_DOWN)
+		event.AddInt32("clicks", current->GetInt32("clicks", 1));
+	if (current->what == B_MOUSE_MOVED)
+		event.AddInt32("be:transit", current->GetInt32("be:transit", 0));
+
+	BMessage forward(kMsgRemoteReplicantEvent);
+	forward.AddMessage("event", &event);
+	forward.AddPoint("screen_origin", ConvertToScreen(B_ORIGIN));
+	status_t status = fReplicant.SendMessage(&forward);
+	if (current->what != B_MOUSE_MOVED)
+		TRACE("forwarded %.4s: %s\n", (char*)&current->what, strerror(status));
+}
