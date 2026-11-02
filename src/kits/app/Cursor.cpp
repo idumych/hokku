@@ -49,8 +49,10 @@ create_custom_cursor_from_legacy_data(const uint8* data)
 			uint16 bit = (uint16)(1 << (15 - x));
 			uint8* dst = &pixels[(size_t)y * (size_t)kRowBytes + (size_t)x * 4];
 
-			if ((transparencyMask & bit) == 0) {
-				// Fully transparent pixel.
+			// as Haiku's ServerCursor: a set image bit is black whatever
+			// the mask says, else the mask's bit white, else transparent
+			bool black = (imageMask & bit) != 0;
+			if (!black && (transparencyMask & bit) == 0) {
 				dst[0] = 0;
 				dst[1] = 0;
 				dst[2] = 0;
@@ -58,8 +60,6 @@ create_custom_cursor_from_legacy_data(const uint8* data)
 				continue;
 			}
 
-			// Opaque black/white pixel from image mask.
-			bool black = (imageMask & bit) != 0;
 			uint8 color = black ? 0 : 255;
 			dst[0] = color;
 			dst[1] = color;
