@@ -19,12 +19,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <map>
+#include <string>
+
 static BClipboard sClipboard(NULL);
 BClipboard *be_clipboard = &sClipboard;
 
 using namespace BPrivate;
 
 static const bigtime_t kClipboardRefreshInterval = 2000000; // 2 seconds
+
+// What each clipboard last committed, all of it: the system clipboard holds
+// only its text, so while that text is still there the message is this
+// process's own, as Haiku's registrar keeps it (outside the class, whose
+// size apps were built with)
+struct CommittedData {
+	BMessage message;
+	std::string text;
+};
+static std::map<const BClipboard*, CommittedData> sCommitted;
 
 
 BClipboard::BClipboard(const char *name, bool transient)
@@ -267,6 +280,20 @@ BClipboard::_DownloadFromSystem(bool force)
 
 	size_t length = 0;
 	char* text = cosmoe_display_get_clipboard_text(display, &length);
+	std::map<const BClipboard*, CommittedData>::iterator committed
+		= sCommitted.find(this);
+	if (committed != sCommitted.end()) {
+		if (committed->second.text == std::string(text != NULL ? text : "",
+				text != NULL ? length : 0)) {
+			free(text);
+			*fData = committed->second.message;
+			fLastDownloadTime = now;
+			fHaveCachedData = true;
+			return B_OK;
+		}
+		// someone else's now
+		sCommitted.erase(committed);
+	}
 	if (!text) {
 		fData->MakeEmpty();
 		fLastDownloadTime = now;
@@ -295,13 +322,14 @@ BClipboard::_UploadToSystem()
 {
 	_EnsureDataAllocated();
 	
-	// Get text from the BMessage
-	const char* text = NULL;
+	// Get text from the BMessage (none: the system clipboard emptied, as
+	// it is this process's now)
+	const char* text = "";
 	ssize_t length = 0;
 	
 	if (fData->FindData("text/plain", B_MIME_TYPE, (const void**)&text, &length) != B_OK) {
-		// No text data in clipboard
-		return B_OK;
+		text = "";
+		length = 0;
 	}
 
 	// Upload to backend
@@ -315,6 +343,9 @@ BClipboard::_UploadToSystem()
 	int result = cosmoe_display_set_clipboard_text(display, text, length);
 	if (result != 0)
 		return B_ERROR;
+	CommittedData& committed = sCommitted[this];
+	committed.message = *fData;
+	committed.text.assign(text, length);
 
 	// Increment commit count
 	fCount++;
