@@ -67,6 +67,23 @@ unpremultiply_argb32_row_to_opaque_scalar(const uint8* srcRow, uint8* dstRow,
 }
 
 
+// The same keeping the alpha, for bitmaps that have one (B_RGBA32).
+static inline void
+unpremultiply_argb32_row_scalar(const uint8* srcRow, uint8* dstRow,
+	int32 width)
+{
+	for (int32 x = 0; x < width; x++) {
+		uint8 a = srcRow[x * 4 + 3];
+		for (int32 c = 0; c < 3; c++) {
+			uint8 value = srcRow[x * 4 + c];
+			dstRow[x * 4 + c] = a == 0 ? 0
+				: (uint8)((value * 255 + a / 2) / a);
+		}
+		dstRow[x * 4 + 3] = a;
+	}
+}
+
+
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__SSE2__)
 static inline __m128i
 premultiply_div255_epi16(__m128i value)

@@ -1284,12 +1284,17 @@ BBitmap::_AssertPointer()
 	cairo_paint(cr);
 	cairo_destroy(cr);
 
+	// An RGBA32 bitmap keeps what its views left transparent, as on Haiku
+	bool hasAlpha = fColorSpace == B_RGBA32 || fColorSpace == B_RGBA32_BIG;
 	uint8* data = cairo_image_surface_get_data(copySurface);
 	int32 stride = cairo_image_surface_get_stride(copySurface);
 	if (data != NULL && stride > 0) {
 		for (int32 y = 0; y < height; y++) {
 			uint8* row = data + y * stride;
-			unpremultiply_argb32_row_to_opaque_scalar(row, row, width);
+			if (hasAlpha)
+				unpremultiply_argb32_row_scalar(row, row, width);
+			else
+				unpremultiply_argb32_row_to_opaque_scalar(row, row, width);
 		}
 		cairo_surface_mark_dirty(copySurface);
 
@@ -1329,6 +1334,13 @@ BBitmap::_UpdateSurface()
 		if (data != NULL && stride > 0
 			&& BPrivate::ConvertBits(fBasePointer, data, fSize, stride * height,
 				fBytesPerRow, stride, fColorSpace, B_RGBA32, width, height) == B_OK) {
+			// Cairo's pixels are premultiplied; RGBA32 bits aren't
+			if (fColorSpace == B_RGBA32 || fColorSpace == B_RGBA32_BIG) {
+				for (int32 y = 0; y < height; y++) {
+					uint8* row = data + y * stride;
+					premultiply_rgba_row_scalar(row, row, width);
+				}
+			}
 			cairo_surface_mark_dirty(copySurface);
 			cairo_t* cr = cairo_create(fWindow->fBackingSurface);
 			if (cr != NULL && cairo_status(cr) == CAIRO_STATUS_SUCCESS) {
