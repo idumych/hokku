@@ -52,11 +52,14 @@ private:
 			void				_CopyPixels();
 			void				_Forward(BPoint where);
 			void				_ShowMenu(BMessage* message);
+			void				_ShowHostMenu();
+			void				_Launch();
 	static	void				_AddMenuItems(BMenu* menu, BMessage* archive,
 									BMessage* path, BHandler* target);
 
 			BMessage			fReplicantArchive;
 			BString				fSignature;
+			BString				fAppPath;	// to start it when it isn't running
 			BMessenger			fReplicant;
 			BMessageRunner*		fCheckRunner;
 			area_id				fArea;

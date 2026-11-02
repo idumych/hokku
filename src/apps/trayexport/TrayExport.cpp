@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <spawn.h>
 #include <unistd.h>
 
 #include <condition_variable>
@@ -60,6 +61,12 @@ static const guint kMenuTimeoutMs = 500;
 static const bigtime_t kCheckInterval = 1000000;
 // Trays fetch the whole icon on every NewIcon: no more than this often.
 static const bigtime_t kMinIconInterval = 66000;
+
+extern char** environ;
+
+// Paths in the host's own menu, shown while the item's app isn't running
+static const int32 kStartAppPath = -1;
+static const int32 kRemoveItemPath = -2;
 
 static const char* kItemInterface = "org.kde.StatusNotifierItem";
 static const char* kWatcherName = "org.kde.StatusNotifierWatcher";
@@ -746,6 +753,9 @@ private:
 			void				_Send(uint32 what, BPoint where,
 									BPoint screen, int32 buttons);
 			void				_SetMenu(BMessage* message);
+			void				_SetHostMenu();
+			void				_PublishMenu(std::vector<MenuNode>& nodes);
+			void				_Launch();
 			void				_AddNodes(BMessage* archive, int32 parent,
 									std::vector<int32> path,
 									std::vector<MenuNode>& nodes);
@@ -764,6 +774,8 @@ private:
 			const uint8*		fAreaBase;
 			bool				fStarting;
 			bigtime_t			fStartTime;
+			BString				fAppName;
+			BString				fAppPath;	// to start it when it isn't running
 };
 
 
@@ -792,6 +804,7 @@ Item::Item(int32 id, const BMessage& archive)
 	app_info info;
 	if (be_roster->GetAppInfo(fSignature.String(), &info) == B_OK)
 		appName = BPath(&info.ref).Leaf();
+	fAppName = appName;
 	for (int32 i = 0; i < count; i++) {
 		Tile* tile = new Tile;
 		tile->item = this;
@@ -896,8 +909,10 @@ Item::Event(BMessage* event)
 	int32 index = event->GetInt32("tile", 0);
 	int32 kind = event->GetInt32("kind", kEventActivate);
 	if (!fReplicant.IsValid()) {
-		if (kind != kEventScroll && !be_roster->IsRunning(fSignature))
-			be_roster->Launch(fSignature);
+		// Nothing runs the item: a click starts its app (its menu then has
+		// Start and Remove, see _SetHostMenu()).
+		if (kind == kEventActivate)
+			_Launch();
 		return;
 	}
 
@@ -933,8 +948,11 @@ Item::RequestMenu(int32 index)
 {
 	// The tray is about to open the menu: a right click on the tile makes
 	// the replicant open it, and it comes back as kMsgRemoteReplicantMenu.
-	if (!fReplicant.IsValid())
+	// Without its app, the menu is ours.
+	if (!fReplicant.IsValid()) {
+		_SetHostMenu();
 		return;
+	}
 	int32 tileWidth = fWidth / (int32)fTiles.size();
 	BPoint where(index * tileWidth + tileWidth / 2, fHeight / 2);
 	_Send(B_MOUSE_DOWN, where, B_ORIGIN, B_SECONDARY_MOUSE_BUTTON);
@@ -945,6 +963,17 @@ Item::RequestMenu(int32 index)
 void
 Item::MenuChosen(BMessage* message)
 {
+	int32 first = message->GetInt32("path", 0);
+	if (first == kStartAppPath) {
+		_Launch();
+		return;
+	}
+	if (first == kRemoveItemPath) {
+		BMessage remove(kMsgRemoveItem);
+		remove.AddInt32("id", fID);
+		be_app->PostMessage(&remove);
+		return;
+	}
 	if (!fReplicant.IsValid())
 		return;
 	BMessage choice(kMsgRemoteReplicantMenuChoice);
@@ -986,6 +1015,32 @@ Item::_SetMenu(BMessage* message)
 		return;
 	std::vector<MenuNode> nodes(1);
 	_AddNodes(&archive, 0, std::vector<int32>(), nodes);
+	_PublishMenu(nodes);
+}
+
+
+void
+Item::_SetHostMenu()
+{
+	std::vector<MenuNode> nodes(4);
+	BString start;
+	start.SetToFormat("Start %s", fAppName.String());
+	nodes[1].label = start.String();
+	nodes[1].path = {kStartAppPath};
+	entry_ref ref;
+	nodes[1].enabled = fAppPath.Length() > 0
+		|| be_roster->FindApp(fSignature.String(), &ref) == B_OK;
+	nodes[2].separator = true;
+	nodes[3].label = "Remove from tray";
+	nodes[3].path = {kRemoveItemPath};
+	nodes[0].children = {1, 2, 3};
+	_PublishMenu(nodes);
+}
+
+
+void
+Item::_PublishMenu(std::vector<MenuNode>& nodes)
+{
 	{
 		std::lock_guard<std::mutex> _(fMenu->lock);
 		fMenu->nodes.swap(nodes);
@@ -994,6 +1049,29 @@ Item::_SetMenu(BMessage* message)
 	TRACE("\"%s\" menu: %zu items\n", Name(), fMenu->nodes.size() - 1);
 	std::shared_ptr<MenuModel> menu = fMenu;
 	on_glib([menu]() { answer_waiting(menu.get(), true); });
+}
+
+
+void
+Item::_Launch()
+{
+	if (be_roster->IsRunning(fSignature.String()))
+		return;
+	if (be_roster->Launch(fSignature.String()) == B_OK)
+		return;
+	// Not in the MIME database (an app run from where it was built, an
+	// AppImage): start the executable it ran from last time.
+	if (fAppPath.Length() == 0 || access(fAppPath.String(), X_OK) != 0) {
+		fprintf(stderr, "TrayExport: don't know how to start %s\n",
+			fSignature.String());
+		return;
+	}
+	char* argv[] = { (char*)fAppPath.String(), NULL };
+	pid_t pid;
+	if (posix_spawn(&pid, fAppPath.String(), NULL, NULL, argv, environ) != 0)
+		fprintf(stderr, "TrayExport: couldn't start %s\n", fAppPath.String());
+	else
+		TRACE("started %s\n", fAppPath.String());
 }
 
 
@@ -1058,6 +1136,19 @@ Item::_Started(BMessage* message)
 	fWidth = header->width;
 	fHeight = header->height;
 	message->FindMessenger("replicant", &fReplicant);
+
+	// Where the app runs from, to start it again after it quits
+	char link[64];
+	snprintf(link, sizeof(link), "/proc/%d/exe",
+		(int)message->ReturnAddress().Team());
+	char path[B_PATH_NAME_LENGTH];
+	ssize_t length = readlink(link, path, sizeof(path) - 1);
+	if (length > 0) {
+		path[length] = '\0';
+		fAppPath = path;
+		if (fAppName == fSignature)
+			fAppName = BPath(path).Leaf();
+	}
 	TRACE("\"%s\" started, %" B_PRId32 "x%" B_PRId32 " in %zu icons\n",
 		Name(), fWidth, fHeight, fTiles.size());
 	_CopyPixels();

@@ -10,6 +10,7 @@
 
 #include <Bitmap.h>
 #include <MenuItem.h>
+#include <Path.h>
 #include <MessageRunner.h>
 #include <PopUpMenu.h>
 #include <SeparatorItem.h>
@@ -18,8 +19,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <spawn.h>
 #include <string.h>
+#include <unistd.h>
 
+#include <DeskbarPrivate.h>
 #include <RemoteReplicant.h>
 
 
@@ -44,6 +48,10 @@ debugging()
 
 static const uint32 kMsgCheck = 'rrCk';
 static const uint32 kMsgMenuChoice = 'rrCh';
+static const uint32 kMsgStartApp = 'rrSa';
+static const uint32 kMsgRemoveSelf = 'rrRm';
+
+extern char** environ;
 static const char* kArchiveField = "remote:archive";
 static const char* kSignatureField = "remote:signature";
 // How often to look for the app again while it isn't running, and to
@@ -172,10 +180,9 @@ RemoteReplicantView::MouseDown(BPoint where)
 	TRACE("mouse down at %g,%g (%s)\n", where.x, where.y,
 		fReplicant.IsValid() ? "forwarding" : "app not running");
 	if (!fReplicant.IsValid()) {
-		// Nothing runs the replicant: start the app, as clicking an app's
-		// replicant usually leads to it.
-		if (fSignature.Length() > 0 && !be_roster->IsRunning(fSignature))
-			be_roster->Launch(fSignature);
+		// Nothing runs the replicant: our own menu, to start the app or
+		// take the item out.
+		_ShowHostMenu();
 		return;
 	}
 	if (Window()->CurrentMessage() != NULL)
@@ -223,6 +230,19 @@ RemoteReplicantView::MessageReceived(BMessage* message)
 		case kMsgRemoteReplicantMenu:
 			_ShowMenu(message);
 			break;
+
+		case kMsgStartApp:
+			_Launch();
+			break;
+
+		case kMsgRemoveSelf:
+		{
+			// Through Deskbar's own request, which deletes us.
+			BMessage remove(kMsgRemoveItem);
+			remove.AddString("name", Name());
+			Window()->PostMessage(&remove);
+			break;
+		}
 
 		case kMsgMenuChoice:
 			if (fReplicant.IsValid()) {
@@ -311,6 +331,17 @@ RemoteReplicantView::_Started(BMessage* message)
 	fArea = area;
 	fAreaBase = (const uint8*)base;
 	message->FindMessenger("replicant", &fReplicant);
+
+	// Where the app runs from, to start it again after it quits
+	char link[64];
+	snprintf(link, sizeof(link), "/proc/%d/exe",
+		(int)message->ReturnAddress().Team());
+	char path[B_PATH_NAME_LENGTH];
+	ssize_t length = readlink(link, path, sizeof(path) - 1);
+	if (length > 0) {
+		path[length] = '\0';
+		fAppPath = path;
+	}
 
 	BRect bounds(0, 0, header->width - 1, header->height - 1);
 	if (fBitmap == NULL || fBitmap->Bounds() != bounds) {
@@ -402,6 +433,48 @@ RemoteReplicantView::_ShowMenu(BMessage* message)
 	BPoint where = ConvertToScreen(Bounds().LeftBottom() + BPoint(0, 1));
 	TRACE("showing a menu of %" B_PRId32 " items\n", menu->CountItems());
 	menu->Go(where, true, true, ConvertToScreen(Bounds()), true);
+}
+
+
+void
+RemoteReplicantView::_ShowHostMenu()
+{
+	BString appName = fAppPath.Length() > 0 ? BPath(fAppPath).Leaf()
+		: fSignature.String();
+	BString start;
+	start.SetToFormat("Start %s", appName.String());
+	BPopUpMenu* menu = new BPopUpMenu(Name(), false, false);
+	menu->SetFont(be_plain_font);
+	BMenuItem* item = new BMenuItem(start, new BMessage(kMsgStartApp));
+	entry_ref ref;
+	item->SetEnabled(fAppPath.Length() > 0
+		|| be_roster->FindApp(fSignature.String(), &ref) == B_OK);
+	menu->AddItem(item);
+	menu->AddSeparatorItem();
+	menu->AddItem(new BMenuItem("Remove from Deskbar",
+		new BMessage(kMsgRemoveSelf)));
+	menu->SetTargetForItems(this);
+	menu->SetAsyncAutoDestruct(true);
+	menu->Go(ConvertToScreen(Bounds().LeftBottom() + BPoint(0, 1)), true, true,
+		ConvertToScreen(Bounds()), true);
+}
+
+
+void
+RemoteReplicantView::_Launch()
+{
+	if (be_roster->IsRunning(fSignature.String()))
+		return;
+	if (be_roster->Launch(fSignature.String()) == B_OK)
+		return;
+	// Not in the MIME database (an app run from where it was built, an
+	// AppImage): start the executable it ran from last time.
+	if (fAppPath.Length() == 0 || access(fAppPath.String(), X_OK) != 0)
+		return;
+	char* argv[] = { (char*)fAppPath.String(), NULL };
+	pid_t pid;
+	if (posix_spawn(&pid, fAppPath.String(), NULL, NULL, argv, environ) != 0)
+		fprintf(stderr, "Deskbar: couldn't start %s\n", fAppPath.String());
 }
 
 
