@@ -6,6 +6,7 @@
 #define _SCREEN_H
 
 
+#include <Accelerant.h>
 #include <GraphicsDefs.h>
 #include <Rect.h>
 #include <OS.h>
@@ -35,6 +36,10 @@ public:
 			uint8				InvertIndex(uint8 index);
 
 			const color_map*	ColorMap();
+
+			status_t			GetMode(display_mode* mode);
+			status_t			GetMode(uint32 workspace,
+									display_mode* mode);
 
 			status_t			WaitForRetrace();
 			status_t			WaitForRetrace(bigtime_t timeout);

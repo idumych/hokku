@@ -10,6 +10,8 @@
 
 #include <Screen.h>
 
+#include <string.h>
+
 #include <new>
 
 #include <Application.h>
@@ -87,6 +89,44 @@ BScreen::Frame()
 	return BRect(allocation.x, allocation.y,
 		allocation.x + allocation.width - 1,
 		allocation.y + allocation.height - 1);
+}
+
+
+/*!	\brief The screen's mode: its size, and the 60 Hz timing the
+		retraces WaitForRetrace() waits for keep (the backends don't give a
+		refresh rate yet).
+*/
+status_t
+BScreen::GetMode(display_mode* mode)
+{
+	return GetMode(0, mode);
+}
+
+
+status_t
+BScreen::GetMode(uint32 workspace, display_mode* mode)
+{
+	(void)workspace;
+	if (mode == NULL)
+		return B_BAD_VALUE;
+	BRect frame = Frame();
+	uint16 width = uint16(frame.IntegerWidth() + 1);
+	uint16 height = uint16(frame.IntegerHeight() + 1);
+	memset(mode, 0, sizeof(display_mode));
+	mode->timing.h_display = width;
+	mode->timing.h_sync_start = width + 16;
+	mode->timing.h_sync_end = width + 112;
+	mode->timing.h_total = width + 160;
+	mode->timing.v_display = height;
+	mode->timing.v_sync_start = height + 3;
+	mode->timing.v_sync_end = height + 9;
+	mode->timing.v_total = height + 45;
+	mode->timing.pixel_clock = uint32(uint64(mode->timing.h_total)
+		* mode->timing.v_total * 60 / 1000);
+	mode->space = B_RGB32;
+	mode->virtual_width = width;
+	mode->virtual_height = height;
+	return B_OK;
 }
 
 

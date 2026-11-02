@@ -2232,14 +2232,20 @@ BWindow::SendBehind(const BWindow* window)
 void
 BWindow::Flush() const
 {
-	// no-op for Cosmoe
+	// What was drawn reaches the screen now, as app_server shows it once
+	// the commands are flushed (drawing outside Draw(): a view animating
+	// in a loop, say): the backend copies the backing surface over. Not
+	// for a bitmap's window, one not on screen yet, or inside an update
+	// (Draw()), which asks for the copy itself when it ends.
+	if (fBackingSurfaceValid && !fOffscreen && !fInTransaction && fShowLevel <= 0)
+		const_cast<BWindow*>(this)->_RequestTrackingRedraw();
 }
 
 
 void
 BWindow::Sync() const
 {
-	// no-op for Cosmoe
+	Flush();
 }
 
 
