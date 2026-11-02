@@ -1615,13 +1615,20 @@ BFont::GetHeight(font_height* _height) const
 		
 		// Set resolution BEFORE loading font so it loads at correct DPI
 		pango_cairo_context_set_resolution(context, 72.0);
+		// the font's own metrics, not rounded to whole pixels (as Haiku's)
+		cairo_font_options_t* options = cairo_font_options_create();
+		cairo_font_options_set_hint_metrics(options, CAIRO_HINT_METRICS_OFF);
+		pango_cairo_context_set_font_options(context, options);
+		cairo_font_options_destroy(options);
 		
 		PangoFont* font = pango_font_map_load_font(fontmap, context, fontdesc);
 		PangoFontMetrics* m = pango_font_get_metrics(font, NULL);
 				
-		fHeight.ascent = pango_font_metrics_get_ascent(m) / PANGO_SCALE;
-		fHeight.descent = pango_font_metrics_get_descent(m) / PANGO_SCALE;
-		fHeight.leading = (pango_font_metrics_get_height(m) / PANGO_SCALE) - fHeight.ascent - fHeight.descent;
+		// in points with their fractions, as Haiku's (not whole Pango units)
+		fHeight.ascent = pango_font_metrics_get_ascent(m) / float(PANGO_SCALE);
+		fHeight.descent = pango_font_metrics_get_descent(m) / float(PANGO_SCALE);
+		fHeight.leading = pango_font_metrics_get_height(m) / float(PANGO_SCALE)
+			- fHeight.ascent - fHeight.descent;
 	
 		//printf("leading: %f, ascent: %f, descent: %f\n", fHeight.leading, fHeight.ascent, fHeight.descent);
 	
