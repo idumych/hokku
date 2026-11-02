@@ -2171,6 +2171,9 @@ BMenu::_Track(int* action, long start)
 	
 	// Remember the current click sequence - new clicks will close the menu
 	uint32 startSequence = BWindow::GetNonMenuClickSequence();
+	// Closed by a click elsewhere or Escape (which comes to the focused
+	// window, not to us): nothing is chosen, whatever is under the pointer
+	bool dismissed = false;
 
 	BPoint location;
 	uint32 buttons = 0;
@@ -2193,6 +2196,7 @@ BMenu::_Track(int* action, long start)
 
 		if (BWindow::GetNonMenuClickSequence() != startSequence) {
 			fState = MENU_STATE_CLOSED;
+			dismissed = true;
 			break;
 		}
 
@@ -2313,6 +2317,7 @@ BMenu::_Track(int* action, long start)
 			do {
 				if (BWindow::GetNonMenuClickSequence() != startSequence) {
 					fState = MENU_STATE_CLOSED;
+					dismissed = true;
 					break;
 				}
 				snooze(snoozeAmount);
@@ -2348,8 +2353,11 @@ BMenu::_Track(int* action, long start)
 	if (action != NULL)
 		*action = fState;
 
-	// keyboard Enter will set this
-	if (fChosenItem != NULL) {
+	if (dismissed) {
+		DBG(OUT("BMenu::_Track() dismissed, returning NULL\n"));
+		item = NULL;
+	} else if (fChosenItem != NULL) {
+		// keyboard Enter will set this
 		DBG(OUT("BMenu::_Track() returning fChosenItem: '%s'\n", fChosenItem->Label()));
 		item = fChosenItem;
 	} else if (fSelected == NULL) {
