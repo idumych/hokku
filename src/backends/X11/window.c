@@ -1500,25 +1500,29 @@ window_set_position(struct window *window, int x, int y)
 	 * will be processed by the event loop and notify any registered move
 	 * handler. We update internal coords immediately to keep the stored
 	 * state consistent. */
-	XMoveWindow(xdisplay, window->xwindow, x, y);
-	window->x = x;
-	window->y = y;
-
-	/* A window not mapped yet opens where its frame says, as on Haiku: the
+	/* The position is the window's content's, as Haiku's BWindow::MoveTo
+	 * has it, not its decorated frame's: StaticGravity (ICCCM 4.1.2.3).
+	 * A window not mapped yet opens where its frame says, as on Haiku: the
 	 * window manager places it itself unless WM_NORMAL_HINTS name the
 	 * position (a pop-up slider, a floater opened at a drop point). */
+	XSizeHints hints;
+	long supplied;
+	if (!XGetWMNormalHints(xdisplay, window->xwindow, &hints, &supplied)) {
+		memset(&hints, 0, sizeof(hints));
+		hints.flags = 0;
+	}
+	hints.flags |= PWinGravity;
+	hints.win_gravity = StaticGravity;
 	if (!window->mapped) {
-		XSizeHints hints;
-		long supplied;
-		if (!XGetWMNormalHints(xdisplay, window->xwindow, &hints, &supplied)) {
-			memset(&hints, 0, sizeof(hints));
-			hints.flags = 0;
-		}
 		hints.flags |= USPosition | PPosition;
 		hints.x = x;
 		hints.y = y;
-		XSetWMNormalHints(xdisplay, window->xwindow, &hints);
 	}
+	XSetWMNormalHints(xdisplay, window->xwindow, &hints);
+
+	XMoveWindow(xdisplay, window->xwindow, x, y);
+	window->x = x;
+	window->y = y;
 }
 
 static void
