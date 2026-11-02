@@ -350,6 +350,7 @@ private:
 									bool* _usePreferred);
 			void				_SanitizeMessage(BMessage* message,
 									BHandler* target, bool usePreferred);
+			int32				_PopupGutter() const;
 			bool				_StealMouseMessage(BMessage* message,
 									bool& deleteMessage);
 			uint32				_TransitForMouseMoved(BView* view,

@@ -632,9 +632,21 @@ public:
 
 	virtual backend_window_t WindowPopupCreate(backend_display_t display, int32_t token, int32_t parent_token, int32_t x, int32_t y, int32_t width, int32_t height, bool grab, void* data)
 	{
+		return WindowPopupCreateWithGutter(display, token, parent_token, x, y,
+			width, height, grab, data, 0);
+	}
+
+	virtual void WindowSetInputRect(backend_window_t window, int32_t x, int32_t y, int32_t width, int32_t height)
+	{
+		if (window != NULL)
+			window_set_input_rect((struct window*)window, x, y, width, height);
+	}
+
+	virtual backend_window_t WindowPopupCreateWithGutter(backend_display_t display, int32_t token, int32_t parent_token, int32_t x, int32_t y, int32_t width, int32_t height, bool grab, void* data, int32_t gutter)
+	{
 		struct window* parent = display_find_window_by_token((struct display*)display, parent_token);
 		// Use a Wayland popup created with a given position and parent
-		struct window* win = window_popup_create((struct display*)display, parent, x, y, width, height, grab);
+		struct window* win = window_popup_create_gutter((struct display*)display, parent, x, y, width, height, grab, gutter);
 		if (win) {
 			window_set_token(win, token);
 			window_set_user_data(win, data);

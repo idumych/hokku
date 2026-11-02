@@ -264,6 +264,10 @@ private:
 			bool				_SnakeSuperitemFrame(BRect& frame);
 			BRect				_SnakeBand(BRect& superFrame);
 			void				_DrawSnake(BRect updateRect);
+			void				_DrawSnakeJoin(BView* target, BPoint offset,
+									bool inGutter);
+			float				_SnakeGutter(BPoint screenLocation);
+			void				_InvalidateSnake();
 			BMenuItem*			_NextItem(BMenuItem* item, bool forward) const;
 			void				_SetIgnoreHidden(bool ignoreHidden)
 									{ fIgnoreHidden = ignoreHidden; }

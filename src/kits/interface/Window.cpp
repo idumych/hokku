@@ -44,6 +44,7 @@
 #include <MenuBar.h>
 #include <MenuItem.h>
 #include <MenuPrivate.h>
+#include <MenuWindow.h>
 #include <MessagePrivate.h>
 #include <MessageQueue.h>
 #include <MessageRunner.h>
@@ -647,6 +648,10 @@ view_redraw_handler(struct widget *widget, void *data)
 					// The fBackingSurface is at physical resolution but the CGContext is already
 					// scaled by Cocoa for Retina. Scale the source pattern to compensate.
 					cairo_set_source_surface(cr, window->fBackingSurface, offset_h, offset_v);
+					// a partly transparent window (ZSnake's strips) is copied
+					// alpha and all, not laid over the buffer's last frame
+					if ((window->fFlags & kWindowTransparentFlag) != 0)
+						cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 					
 					double scale = _DisplayScaleFactor(window->fDisplayScalePercent);
 					if (scale != 1.0) {
@@ -4105,6 +4110,7 @@ BWindow::MoveTo(float x, float y)
 				fLink->Attach<int32_t>(Bounds().IntegerWidth());
 				fLink->Attach<int32_t>(Bounds().IntegerHeight());
 				fLink->Attach<bool>((fFlags & kWindowPopupGrabFlag) != 0);
+				fLink->Attach<int32_t>(_PopupGutter());
 				fLink->Flush();
 			}
 			// Complete the show (registers callbacks, resizes)
@@ -4515,7 +4521,7 @@ BWindow::_CreateBackingSurface()
 	// alpha bitmaps don't pick up an opaque panel-colored background.
 	cairo_t* cr = cairo_create(fBackingSurface);
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-	if (fOffscreen) {
+	if (fOffscreen || (fFlags & kWindowTransparentFlag) != 0) {
 		cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
 	} else {
 		rgb_color panelColor = ui_color(B_PANEL_BACKGROUND_COLOR);
@@ -5040,6 +5046,7 @@ BWindow::_InitData(BRect frame, const char* title, window_look look,
 		fLink->Attach<int32_t>(fFrame.IntegerWidth());
 		fLink->Attach<int32_t>(fFrame.IntegerHeight());
 		fLink->Attach<bool>((fFlags & kWindowPopupGrabFlag) != 0);
+		fLink->Attach<int32_t>(_PopupGutter());
 		fLink->Flush();
 		STRACE(("Created popup backend window token=%d at %d,%d (scale %d%%) with parent token=%d\n",
 			(int)fWindowToken, popupX, popupY, scalePercent, (int)parentToken));
@@ -6511,3 +6518,12 @@ void BWindow::_ReservedWindow6() {}
 void BWindow::_ReservedWindow7() {}
 void BWindow::_ReservedWindow8() {}
 
+
+//!	Hokku: a menu window's ZSnake strip, which the backend leaves out
+int32
+BWindow::_PopupGutter() const
+{
+	const BPrivate::BMenuWindow* menuWindow
+		= dynamic_cast<const BPrivate::BMenuWindow*>(this);
+	return menuWindow != NULL ? (int32)menuWindow->SnakeGutter() : 0;
+}

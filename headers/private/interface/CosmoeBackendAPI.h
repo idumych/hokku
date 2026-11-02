@@ -65,6 +65,9 @@ enum {
 	/* a popup (kMenuWindowFeel) that holds ordinary views: it takes the
 	 * pointer and keyboard, and is closed when the user clicks elsewhere */
 	COSMOE_PRIVATE_WINDOW_POPUP_GRAB_FLAG = 0x20000000,
+	/* a window whose backing starts fully transparent: what its views leave
+	 * undrawn shows what's under it (a menu's ZSnake gutter) */
+	COSMOE_PRIVATE_WINDOW_TRANSPARENT_FLAG = 0x40000000,
 };
 
 enum {
@@ -206,6 +209,10 @@ int32_t cosmoe_window_get_display_scale(cosmoe_display_t display, int32_t token)
 // window's surface coordinates; false if the backend doesn't say.
 bool cosmoe_window_get_popup_offset(cosmoe_display_t display, int32_t token,
 	int32_t* x, int32_t* y);
+// Hokku: where the window takes pointer input, in window coordinates; an
+// empty rectangle gives it back the whole window.
+void cosmoe_window_set_input_rect(cosmoe_display_t display, int32_t token,
+	int32_t x, int32_t y, int32_t width, int32_t height);
 
 // Native menu support
 status_t cosmoe_window_set_native_menubar(cosmoe_display_t display,

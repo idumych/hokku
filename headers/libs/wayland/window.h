@@ -487,6 +487,17 @@ window_uses_client_side_decorations(struct window *window);
 	creates an xdg_toplevel. With grab, it takes an explicit grab (a popup
 	holding ordinary views) and its window is closed when it's dismissed. */
 struct window *
+window_popup_create_gutter(struct display *display,
+			   struct window *parent_window, int x, int y,
+			   int width, int height, int grab, int gutter);
+
+/* Where the window takes pointer input, in surface coordinates; a width or
+ * height of 0 gives it back the whole surface. */
+void
+window_set_input_rect(struct window *window, int x, int y, int width,
+		      int height);
+
+struct window *
 window_popup_create(struct display *display, struct window *parent_window, int x, int y,
 		     int width, int height, int grab);
 

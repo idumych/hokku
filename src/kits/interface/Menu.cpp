@@ -69,6 +69,13 @@ struct TrackingMenu {
 
 #include "utf8_functions.h"
 
+
+// The strip each side of a submenu's window, where its snake joins the
+// supermenu, over the supermenu's edge; and the margin above and below it,
+// for the superitem's outline (the backend knows both: window.c).
+static const float kSnakeGutter = 8;
+static const float kSnakeMargin = 2;
+
 // debugging
 //#define DBG(x) x
 #define DBG(x)
@@ -123,10 +130,12 @@ public:
 	// allows us to draw submenus in the same direction as their parents.
 	bool				frameShiftedLeft;
 
-	// Hokku: the ZSnake (Dano's hidden menu effect, B_UI_MENU_ZSNAKE): a
-	// submenu joins its selected item to the item it hangs from with a
-	// band along its edge. Where that item was when the submenu opened, in
-	// screen and in its window's coordinates.
+	// Hokku: ZSnake, a clean-room implementation of the menu effect BeOS
+	// Dano hid in its Menu preferences: a submenu's selection joined to the
+	// item it hangs from by one outlined path. snakeStyle: selected items
+	// take its highlight; snake: this menu hangs beside its superitem, which
+	// was here when it opened (screen and window coordinates).
+	bool				snakeStyle;
 	bool				snake;
 	BRect				snakeSuperitemScreen;
 	BRect				snakeSuperitemWindow;
@@ -136,6 +145,7 @@ public:
 		trackingHook = NULL;
 		trackingState = NULL;
 		frameShiftedLeft = false;
+		snakeStyle = false;
 		snake = false;
 	}
 };
@@ -508,7 +518,11 @@ BMenu::Draw(BRect updateRect)
 
 	DrawBackground(updateRect);
 	DrawItems(updateRect);
-	_DrawSnake(updateRect);
+	BMenuWindow* window = dynamic_cast<BMenuWindow*>(Window());
+	if (window != NULL && window->SnakeGutter() > 0)
+		_DrawSnakeJoin(this, B_ORIGIN, false);
+	else
+		_DrawSnake(updateRect);
 }
 
 
@@ -1712,6 +1726,9 @@ BMenu::_Show(bool selectFirstItem, bool keyDown)
 	// and use that one if possible.
 	BMenuWindow* window = NULL;
 	bool ourWindow = false;
+	fExtraMenuData->snakeStyle = fLayout == B_ITEMS_IN_COLUMN
+		&& BPrivate::get_menu_snake();
+
 	if (fSuper != NULL) {
 		SupermenuLocker locker(fSuper);
 		fSuperbounds = fSuper->ConvertToScreen(fSuper->Bounds());
@@ -1719,7 +1736,7 @@ BMenu::_Show(bool selectFirstItem, bool keyDown)
 
 		fExtraMenuData->snake = false;
 		if (fSuperitem != NULL && fSuper->Window() != NULL
-			&& BPrivate::get_menu_snake()) {
+			&& fExtraMenuData->snakeStyle) {
 			BRect frame = fSuper->ConvertToScreen(fSuperitem->Frame());
 			fExtraMenuData->snakeSuperitemScreen = frame;
 			fExtraMenuData->snakeSuperitemWindow
@@ -3360,14 +3377,8 @@ BMenu::_SelectItem(BMenuItem* item, bool showSubmenu, bool selectFirstItem, bool
 		if (fSelected != NULL)
 			fSelected->Select(true);
 
-		// the snake's band runs from the superitem to the selection
-		BRect superFrame;
-		if (Window() != NULL && _SnakeSuperitemFrame(superFrame)) {
-			BRect band = _SnakeBand(superFrame);
-			band.top = Bounds().top;
-			band.bottom = Bounds().bottom;
-			Invalidate(band);
-		}
+		// the snake runs from the superitem to the selection
+		_InvalidateSnake();
 	}
 
 	if (fSelected != NULL && showSubmenu) {
@@ -3508,6 +3519,217 @@ BMenu::_DrawSnake(BRect updateRect)
 	}
 
 	PopState();
+}
+
+
+/*!	Whether this menu's window gets ZSnake's strips: on Wayland (where
+	windows can be partly transparent and let the pointer through), for a
+	menu beside its superitem, not one under a window's menu bar title.
+*/
+float
+BMenu::_SnakeGutter(BPoint screenLocation)
+{
+	if (!fExtraMenuData->snake)
+		return 0;
+	const char* backendName = cosmoe_backend_get_current_name();
+	if (backendName == NULL || strcmp(backendName, "Wayland") != 0)
+		return 0;
+
+	const BRect super = fExtraMenuData->snakeSuperitemScreen;
+	if (screenLocation.x > super.right - 2
+		|| screenLocation.x + Bounds().Width() < super.left + 2) {
+		return kSnakeGutter;
+	}
+	return 0;
+}
+
+
+void
+BMenu::_InvalidateSnake()
+{
+	if (Window() == NULL)
+		return;
+
+	BMenuWindow* window = dynamic_cast<BMenuWindow*>(Window());
+	if (window != NULL && window->SnakeGutter() > 0) {
+		// the join's columns inside this menu, at either edge
+		const BRect bounds = Bounds();
+		Invalidate(BRect(bounds.left, bounds.top, bounds.left + 5,
+			bounds.bottom));
+		Invalidate(BRect(bounds.right - 5, bounds.top, bounds.right,
+			bounds.bottom));
+		window->InvalidateSnakeGutter();
+		return;
+	}
+
+	BRect superFrame;
+	if (_SnakeSuperitemFrame(superFrame)) {
+		BRect band = _SnakeBand(superFrame);
+		band.top = Bounds().top;
+		band.bottom = Bounds().bottom;
+		Invalidate(band);
+	}
+}
+
+
+/*!	ZSnake's join between the superitem's highlight and the selected item's,
+	pixel for pixel. Columns are counted from this menu's edge facing the
+	supermenu: 1 and up lie outside it, in the window's strip (drawn with
+	inGutter into \a target, the window's frame view, at \a offset); 0 and
+	down are this menu's own border and the columns inside it.
+
+	The path: the superitem's highlight carries on over the supermenu's edge;
+	a band (outline, 3 columns of the selection colour, then this menu's
+	border as its other outline) runs up or down to the selected item, whose
+	highlight opens toward it. Every corner turns on a 3-pixel diagonal.
+*/
+void
+BMenu::_DrawSnakeJoin(BView* target, BPoint offset, bool inGutter)
+{
+	BRect superFrame;
+	if (fSelected == NULL || fLayout != B_ITEMS_IN_COLUMN
+		|| !_SnakeSuperitemFrame(superFrame)) {
+		return;
+	}
+
+	const BRect bounds = Bounds();
+	const BRect item = fSelected->Frame();
+	const bool superOnLeft = superFrame.left + superFrame.right
+		< bounds.left + bounds.right;
+	if (superOnLeft ? superFrame.right > bounds.left
+			: superFrame.left < bounds.right) {
+		return;
+	}
+
+	const int32 side = superOnLeft ? 1 : -1;
+	const int32 edge = (int32)(superOnLeft ? bounds.left : bounds.right);
+	// outline rows of both highlights; the row under each is its light line
+	const int32 st = (int32)superFrame.top;
+	const int32 sb = (int32)superFrame.bottom - 1;
+	const int32 ct = (int32)item.top;
+	const int32 cb = (int32)item.bottom - 1;
+	const int32 far = (int32)kSnakeGutter;
+
+	const rgb_color background = ui_color(B_MENU_BACKGROUND_COLOR);
+	const rgb_color colors[] = {
+		ui_color(B_MENU_SELECTED_BACKGROUND_COLOR),
+		ui_color(B_MENU_SELECTED_BORDER_COLOR),
+		background,
+		mix_color(background, ui_color(B_SHINE_COLOR), 0xba)
+	};
+	enum { kFill, kLine, kBackground, kShine };
+
+	target->PushState();
+	target->SetDrawingMode(B_OP_COPY);
+
+	// columns from..to (counted as above) of one row
+	auto run = [&](int32 row, int32 from, int32 to, int kind) {
+		if (from > to)
+			std::swap(from, to);
+		if (inGutter)
+			from = std::max(from, (int32)1);
+		else
+			to = std::min(to, (int32)0);
+		const float margin = inGutter ? kSnakeMargin : 0;
+		if (from > to || row < bounds.top - margin
+			|| row > bounds.bottom + margin) {
+			return;
+		}
+		const float x1 = edge - side * from;
+		const float x2 = edge - side * to;
+		target->SetHighColor(colors[kind]);
+		target->FillRect(BRect(std::min(x1, x2), row, std::max(x1, x2), row)
+			.OffsetByCopy(offset));
+	};
+	auto band = [&](int32 row) {
+		run(row, 4, 4, kLine);
+		run(row, 1, 3, kFill);
+	};
+
+	// down or up by where the two highlights start; the pieces may overlap
+	if (ct > st) {
+		// the selected item lower: down from the superitem
+		run(st, 2, far, kLine);
+		run(st, 1, 1, kBackground);
+		run(st + 1, 2, far, kFill);
+		run(st + 1, 1, 1, kLine);
+		for (int32 row = st + 2; row < sb; row++)
+			run(row, 1, far, kFill);
+		run(sb, 6, far, kLine);
+		run(sb, 1, 5, kFill);
+		run(sb + 1, 6, far, kShine);
+		run(sb + 1, 5, 5, kLine);
+		run(sb + 1, 1, 4, kFill);
+		for (int32 row = sb + 2; row <= ct - 2; row++)
+			band(row);
+
+		band(ct - 1);
+		run(ct - 1, 0, 0, kFill);
+		run(ct - 1, -1, -1, kLine);
+		band(ct);
+		run(ct, 0, -1, kFill);
+		for (int32 row = ct + 1; row <= cb - 2; row++) {
+			band(row);
+			run(row, 0, 0, kFill);
+		}
+		if (!superOnLeft)
+			run(cb - 2, 3, 3, kLine);
+		run(cb - 1, 3, 3, kLine);
+		run(cb - 1, 0, 2, kFill);
+		run(cb, 0, 2, kLine);
+		run(cb + 1, 0, 0, kShine);
+	} else if (ct < st) {
+		// the selected item higher: up from the superitem
+		run(ct, 0, 2, kLine);
+		run(ct + 1, 3, 3, kLine);
+		run(ct + 1, 0, 2, kFill);
+		for (int32 row = ct + 2; row < cb; row++) {
+			band(row);
+			run(row, 0, 0, kFill);
+		}
+		band(cb);
+		run(cb, 0, -1, kFill);
+		band(cb + 1);
+		run(cb + 1, 0, 0, kFill);
+		run(cb + 1, -1, -1, kLine);
+		run(cb + 1, -2, -4, kBackground);
+		for (int32 row = cb + 2; row <= st - 2; row++)
+			band(row);
+
+		run(st - 1, 5, 5, kLine);
+		run(st - 1, 1, 4, kFill);
+		run(st, 6, far, kLine);
+		run(st, 1, 5, kFill);
+		for (int32 row = st + 1; row <= sb - 3; row++)
+			run(row, 1, far, kFill);
+		for (int32 row = std::max(st + 1, sb - 2); row < sb; row++) {
+			run(row, 2, far, kFill);
+			run(row, 1, 1, kLine);
+		}
+		run(sb, 2, far, kLine);
+		run(sb, 1, 1, kBackground);
+		run(sb + 1, 2, far, kShine);
+		run(sb + 1, 1, 1, kBackground);
+	} else {
+		// level with it: straight across
+		const int32 top = st;
+		const int32 bottom = std::min(sb, cb);
+		run(top, 0, far, kLine);
+		for (int32 row = top + 1; row < bottom; row++)
+			run(row, 0, far, kFill);
+		run(bottom, 0, far, kLine);
+		run(bottom + 1, 0, far, kShine);
+	}
+
+	target->PopState();
+}
+
+
+bool
+BPrivate::MenuPrivate::SnakeStyle() const
+{
+	return fMenu->fExtraMenuData != NULL
+		&& fMenu->fExtraMenuData->snakeStyle;
 }
 
 
@@ -3751,12 +3973,20 @@ BMenu::_UpdateWindowViewSize(const bool &move)
 	BRect frame = _CalcFrame(screenLocation, &scroll);
 	ResizeTo(frame.Width(), frame.Height());
 
+	// ZSnake's strips: the window grows by one each side, the menu stays
+	// where it was
+	const float gutter = scroll || fItems.CountItems() == 0
+		? 0 : _SnakeGutter(screenLocation);
+	window->SetSnakeGutter(gutter);
+
 	if (fItems.CountItems() > 0) {
 		if (!scroll) {
 			if (fLayout == B_ITEMS_IN_COLUMN)
 				window->DetachScrollers();
 
-			window->ResizeTo(Bounds().Width(), Bounds().Height());
+			const float margin = gutter > 0 ? kSnakeMargin : 0;
+			window->ResizeTo(Bounds().Width() + 2 * gutter,
+				Bounds().Height() + 2 * margin);
 		} else {
 
 			// Resize the window to fit the screen without overflowing the
@@ -3792,7 +4022,8 @@ BMenu::_UpdateWindowViewSize(const bool &move)
 	}
 
 	if (move)
-		window->MoveTo(frame.LeftTop());
+		window->MoveTo(frame.LeftTop()
+			- BPoint(gutter, gutter > 0 ? kSnakeMargin : 0));
 }
 
 

@@ -42,6 +42,8 @@ const uint32 kWindowPanelOffsetFlag = COSMOE_PRIVATE_WINDOW_PANEL_OFFSET_FLAG;
 	// a corner panel's MoveTo() sets its distance to the corner (on Wayland,
 	// where windows don't place themselves); without it, it sits in it
 const uint32 kWindowPopupGrabFlag = COSMOE_PRIVATE_WINDOW_POPUP_GRAB_FLAG;
+const uint32 kWindowTransparentFlag = COSMOE_PRIVATE_WINDOW_TRANSPARENT_FLAG;
+	// the window's backing starts fully transparent
 	// a kMenuWindowFeel window holding ordinary views (a slider, say) that
 	// opens beside its parent (see BPrivate::set_popup_window_parent()),
 	// takes the pointer and keyboard, and gets B_QUIT_REQUESTED when the

@@ -488,6 +488,7 @@ BackendMessageProcessor::ProcessMessages(CosmoeBackend* backend,
 			int32_t width;
 			int32_t height;
 			bool grab;
+			int32_t gutter;
 
 			if (link.Read<void*>(&display_ptr) == B_OK
 				&& link.Read<int32_t>(&token) == B_OK
@@ -499,11 +500,12 @@ BackendMessageProcessor::ProcessMessages(CosmoeBackend* backend,
 				&& link.Read<void*>(&topView) == B_OK
 				&& link.Read<int32_t>(&width) == B_OK
 				&& link.Read<int32_t>(&height) == B_OK
-				&& link.Read<bool>(&grab) == B_OK) {
+				&& link.Read<bool>(&grab) == B_OK
+				&& link.Read<int32_t>(&gutter) == B_OK) {
 
-				backend_window_t window = backend->WindowPopupCreate(
+				backend_window_t window = backend->WindowPopupCreateWithGutter(
 					(backend_display_t)display_ptr, token, parent_token,
-					popup_x, popup_y, width, height, grab, data);
+					popup_x, popup_y, width, height, grab, data, gutter);
 
 				if (window != NULL) {
 					if (appId != NULL)

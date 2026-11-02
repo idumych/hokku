@@ -38,6 +38,9 @@ public:
 			menu_layout			Layout() const;
 			void				SetLayout(menu_layout layout);
 
+			// Hokku: ZSnake on, selected items take its highlight
+			bool				SnakeStyle() const;
+
 			void				ItemMarked(BMenuItem* item);
 			void				CacheFontInfo();
 

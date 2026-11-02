@@ -405,16 +405,23 @@ to the Haiku project, whose work made both possible.
   standard cursors (cursor-shape protocol), following its cursor theme.
 - **ZSnake, from BeOS Dano.** Dano hid it in its Menu preferences (Ctrl+Alt+Shift showed
   "Show ZSnake!"): the selection runs as one path from a menu's item, along the open
-  submenu's edge, to the submenu's selected item, a step for each level. In Hokku a submenu
-  draws the band along its edge facing the item it opened from, with the control look's menu
-  highlight, so it takes Haiku's, Gonx's or Be's look. On Wayland the band follows the submenu
-  wherever the compositor placed it (`cosmoe_window_get_popup_offset()`). A menu beside the
-  item it opens from gets one too, so in the Deskbar the snake starts at the menu button,
-  drawn in the selection colour while it's open, as Dano's was. Submenus open on the side
-  their menu opened to (the Deskbar's to the left), so the path steps one way, and a submenu
-  the compositor flips lands beside its menu's other edge rather than over it. Appearance's
-  *Look and feel* tab turns it on (*Join submenus to the item they open from*); it's off by
-  default, as in Dano, and menus in running apps show it once they restart.
+  submenu's edge, to the submenu's selected item, a step for each level. Hokku's is a
+  clean-room implementation, matched pixel for pixel against screenshots of Dano: selected
+  items get Dano's highlight (the selection colour in an outline of the selected-border
+  colour, corner pixels left out, a light line under it), and a submenu's window reaches 8
+  pixels past the menu on each side (2 above and below), transparent there and leaving the
+  pointer to what's under it, so the band runs over the supermenu's edge as Dano's does: an
+  outline, 3 pixels of the selection colour, and the submenu's border as its other outline,
+  every corner turned on a 3-pixel diagonal. Where Hokku's colours differ from Dano's (the
+  menu border, the Gonx selection colour), the theme's are used. On Wayland the snake follows
+  the submenu wherever the compositor placed it (`cosmoe_window_get_popup_offset()`); the
+  strips need a compositor that blends, so X11 keeps a band drawn inside the submenu. A menu
+  beside the item it opens from gets one too, so in the Deskbar the snake starts at the menu
+  button, drawn in the selection colour while it's open. Submenus open on the side their menu
+  opened to (the Deskbar's to the left) and slide rather than flip to fit, so the path steps
+  one way and stays level with its item. Appearance's *Look and feel* tab turns it on (*Join
+  submenus to the item they open from*); it's off by default, as in Dano, and menus in
+  running apps show it once they restart.
 - **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,
   `set_ui_colors()` and `BScreen::SetDesktopColor()` did nothing, `ui_color()` always gave
   the built-in colours, and the fonts saved by Appearance were replaced by the defaults when

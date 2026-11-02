@@ -252,6 +252,15 @@ public:
 		int32_t token, uint32_t look, uint32_t feel, uint32_t flags, bool offscreen,
 		void* data) = 0;
 	virtual backend_window_t WindowPopupCreate(backend_display_t display, int32_t token, int32_t parent_token, int32_t x, int32_t y, int32_t width, int32_t height, bool grab, void* data) = 0;
+	// Hokku: a popup with a transparent strip (gutter) on each side, which
+	// the backend leaves out when placing it beside its parent (a menu's
+	// ZSnake); backends without one place the whole window.
+	virtual backend_window_t WindowPopupCreateWithGutter(backend_display_t display, int32_t token, int32_t parent_token, int32_t x, int32_t y, int32_t width, int32_t height, bool grab, void* data, int32_t gutter)
+		{ (void)gutter; return WindowPopupCreate(display, token, parent_token, x, y, width, height, grab, data); }
+	// Hokku: where the window takes pointer input (window coordinates); an
+	// empty rectangle gives it back the whole window
+	virtual void WindowSetInputRect(backend_window_t window, int32_t x, int32_t y, int32_t width, int32_t height)
+		{ (void)window; (void)x; (void)y; (void)width; (void)height; }
 	virtual void WindowGetPosition(backend_window_t window, int32_t* x, int32_t* y) = 0;
 	// Set window position in absolute screen coordinates (may be a no-op on some backends)
 	virtual void WindowSetPosition(backend_window_t window, int32_t x, int32_t y) = 0;

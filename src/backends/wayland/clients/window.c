@@ -703,6 +703,12 @@ struct window {
 	struct window *popup_parent;
 	int popup_x, popup_y;
 	bool popup_placed;
+	/* a popup's transparent strip all round (a menu's ZSnake gutter): the
+	 * menu itself starts popup_gutter pixels in */
+	int popup_gutter;
+	/* where the window takes pointer input, if not everywhere */
+	bool has_input_rect;
+	struct rectangle input_rect;
 	char *title;
 	char *appid;
 	struct rectangle saved_allocation;
@@ -5199,6 +5205,11 @@ surface_contains(struct window *window, float x, float y)
 
 	if (window->main_surface == NULL)
 		return false;
+	if (window->has_input_rect) {
+		struct rectangle *r = &window->input_rect;
+		return x >= r->x && y >= r->y && x < r->x + r->width
+			&& y < r->y + r->height;
+	}
 	allocation = &window->main_surface->allocation;
 	return x >= 0 && y >= 0 && x < allocation->width
 		&& y < allocation->height;
@@ -6326,6 +6337,16 @@ surface_resize(struct surface *surface)
 				       widget->allocation.width,
 				       widget->allocation.height,
 				       widget->user_data);
+
+	if (widget->window->has_input_rect
+	    && surface == widget->window->main_surface) {
+		struct rectangle *r = &widget->window->input_rect;
+		if (surface->input_region == NULL)
+			surface->input_region =
+				wl_compositor_create_region(compositor);
+		wl_region_add(surface->input_region, r->x, r->y, r->width,
+			      r->height);
+	}
 
 	if (surface->subsurface &&
 	    (surface->allocation.x != widget->allocation.x ||
@@ -8547,6 +8568,43 @@ struct window *
 window_popup_create(struct display *display, struct window *parent_window, int x, int y,
 		    int width, int height, int grab)
 {
+	return window_popup_create_gutter(display, parent_window, x, y, width,
+					  height, grab, 0);
+}
+
+void
+window_set_input_rect(struct window *window, int x, int y, int width,
+		      int height)
+{
+	struct surface *surface = window->main_surface;
+
+	window->has_input_rect = width > 0 && height > 0;
+	window->input_rect.x = x;
+	window->input_rect.y = y;
+	window->input_rect.width = width;
+	window->input_rect.height = height;
+
+	if (surface == NULL || surface->surface == NULL)
+		return;
+	if (surface->input_region != NULL)
+		wl_region_destroy(surface->input_region);
+	surface->input_region = NULL;
+	if (window->has_input_rect) {
+		surface->input_region =
+			wl_compositor_create_region(window->display->compositor);
+		wl_region_add(surface->input_region, x, y, width, height);
+	} else {
+		/* back to the whole surface */
+		wl_surface_set_input_region(surface->surface, NULL);
+	}
+	window_schedule_redraw(window);
+}
+
+struct window *
+window_popup_create_gutter(struct display *display,
+			   struct window *parent_window, int x, int y,
+			   int width, int height, int grab, int gutter)
+{
 	struct window *window;
 	struct xdg_positioner *positioner;
 	struct input *input;
@@ -8562,6 +8620,9 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	int anchor_x = x;
 	int anchor_y = y;
 	int anchor_width = 1;
+	int offset_x = 0;
+	int parent_gutter = 0;
+	bool beside = false;
 
 	/* Create a custom window (undecorated) for popups/tooltips */
 	window = window_create_internal(display, 1);
@@ -8572,6 +8633,7 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	window->x = x;
 	window->y = y;
 	window->popup_parent = parent_window;
+	window->popup_gutter = gutter;
 	
 	/* If no parent or no xdg_shell support, return basic window */
 	if (!parent_window || !display->xdg_shell) {
@@ -8627,12 +8689,27 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 		anchor_y += parent_interior_y - parent_geometry.y;
 	}
 
+	/* A popup with a gutter asks for its window's position; the menu inside
+	 * starts the gutter's width further in. The parent's own gutters aren't
+	 * part of the menu it opens beside. */
+	/* and a 2 px margin above and below it (BMenu's kSnakeMargin) */
+	const int margin = gutter > 0 ? 2 : 0;
+	anchor_x += gutter;
+	anchor_y += margin;
+	if (parent_window->xdg_popup != NULL) {
+		parent_gutter = parent_window->popup_gutter;
+		anchor_x -= parent_gutter;
+		parent_width -= 2 * parent_gutter;
+	}
+
 	if ((parent_window->xdg_popup != NULL || parent_window->layer_surface != NULL)
 		&& parent_width > 0 && parent_height > 0) {
 		if (anchor_x < 0) {
-			anchor_x = 0;
+			/* its strip lies over the parent's edge */
+			anchor_x = gutter;
 			nested_anchor = XDG_POSITIONER_ANCHOR_TOP_LEFT;
 			nested_gravity = XDG_POSITIONER_GRAVITY_BOTTOM_LEFT;
+			beside = true;
 		} else if (anchor_x >= parent_width) {
 			/* A submenu beside its item. Anchored to the parent's whole
 			 * width, a flip puts it beside the parent's other edge rather
@@ -8640,8 +8717,16 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 			 * to, as Haiku's frameShiftedLeft keeps a cascade going one way:
 			 * the Deskbar's menu opens left of the Deskbar, and so do its
 			 * submenus (and ZSnake's path steps down one way). */
-			anchor_x = 0;
-			anchor_width = parent_width;
+			/* its strips lie over the parent's edges: the anchor is
+			 * the parent's width less a strip each side (compositors
+			 * don't all mirror an offset when they flip) */
+			anchor_x = gutter;
+			anchor_width = parent_width - 2 * gutter;
+			if (anchor_width < 1) {
+				anchor_x = 0;
+				anchor_width = parent_width;
+			}
+			beside = true;
 			if (parent_window->xdg_popup != NULL
 			    && parent_window->popup_placed
 			    && parent_window->popup_x < 0) {
@@ -8652,6 +8737,7 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 				nested_gravity = XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT;
 			}
 		}
+		anchor_x += parent_gutter;
 
 		if (anchor_y < 0) {
 			anchor_y = 0;
@@ -8665,6 +8751,9 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	xdg_positioner_set_size(positioner, width, height);
 	xdg_positioner_set_anchor_rect(positioner, anchor_x, anchor_y,
 		anchor_width, 1);
+	/* the menu, not its strip, starts at the item's top */
+	if (gutter != 0)
+		xdg_positioner_set_offset(positioner, offset_x, -margin);
 
 	if (parent_window->xdg_popup != NULL || parent_window->layer_surface != NULL) {
 		xdg_positioner_set_anchor(positioner, nested_anchor);
@@ -8676,9 +8765,11 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	/* Wayland does not expose a toplevel's global position, so the Interface
 	 * Kit cannot reliably clip menus in screen coordinates. Let the compositor
 	 * flip or slide the popup onto the screen and constrain its height when
-	 * necessary. */
+	 * necessary. A menu beside its item slides up to fit, as Haiku's do, so
+	 * it stays level with the item; one under a menu bar title may open
+	 * above it. */
 	xdg_positioner_set_constraint_adjustment(positioner,
-		XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y
+		(beside ? 0 : XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y)
 		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y
 		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_RESIZE_Y
 		| XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X

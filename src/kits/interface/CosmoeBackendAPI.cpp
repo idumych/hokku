@@ -518,6 +518,17 @@ cosmoe_window_set_buffer_scale(cosmoe_display_t display, int32_t token, int32_t 
 }
 
 
+void
+cosmoe_window_set_input_rect(cosmoe_display_t display, int32_t token,
+	int32_t x, int32_t y, int32_t width, int32_t height)
+{
+	BPrivate::backend_window_t win = WindowFromToken(display, token);
+	CosmoeBackend* backend = GetBackend();
+	if (backend != NULL && win != NULL)
+		backend->WindowSetInputRect(win, x, y, width, height);
+}
+
+
 bool
 cosmoe_window_get_popup_offset(cosmoe_display_t display, int32_t token,
 	int32_t* x, int32_t* y)

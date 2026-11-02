@@ -43,6 +43,14 @@ public:
 			bool			TryScrollBy(const float& step);
 			bool			TryScrollTo(const float& where);
 
+			// Hokku: ZSnake, a clean-room implementation of BeOS Dano's menu
+			// effect: a transparent strip each side of the menu, the near
+			// one over the supermenu's edge, where the snake joins them
+			void			SetSnakeGutter(float gutter);
+			float			SnakeGutter() const { return fSnakeGutter; }
+			void			DrawSnakeGutter(BView* frameView);
+			void			InvalidateSnakeGutter();
+
 private:
 			bool			_Scroll(const BPoint& cursor);
 			void			_ScrollBy(const float& step);
@@ -55,6 +63,7 @@ private:
 			float			fScrollStep;
 			float			fValue;
 			float			fLimit;
+			float			fSnakeGutter;
 };
 
 }	// namespace BPrivate

@@ -11,12 +11,15 @@
 
 #include <MenuWindow.h>
 
+#include <Application.h>
 #include <ControlLook.h>
 #include <Debug.h>
 #include <Menu.h>
 #include <MenuItem.h>
+#include <Region.h>
 #include <Screen.h>
 
+#include <CosmoeBackendAPI.h>
 #include <MenuPrivate.h>
 #include <WindowPrivate.h>
 
@@ -209,6 +212,9 @@ BMenuFrame::DetachedFromWindow()
 void
 BMenuFrame::Draw(BRect updateRect)
 {
+	if (BMenuWindow* window = dynamic_cast<BMenuWindow*>(Window()))
+		window->DrawSnakeGutter(this);
+
 	if (fMenu != NULL && fMenu->CountItems() == 0) {
 		BRect rect(Bounds());
 		be_control_look->DrawMenuBackground(this, rect, updateRect,
@@ -328,12 +334,14 @@ BMenuWindow::BMenuWindow(const char *name)
 	:
 	BWindow(BRect(0, 0, 0, 0), name, B_BORDERED_WINDOW_LOOK, kMenuWindowFeel,
 		B_NOT_MOVABLE | B_NOT_ZOOMABLE | B_NOT_RESIZABLE | B_AVOID_FOCUS
-			| kAcceptKeyboardFocusFlag),
+			| kAcceptKeyboardFocusFlag | kWindowTransparentFlag),
+		// the menu covers the window, but ZSnake's strips beside it don't
 	fMenu(NULL),
 	fMenuFrame(NULL),
 	fUpperScroller(NULL),
 	fLowerScroller(NULL),
-	fScrollStep(19)
+	fScrollStep(19),
+	fSnakeGutter(0)
 {
 	SetSizeLimits(2, 10000, 2, 10000);
 }
@@ -368,6 +376,74 @@ BMenuWindow::FrameResized(float width, float height)
 	} else if (HasScrollers()) {
 		DetachScrollers();
 	}
+
+	if (fSnakeGutter > 0)
+		SetSnakeGutter(fSnakeGutter);
+}
+
+
+/*!	ZSnake's strips (a clean-room implementation of BeOS Dano's menu effect):
+	the window is  gutter wider than the menu on each side, transparent
+	there and leaving the pointer to what's under it.
+*/
+void
+BMenuWindow::SetSnakeGutter(float gutter)
+{
+	fSnakeGutter = gutter;
+	if (fMenuFrame != NULL) {
+		fMenuFrame->SetViewColor(gutter > 0 ? B_TRANSPARENT_COLOR
+			: ui_color(B_MENU_BACKGROUND_COLOR));
+	}
+	// the margin above and below matches BMenu's and the backend's
+	const float margin = gutter > 0 ? 2 : 0;
+	if (fMenu != NULL && fMenu->Frame().LeftTop() != BPoint(gutter, margin))
+		fMenu->MoveTo(gutter, margin);
+
+	if (be_app == NULL || WindowToken() == B_NULL_TOKEN)
+		return;
+	if (gutter > 0) {
+		BRect bounds = Bounds();
+		cosmoe_window_set_input_rect(be_app->Display(), WindowToken(),
+			(int32)gutter, (int32)margin,
+			bounds.IntegerWidth() + 1 - 2 * (int32)gutter,
+			bounds.IntegerHeight() + 1 - 2 * (int32)margin);
+	} else
+		cosmoe_window_set_input_rect(be_app->Display(), WindowToken(), 0, 0, 0, 0);
+}
+
+
+void
+BMenuWindow::DrawSnakeGutter(BView* frameView)
+{
+	if (fSnakeGutter <= 0 || fMenu == NULL)
+		return;
+
+	// clear the strips round the menu, then draw the snake's part in them
+	const BRect bounds = frameView->Bounds();
+	const BRect menu = fMenu->Frame();
+	frameView->PushState();
+	frameView->SetDrawingMode(B_OP_ALPHA);
+	frameView->SetBlendingMode(B_CONSTANT_ALPHA, B_ALPHA_COMPOSITE_CLEAR);
+	BRegion strips(bounds);
+	strips.Exclude(menu);
+	frameView->FillRegion(&strips);
+	frameView->PopState();
+
+	fMenu->_DrawSnakeJoin(frameView, menu.LeftTop(), true);
+}
+
+
+void
+BMenuWindow::InvalidateSnakeGutter()
+{
+	if (fSnakeGutter <= 0 || fMenu == NULL || fMenuFrame == NULL)
+		return;
+
+	const BRect bounds = fMenuFrame->Bounds();
+	const BRect menu = fMenu->Frame();
+	BRegion strips(bounds);
+	strips.Exclude(menu);
+	fMenuFrame->Invalidate(&strips);
 }
 
 
