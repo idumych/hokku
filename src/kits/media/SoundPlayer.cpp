@@ -18,6 +18,8 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -197,6 +199,8 @@ namespace {
 
 struct BackendState {
 	std::mutex lock;
+	ma_context context;
+	bool contextInitialized;
 	ma_device device;
 	bool initialized;
 	bool running;
@@ -204,7 +208,8 @@ struct BackendState {
 	std::vector<BPrivate::SoundPlayNode*> players;
 
 	BackendState()
-		:	initialized(false),
+		:	contextInitialized(false),
+			initialized(false),
 			running(false),
 			mixFormat(normalize_format(NULL))
 	{
@@ -290,7 +295,22 @@ ensure_backend(const media_raw_audio_format& requestedFormat)
 	config.dataCallback = backend_callback;
 	config.pUserData = NULL;
 
-	if (ma_device_init(NULL, &config, &sBackend.device) != MA_SUCCESS)
+	// COSMOE_AUDIO_BACKEND=null plays into miniaudio's null device: audio
+	// is paced in real time but goes nowhere, for tests and headless runs.
+	ma_context* context = NULL;
+	const char* backendName = getenv("COSMOE_AUDIO_BACKEND");
+	if (backendName != NULL && strcmp(backendName, "null") == 0) {
+		if (!sBackend.contextInitialized) {
+			ma_backend backends[] = { ma_backend_null };
+			if (ma_context_init(backends, 1, NULL, &sBackend.context)
+					!= MA_SUCCESS)
+				return B_ERROR;
+			sBackend.contextInitialized = true;
+		}
+		context = &sBackend.context;
+	}
+
+	if (ma_device_init(context, &config, &sBackend.device) != MA_SUCCESS)
 		return B_ERROR;
 
 	sBackend.mixFormat.channel_count = sBackend.device.playback.channels;
