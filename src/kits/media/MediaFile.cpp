@@ -271,8 +271,12 @@ MediaExtractor::_DecodeMemory(const void* data, size_t size,
 	if (data == NULL || size == 0)
 		return B_BAD_VALUE;
 
+	// Decode to float, which is what the track says it holds (left alone,
+	// miniaudio keeps the file's own sample format: 16-bit WAVs came out as
+	// 16-bit samples read as floats). Channels and rate stay the file's.
+	ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 0, 0);
 	ma_decoder decoder;
-	if (ma_decoder_init_memory(data, size, NULL, &decoder) != MA_SUCCESS)
+	if (ma_decoder_init_memory(data, size, &config, &decoder) != MA_SUCCESS)
 		return B_ERROR;
 
 	ma_uint64 frameCount = 0;

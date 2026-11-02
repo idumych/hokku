@@ -13,6 +13,8 @@
 
 #include <MediaTrack.h>
 
+#include <cmath>
+
 #include "MediaFilePrivate.h"
 #include <MediaDebug.h>
 
@@ -209,6 +211,101 @@ BMediaTrack::EncodedFormat(media_format* _format) const
 }
 
 
+// Raw audio samples, for converting between sample formats. The low
+// nibble of a media_raw_audio_format format is its size in bytes.
+static size_t
+sample_size(uint32 format)
+{
+	switch (format) {
+		case media_raw_audio_format::B_AUDIO_CHAR:
+		case media_raw_audio_format::B_AUDIO_UCHAR:
+		case media_raw_audio_format::B_AUDIO_SHORT:
+		case media_raw_audio_format::B_AUDIO_INT:
+		case media_raw_audio_format::B_AUDIO_FLOAT:
+		case media_raw_audio_format::B_AUDIO_DOUBLE:
+			return format & 0xf;
+		default:
+			return 0;
+	}
+}
+
+
+static double
+read_sample(const uint8* data, uint32 format)
+{
+	switch (format) {
+		case media_raw_audio_format::B_AUDIO_CHAR:
+			return *(const int8*)data / 128.0;
+		case media_raw_audio_format::B_AUDIO_UCHAR:
+			return (*data - 128) / 128.0;
+		case media_raw_audio_format::B_AUDIO_SHORT:
+		{
+			int16 value;
+			std::memcpy(&value, data, sizeof(value));
+			return value / 32768.0;
+		}
+		case media_raw_audio_format::B_AUDIO_INT:
+		{
+			int32 value;
+			std::memcpy(&value, data, sizeof(value));
+			return value / 2147483648.0;
+		}
+		case media_raw_audio_format::B_AUDIO_FLOAT:
+		{
+			float value;
+			std::memcpy(&value, data, sizeof(value));
+			return value;
+		}
+		case media_raw_audio_format::B_AUDIO_DOUBLE:
+		{
+			double value;
+			std::memcpy(&value, data, sizeof(value));
+			return value;
+		}
+	}
+	return 0;
+}
+
+
+static void
+write_sample(uint8* data, uint32 format, double value)
+{
+	double clipped = value < -1.0 ? -1.0 : value > 1.0 ? 1.0 : value;
+	switch (format) {
+		case media_raw_audio_format::B_AUDIO_CHAR:
+			*(int8*)data = (int8)std::lround(std::min(clipped * 128.0, 127.0));
+			break;
+		case media_raw_audio_format::B_AUDIO_UCHAR:
+			*data = (uint8)std::lround(std::min(clipped * 128.0 + 128.0,
+				255.0));
+			break;
+		case media_raw_audio_format::B_AUDIO_SHORT:
+		{
+			int16 sample = (int16)std::lround(std::min(clipped * 32768.0,
+				32767.0));
+			std::memcpy(data, &sample, sizeof(sample));
+			break;
+		}
+		case media_raw_audio_format::B_AUDIO_INT:
+		{
+			int32 sample = (int32)std::llround(std::min(clipped * 2147483648.0,
+				2147483647.0));
+			std::memcpy(data, &sample, sizeof(sample));
+			break;
+		}
+		case media_raw_audio_format::B_AUDIO_FLOAT:
+		{
+			float sample = (float)value;
+			std::memcpy(data, &sample, sizeof(sample));
+			break;
+		}
+		case media_raw_audio_format::B_AUDIO_DOUBLE:
+			std::memcpy(data, &value, sizeof(value));
+			break;
+	}
+}
+
+
 status_t
 BMediaTrack::DecodedFormat(media_format* _format, uint32 flags)
 {
@@ -221,13 +318,26 @@ BMediaTrack::DecodedFormat(media_format* _format, uint32 flags)
 	if (_format->type != B_MEDIA_NO_TYPE && _format->type != B_MEDIA_RAW_AUDIO)
 		return B_MEDIA_BAD_FORMAT;
 
+	// Start from what the decoder produces; of a raw audio request, honour
+	// the sample format (ReadFrames() converts), keeping the decoder's
+	// channels and rate, which the caller reads back.
 	media_format requested = *_format;
-	*_format = fFormat;
-	if ((flags & 0x4000) == 0 && requested.type == B_MEDIA_RAW_AUDIO
+	const BPrivate::media::DecodedTrackInfo* track
+		= fExtractor->TrackInfoAt(fStream);
+	media_format native = track != NULL ? track->format : fFormat;
+	*_format = native;
+	if ((flags & 0x4000) == 0 && native.type == B_MEDIA_RAW_AUDIO
+		&& requested.type == B_MEDIA_RAW_AUDIO
 		&& requested.u.raw_audio.format != 0
-		&& requested.u.raw_audio.format != _format->u.raw_audio.format) {
-		if (SetupFormatTranslation(requested, &fFormat))
-			*_format = fFormat;
+		&& requested.u.raw_audio.format != native.u.raw_audio.format
+		&& sample_size(requested.u.raw_audio.format) != 0
+		&& sample_size(native.u.raw_audio.format) != 0) {
+		media_raw_audio_format& raw = _format->u.raw_audio;
+		raw.buffer_size = raw.buffer_size
+			/ sample_size(native.u.raw_audio.format)
+			* sample_size(requested.u.raw_audio.format);
+		raw.format = requested.u.raw_audio.format;
+		raw.byte_order = B_MEDIA_HOST_ENDIAN;
 	}
 	fFormat = *_format;
 	return B_OK;
@@ -329,9 +439,25 @@ BMediaTrack::ReadFrames(void* buffer, int64* _frameCount,
 	if (toRead == 0)
 		return B_LAST_BUFFER_ERROR;
 
-	size_t bytesPerFrame = frame_size(fFormat);
-	std::memcpy(buffer, track->decodedData.data() + fCurrentFrame * bytesPerFrame,
-		toRead * bytesPerFrame);
+	// The decoded data is in the decoder's format; the caller may have
+	// asked for another sample format (DecodedFormat()).
+	const media_raw_audio_format& from = track->format.u.raw_audio;
+	const media_raw_audio_format& to = fFormat.u.raw_audio;
+	size_t sourceFrame = frame_size(track->format);
+	const uint8* source = track->decodedData.data()
+		+ fCurrentFrame * sourceFrame;
+	if (track->format.type != B_MEDIA_RAW_AUDIO || from.format == to.format) {
+		std::memcpy(buffer, source, toRead * sourceFrame);
+	} else {
+		int64 samples = toRead * from.channel_count;
+		size_t fromSize = sample_size(from.format);
+		size_t toSize = sample_size(to.format);
+		uint8* target = (uint8*)buffer;
+		for (int64 i = 0; i < samples; i++) {
+			write_sample(target + i * toSize, to.format,
+				read_sample(source + i * fromSize, from.format));
+		}
+	}
 	fCurrentFrame += toRead;
 	fCurrentTime = (bigtime_t)((fCurrentFrame * 1000000.0) / _FrameRate());
 	return B_OK;
