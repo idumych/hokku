@@ -70,7 +70,7 @@ create_custom_cursor_from_legacy_data(const uint8* data)
 
 	return cosmoe_display_create_custom_cursor(pixels.data(), pixels.size(),
 		kSize, kSize, kRowBytes, (int32)B_RGBA32,
-		(int32)data[2], (int32)data[3]);
+		(int32)data[3], (int32)data[2]);	// (the hot spot's y, then x)
 }
 
 BCursor::BCursor(const void *cursorData)
