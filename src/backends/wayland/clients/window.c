@@ -79,6 +79,7 @@ enum {
 
 enum {
 	COSMOE_WINDOW_LOOK_DESKTOP = 4,
+	COSMOE_WINDOW_LOOK_NO_BORDER = 19,
 	COSMOE_WINDOW_FEEL_MODAL_APP = 1,
 	COSMOE_WINDOW_FEEL_FLOATING_APP = 4,
 	COSMOE_WINDOW_FEEL_DESKTOP = 1024
@@ -3860,6 +3861,15 @@ frame_tablet_tool_up_handler(struct widget *widget, struct tablet_tool *tool,
 	frame_handle_status(frame, tool->input, time, location);
 }
 
+/* B_NO_BORDER_WINDOW_LOOK: the app draws all of the window (a skinned
+ * player, a splash screen), so no frame of ours or the compositor's, and
+ * exactly the size the app asked for. */
+static int
+window_is_borderless(struct window *window)
+{
+	return window != NULL && window->look == COSMOE_WINDOW_LOOK_NO_BORDER;
+}
+
 /* Windows that get the Gonx or Haiku frame when one is chosen: the looks
  * that have a tab (titled, document, floating) and modal windows' plain
  * border. Others keep the theme's frame. */
@@ -3976,7 +3986,8 @@ window_frame_enable_client_side_decorations(struct window *window)
 	/* A panel or the desktop is a layer-shell surface: never framed. With
 	 * a frame, its size went into the window's, which the panel's size
 	 * limits then took back, over and over. */
-	if (window_uses_panel(window) || window->desktop_mode)
+	if (window_uses_panel(window) || window->desktop_mode
+		|| window_is_borderless(window))
 		return 0;
 
 	frame->frame = frame_create(window->display->theme, 0, 0,
@@ -6419,15 +6430,18 @@ window_configure_resize(struct window *window, int width, int height)
 	window->pending_allocation.width = width;
 	window->pending_allocation.height = height;
 
+	const int framed = window->frame != NULL
+		&& !window_is_borderless(window);
+
 	if (window->min_allocation.width == 0) {
-		if (width < min_width && window->frame)
+		if (width < min_width && framed)
 			window->min_allocation.width = min_width;
 		else
 			window->min_allocation.width = width;
 	}
 
 	if (window->min_allocation.height == 0) {
-		if (height < min_height && window->frame)
+		if (height < min_height && framed)
 			window->min_allocation.height = min_height;
 		else
 			window->min_allocation.height = height;
@@ -6928,6 +6942,33 @@ window_hide_tracking_outline(struct window *window)
 			wl_display_flush(display->display);
 	}
 	pthread_mutex_unlock(&sOutlineLock);
+}
+
+/* Haiku apps move a window themselves (a skinned player dragged by its
+ * background) by calling MoveTo() while a button is down. Wayland lets only
+ * the compositor place windows, so hand it the drag: once per press, as the
+ * compositor holds the pointer until the button comes up. */
+int
+window_move_with_pointer(struct window *window)
+{
+	struct input *input;
+
+	if (window == NULL || window->xdg_toplevel == NULL
+	    || window_uses_panel(window) || window->desktop_mode)
+		return 0;
+
+	wl_list_for_each(input, &window->display->input_list, link) {
+		if (input->grab == NULL || input->grab->window != window)
+			continue;
+		input_ungrab(input);
+		xdg_toplevel_move(window->xdg_toplevel, input->seat,
+				  window->display->serial);
+		if (window->move_start_handler != NULL)
+			window->move_start_handler(window,
+				window->move_start_user_data);
+		return 1;
+	}
+	return 0;
 }
 
 void
@@ -8392,6 +8433,7 @@ window_show(struct window *window)
 			zxdg_toplevel_decoration_v1_set_mode(
 				window->xdg_toplevel_decoration,
 				window->desktop_mode || window_uses_gonx(window)
+					|| window_is_borderless(window)
 					? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
 					: ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 		}

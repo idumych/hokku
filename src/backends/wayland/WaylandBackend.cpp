@@ -39,6 +39,7 @@ void window_set_topview_widget(struct window *window, struct widget *widget);
 void window_show(struct window *window);
 void window_hide(struct window *window);
 void window_set_look(struct window *window, uint32_t look);
+int window_move_with_pointer(struct window *window);
 void window_set_feel(struct window *window, uint32_t feel);
 void window_set_desktop_mode(struct window *window, int enabled);
 int window_is_desktop_mode(struct window *window);
@@ -801,8 +802,11 @@ public:
 
 	virtual void WindowSetPosition(backend_window_t window, int32_t x, int32_t y)
 	{
-		/* Wayland does not support absolute window move; only a corner
-		 * panel that keeps its offset turns it into margins */
+		/* Wayland does not support absolute window move: a move while a
+		 * button is held on the window becomes the compositor's drag, and
+		 * a corner panel that keeps its offset turns it into margins */
+		if (window_move_with_pointer((struct window*)window))
+			return;
 		window_set_panel_offset((struct window*)window, x, y);
 	}
 
