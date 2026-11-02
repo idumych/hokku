@@ -63,7 +63,7 @@ ZSnake in the Deskbar, and its switch in Appearance:
 
 | ZSnake in the Deskbar | The switch in Appearance |
 |---|---|
-| ![The Deskbar's menu in the Gonx look with Preferences open: the Hokku button in the selection colour, a band down the menu's edge from it to the Preferences highlight, and another from there down the submenu's edge to Tracker, its last item (shown at twice the size)](docs/screenshots/zsnake-deskbar.png) | ![Appearance's Look and feel tab: the control look, the scroll bar arrow style, and the boxes for window shadows and for joining submenus to the item they open from (ZSnake), both ticked](docs/screenshots/zsnake-appearance.png) |
+| ![The Deskbar's menu in the Gonx look with Preferences open: the Hokku button in the selection colour, a band down the menu's edge from it to the Preferences highlight, which runs left to the submenu opened beside it, and another band down that submenu's edge to Tracker, its last item: a staircase down and to the left (shown at twice the size)](docs/screenshots/zsnake-deskbar.png) | ![Appearance's Look and feel tab: the control look, the scroll bar arrow style, and the boxes for window shadows and for joining submenus to the item they open from (ZSnake), both ticked](docs/screenshots/zsnake-appearance.png) |
 
 <details>
 <summary>More screenshots</summary>
@@ -410,7 +410,9 @@ to the Haiku project, whose work made both possible.
   highlight, so it takes Haiku's, Gonx's or Be's look. On Wayland the band follows the submenu
   wherever the compositor placed it (`cosmoe_window_get_popup_offset()`). A menu beside the
   item it opens from gets one too, so in the Deskbar the snake starts at the menu button,
-  drawn in the selection colour while it's open, as Dano's was. Appearance's
+  drawn in the selection colour while it's open, as Dano's was. Submenus open on the side
+  their menu opened to (the Deskbar's to the left), so the path steps one way, and a submenu
+  the compositor flips lands beside its menu's other edge rather than over it. Appearance's
   *Look and feel* tab turns it on (*Join submenus to the item they open from*); it's off by
   default, as in Dano, and menus in running apps show it once they restart.
 - **System colours, fonts and the desktop colour are kept.** `set_ui_color()`,

@@ -8561,6 +8561,7 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	int parent_height = 0;
 	int anchor_x = x;
 	int anchor_y = y;
+	int anchor_width = 1;
 
 	/* Create a custom window (undecorated) for popups/tooltips */
 	window = window_create_internal(display, 1);
@@ -8633,9 +8634,23 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 			nested_anchor = XDG_POSITIONER_ANCHOR_TOP_LEFT;
 			nested_gravity = XDG_POSITIONER_GRAVITY_BOTTOM_LEFT;
 		} else if (anchor_x >= parent_width) {
-			anchor_x = parent_width - 1;
-			nested_anchor = XDG_POSITIONER_ANCHOR_TOP_RIGHT;
-			nested_gravity = XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT;
+			/* A submenu beside its item. Anchored to the parent's whole
+			 * width, a flip puts it beside the parent's other edge rather
+			 * than over the parent. It opens to the side the parent opened
+			 * to, as Haiku's frameShiftedLeft keeps a cascade going one way:
+			 * the Deskbar's menu opens left of the Deskbar, and so do its
+			 * submenus (and ZSnake's path steps down one way). */
+			anchor_x = 0;
+			anchor_width = parent_width;
+			if (parent_window->xdg_popup != NULL
+			    && parent_window->popup_placed
+			    && parent_window->popup_x < 0) {
+				nested_anchor = XDG_POSITIONER_ANCHOR_TOP_LEFT;
+				nested_gravity = XDG_POSITIONER_GRAVITY_BOTTOM_LEFT;
+			} else {
+				nested_anchor = XDG_POSITIONER_ANCHOR_TOP_RIGHT;
+				nested_gravity = XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT;
+			}
 		}
 
 		if (anchor_y < 0) {
@@ -8648,7 +8663,8 @@ window_popup_create(struct display *display, struct window *parent_window, int x
 	}
 
 	xdg_positioner_set_size(positioner, width, height);
-	xdg_positioner_set_anchor_rect(positioner, anchor_x, anchor_y, 1, 1);
+	xdg_positioner_set_anchor_rect(positioner, anchor_x, anchor_y,
+		anchor_width, 1);
 
 	if (parent_window->xdg_popup != NULL || parent_window->layer_surface != NULL) {
 		xdg_positioner_set_anchor(positioner, nested_anchor);
