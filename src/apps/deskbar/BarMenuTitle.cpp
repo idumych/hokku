@@ -41,6 +41,8 @@ All rights reserved.
 #include <Debug.h>
 #include <Region.h>
 
+#include <DecoratorPrivate.h>
+
 #include "BarApp.h"
 #include "BarView.h"
 #include "BarWindow.h"
@@ -104,7 +106,11 @@ TBarMenuTitle::Draw()
 
 	// fill in background
 	if (IsSelected()) {
-		be_control_look->DrawMenuItemBackground(menu, frame, frame, base,
+		// Hokku: with Dano's ZSnake on, the open menu's snake starts here,
+		// so the button takes the selection colour, as Dano's did
+		rgb_color selected = BPrivate::get_menu_snake()
+			? ui_color(B_MENU_SELECTED_BACKGROUND_COLOR) : base;
+		be_control_look->DrawMenuItemBackground(menu, frame, frame, selected,
 			BControlLook::B_ACTIVATED);
 	} else
 		be_control_look->DrawButtonBackground(menu, frame, frame, base);

@@ -1719,7 +1719,6 @@ BMenu::_Show(bool selectFirstItem, bool keyDown)
 
 		fExtraMenuData->snake = false;
 		if (fSuperitem != NULL && fSuper->Window() != NULL
-			&& fSuper->Layout() == B_ITEMS_IN_COLUMN
 			&& BPrivate::get_menu_snake()) {
 			BRect frame = fSuper->ConvertToScreen(fSuperitem->Frame());
 			fExtraMenuData->snakeSuperitemScreen = frame;
@@ -3465,6 +3464,12 @@ BMenu::_DrawSnake(BRect updateRect)
 	// side by side, the two highlights touch already
 	if (superFrame.bottom >= item.top && superFrame.top <= item.bottom)
 		return;
+	// Only beside the superitem: a submenu, or the Deskbar's menu beside its
+	// button, not a window's menu under its title in the menu bar.
+	const BRect band = _SnakeBand(superFrame);
+	if (superFrame.right > bounds.left + band.Width()
+		&& superFrame.left < bounds.right - band.Width())
+		return;
 
 	const bool superOnLeft = superFrame.left + superFrame.right
 		< bounds.left + bounds.right;
@@ -3474,7 +3479,6 @@ BMenu::_DrawSnake(BRect updateRect)
 	const uint32 innerBorder = superOnLeft
 		? BControlLook::B_RIGHT_BORDER : BControlLook::B_LEFT_BORDER;
 	const rgb_color base = ui_color(B_MENU_SELECTED_BACKGROUND_COLOR);
-	const BRect band = _SnakeBand(superFrame);
 
 	PushState();
 
