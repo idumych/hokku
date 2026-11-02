@@ -327,11 +327,37 @@ BGLView::GetGLProcAddress(const char* procName)
 }
 
 
+// As Haiku's renderers: the last frame swapped, from `source`, into what
+// of it `dest` (B_RGB32 or B_RGBA32) covers
 status_t
 BGLView::CopyPixelsOut(BPoint source, BBitmap* dest)
 {
-	(void)source; (void)dest;
-	return B_UNSUPPORTED;
+	if (dest == NULL || !dest->Bounds().IsValid())
+		return B_BAD_VALUE;
+	color_space space = dest->ColorSpace();
+	if (space != B_RGB32 && space != B_RGBA32)
+		return B_BAD_VALUE;
+	gl_view_private* p = fPrivate;
+	BAutolock locker(p->frameLock);
+	if (p->front == NULL)
+		return B_ERROR;
+	BRect frame = p->front->Bounds();
+	BRect wanted = dest->Bounds().OffsetToCopy(source);
+	BRect copied = frame & wanted;
+	if (!copied.IsValid())
+		return B_BAD_VALUE;
+	int32 width = copied.IntegerWidth() + 1;
+	int32 height = copied.IntegerHeight() + 1;
+	const uint8* from = (const uint8*)p->front->Bits();
+	int32 fromRow = p->front->BytesPerRow();
+	uint8* to = (uint8*)dest->Bits();
+	int32 toRow = dest->BytesPerRow();
+	int32 fromX = (int32)copied.left, fromY = (int32)copied.top;
+	int32 toX = (int32)(copied.left - source.x), toY = (int32)(copied.top - source.y);
+	for (int32 y = 0; y < height; y++)
+		memcpy(to + (toY + y) * toRow + toX * 4, from + (fromY + y) * fromRow + fromX * 4,
+			(size_t)width * 4);
+	return B_OK;
 }
 
 
