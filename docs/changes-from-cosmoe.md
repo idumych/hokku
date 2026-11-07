@@ -308,9 +308,15 @@ by area. The [README](../README.md) has the short version.
 - **A value can be any size.** BFS keeps any size, but btrfs took about 10 KB of one value. A
   value that doesn't fit is split into hidden `COSMOE:MORE:<n>:<name>` attributes, 4 KB each, that
   reads, `GetAttrInfo()`, listing, renaming and removing all treat as one value; a value that fits
-  stays one, for other programs. If a value can't be written, the old one stays. This doesn't
-  help on ext4, which limits all of a file's attributes together to about a block unless it was
-  made with `ea_inode`.
+  stays one, for other programs. If a value can't be written, the old one stays.
+- **Attributes that won't fit on the file at all** go to a store of the user's, in
+  `~/.local/share/cosmoe/attr-overflow`: ext4 keeps about a block of attributes for a file, all
+  together, unless it was made with `ea_inode`. The largest values go first, so small ones stay on
+  the file. The API, listing and queries treat them as any other. They are found by the file's
+  file system, inode and birth time: they stay with a file that is renamed or moved inside its file
+  system, a later file with the same inode can't get them, and a file system with no birth time
+  can't use the store. A copy made by another program (`cp -a`) doesn't get them, and neither does
+  another user. What was left by a file that was deleted isn't cleaned up yet.
 - **A failed write says why:** `B_DEVICE_FULL`, `B_NAME_TOO_LONG`, `B_PERMISSION_DENIED`,
   `B_READ_ONLY_DEVICE` or `B_NOT_SUPPORTED`, instead of `B_BAD_VALUE` for everything.
 - **A read can be of part of a value,** with an offset or a smaller buffer, as on Haiku. It used
