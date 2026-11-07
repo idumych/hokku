@@ -289,10 +289,10 @@ index 3840b10..e215cdc 100644
  	 * Convert all output usable areas that the
 diff --git a/src/ssd/ssd-hokku.c b/src/ssd/ssd-hokku.c
 new file mode 100644
-index 0000000..bcd2c71
+index 0000000..2d5d9eb
 --- /dev/null
 +++ b/src/ssd/ssd-hokku.c
-@@ -0,0 +1,1169 @@
+@@ -0,0 +1,1180 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +
 +/*
@@ -425,6 +425,8 @@ index 0000000..bcd2c71
 +	struct wlr_box content;
 +	int width, height;
 +	cairo_surface_t *full;
++	/* the output's scale the whole frame is painted at, sharp there */
++	double full_scale;
 +};
 +
 +/* Hokku's libdecorator, loaded the first time a theme names a decorator */
@@ -642,6 +644,8 @@ index 0000000..bcd2c71
 +		paint->shadow_x, paint->shadow_y);
 +}
 +
++static void decor_paint_full(struct ssd_hokku *frame);
++
 +static struct lab_data_buffer *
 +paint_create_buffer(struct scaled_buffer *scaled_buffer, double scale)
 +{
@@ -657,7 +661,11 @@ index 0000000..bcd2c71
 +	cairo_t *cairo = cairo_create(buffer->surface);
 +	cairo_translate(cairo, -paint->box.x, -paint->box.y);
 +	if (frame->decor) {
-+		/* its part of the frame painted whole */
++		/* its part of the frame painted whole, at the output's scale */
++		if (!paint->overlay && scale != frame->full_scale) {
++			frame->full_scale = scale;
++			decor_paint_full(frame);
++		}
 +		if (frame->full && !paint->overlay) {
 +			cairo_set_source_surface(cairo, frame->full, 0, 0);
 +			cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
@@ -961,8 +969,11 @@ index 0000000..bcd2c71
 +	if (!frame->decor || frame->width <= 0 || frame->height <= 0) {
 +		return;
 +	}
++	const double scale = frame->full_scale > 0 ? frame->full_scale : 1;
 +	frame->full = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-+		frame->width, frame->height);
++		(int)ceil(frame->width * scale), (int)ceil(frame->height * scale));
++	/* the decorator draws at the scale it is painted at */
++	cairo_surface_set_device_scale(frame->full, scale, scale);
 +	cairo_t *cairo = cairo_create(frame->full);
 +	decor_ops->set_focus(frame->decor, frame->active);
 +	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
