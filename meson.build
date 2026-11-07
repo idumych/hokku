@@ -679,6 +679,11 @@ subdir('src/kits/network')
 # BGLView (libopengl) with real libbe
 subdir('src/kits/opengl')
 
+# app_server's decorators, for the frames the Wayland backend draws
+if wayland_enabled
+	subdir('src/servers/app/decorator')
+endif
+
 # Build bin tools with real libbe (they were skipped in src/bin to avoid bootstrap)
 
 # The installed rc, linked against the real libbe: this is the one users and
@@ -1020,6 +1025,17 @@ if is_linux
         'cosmoe-portals.conf',
         install_dir: get_option('datadir') / 'xdg-desktop-portal',
     )
+
+    # The session's labwc settings and theme, which cosmoe-desktop.sh finds
+    # beside itself, and what starts the desktop's autostart entries
+    install_subdir('data/linux/session/labwc',
+        install_dir: get_option('datadir') / 'cosmoe-desktop')
+    install_subdir('data/linux/session/themes',
+        install_dir: get_option('datadir') / 'cosmoe-desktop')
+    install_data('data/linux/session/hokku-session.target',
+        install_dir: get_option('prefix') / 'lib/systemd/user')
+    install_data('data/linux/session/kmix-hokku.desktop',
+        install_dir: get_option('sysconfdir') / 'xdg/autostart')
 endif
 
 # vicn2icns - Convert VICN resources to macOS .icns format (macOS only)
@@ -1072,6 +1088,42 @@ else
 endif
 
 subdir('src/backends')  # backend plugins (X11, Wayland, Windows, Cocoa) — built after libbe
+
+# labwc-hokku: labwc with other apps' windows in Hokku's frames, for the
+# desktop session. It draws them with libdecorator, loaded at run time, or
+# with the backends' own Haiku and Gonx frames, which it gets from here.
+if wayland_enabled and get_option('enable_apps') \
+		and not get_option('labwc_hokku').disabled()
+	lib_hokku_frames = static_library(
+		'hokku-frames',
+		files(
+			'src/backends/wayland/shared/gonx-frame.c',
+			'src/backends/wayland/shared/haiku-frame.c',
+		),
+		include_directories: common_inc,
+		dependencies: deps_cairo_shared,
+		pic: true,
+		install: false,
+	)
+	meson.override_dependency('hokku-frames', declare_dependency(
+		link_with: lib_hokku_frames,
+		include_directories: include_directories(
+			'headers/libs/wayland/shared', 'headers/private/interface'),
+		dependencies: deps_cairo_shared,
+	))
+	labwc_hokku = subproject('labwc',
+		default_options: [
+			'hokku=true',
+			'man-pages=disabled',
+			'nls=disabled',
+			'labnag=disabled',
+			'systemd-session=disabled',
+			'test=disabled',
+			'werror=false',
+		],
+		required: get_option('labwc_hokku'),
+	)
+endif
 
 subdir('src/tools')     # test framework (uses real libbe)
 

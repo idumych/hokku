@@ -45,6 +45,7 @@ private:
 			void				_SetDoubleScrollBarArrows(bool doubleArrows);
 
 			void				_SetShadows(bool shadows);
+			void				_SetRoundedCorners(bool rounded);
 			void				_SetMenuSnake(bool snake);
 
 private:
@@ -56,6 +57,7 @@ private:
 			FakeScrollBar*		fArrowStyleDouble;
 
 			BCheckBox*			fShadowsCheckBox;
+			BCheckBox*			fRoundedCornersCheckBox;
 			BCheckBox*			fMenuSnakeCheckBox;
 
 			BString				fSavedControlLook;
@@ -63,6 +65,7 @@ private:
 
 			bool				fSavedDoubleArrowsValue : 1;
 			bool				fSavedShadows : 1;
+			bool				fSavedRoundedCorners : 1;
 			bool				fSavedMenuSnake : 1;
 };
 

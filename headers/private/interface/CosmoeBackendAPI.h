@@ -157,6 +157,9 @@ typedef struct cosmoe_decorator_style {
 	uint8_t frame[3];			// B_WINDOW_BORDER_COLOR
 	uint8_t frame_inactive[3];
 	int shadow;					// windows cast a shadow
+	// Hokku: an app_server decorator draws the frames (CosmoeDecor.h), or
+	// NULL for the backend's own
+	const struct cosmoe_decor_ops* decor;
 } cosmoe_decorator_style;
 
 status_t cosmoe_display_set_decorator(cosmoe_display_t display,

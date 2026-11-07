@@ -1,11 +1,15 @@
 # labwc's frames round other apps (Firefox, GTK, Qt) in Haiku's colours:
 # the window tab and border colours of Haiku's decorator.
 
-# Hokku OS's labwc draws Hokku's own Haiku frame round other apps, in the
-# colours below (title.bg the tab, label.text the title, border the frame);
-# the Themes tab adds the theme's bold font as window.decorator.font. Stock
-# labwc ignores these and draws its titlebar in the same colours.
-window.decorator: Haiku
+# labwc-hokku (Hokku OS's labwc, and the Hokku desktop session's) draws the
+# frame Hokku's own windows have round other apps, following Hokku's settings:
+# the Haiku decorator this theme sets, or any other chosen later, in Hokku's
+# colours. Without Hokku's libdecorator it draws its own copy of the Haiku
+# frame, in the colours below (title.bg the tab, label.text the title, border
+# the frame); the Themes tab adds the theme's bold font as
+# window.decorator.font. Stock labwc ignores these and draws its titlebar in
+# the same colours.
+window.decorator: Hokku
 
 border.width: 2
 padding.width: 6

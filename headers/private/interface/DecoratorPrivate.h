@@ -24,6 +24,11 @@ status_t preview_decorator(const BString& name, BWindow* window);
 bool get_window_shadows();
 status_t set_window_shadows(bool shadows);
 
+// Hokku: whether window frames round their corners, where the decorator
+// can (a decorator add-on that is a RoundedDecorator, or Haiku's)
+bool get_window_rounded_corners();
+status_t set_window_rounded_corners(bool rounded);
+
 // Hokku: Dano's ZSnake, a band joining a submenu's selection to the item
 // it hangs from (menus opened afterwards show it)
 bool get_menu_snake();
@@ -31,6 +36,18 @@ status_t set_menu_snake(bool snake);
 
 // Cosmoe: tells the backend which decorator to draw this app's frames with.
 status_t apply_decorator(void* display);
+
+// Hokku: reads the system colours and fonts from the settings again, for a
+// program that isn't told when they change (a compositor drawing frames)
+void reload_appearance();
+
+// Hokku: running applications take a new look as it is chosen. Each one
+// watches the settings (watch_appearance_settings(), started with the
+// application), and on kMsgRefreshAppearance takes the new colours, fonts,
+// control look and window frames (refresh_appearance()).
+enum { kMsgRefreshAppearance = 'hkRA' };
+void watch_appearance_settings();
+void refresh_appearance();
 
 
 }	// namespace BPrivate

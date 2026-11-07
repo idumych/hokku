@@ -4465,8 +4465,10 @@ BWindow::SetDisplayScale(int32 scalePercent)
 	// Recreate backing surface with new scale
 	_CreateBackingSurface();
 	
-	// Tell backend about the new buffer scale (Wayland needs this)
-	if (fWindowToken != B_NULL_TOKEN) {
+	// Tell backend about the new buffer scale (Wayland needs this); an
+	// off-screen bitmap's window has none (libdecorator scales one to draw
+	// a frame at the screen's scale)
+	if (fWindowToken != B_NULL_TOKEN && !fOffscreen) {
 		const char* backend_name = cosmoe_backend_get_current_name();
 		if (backend_name && strcmp(backend_name, "Wayland") == 0) {
 			cosmoe_window_set_buffer_scale(be_app->Display(), fWindowToken,
@@ -4839,20 +4841,57 @@ BWindow::ResolveSpecifier(BMessage* message, int32 index, BMessage* specifier,
 //	#pragma mark - Private Methods
 
 
+//!	The shortcuts every window has, as _InitData() sets them up
+static void
+add_default_shortcuts(BWindow* window, bool closable)
+{
+	if (closable) {
+		// Modal windows default to non-closable, but you can add the
+		// shortcut manually, if a different behaviour is wanted
+		window->AddShortcut('W', B_COMMAND_KEY, new BMessage(B_QUIT_REQUESTED));
+	}
+
+	// Edit modifier keys
+
+	window->AddShortcut('X', B_COMMAND_KEY, new BMessage(B_CUT), NULL);
+	window->AddShortcut('C', B_COMMAND_KEY, new BMessage(B_COPY), NULL);
+	window->AddShortcut('V', B_COMMAND_KEY, new BMessage(B_PASTE), NULL);
+	window->AddShortcut('A', B_COMMAND_KEY, new BMessage(B_SELECT_ALL), NULL);
+
+	// Window modifier keys
+
+	window->AddShortcut('M', B_COMMAND_KEY | B_CONTROL_KEY,
+		new BMessage(_MINIMIZE_), NULL);
+	window->AddShortcut('Z', B_COMMAND_KEY | B_CONTROL_KEY,
+		new BMessage(_ZOOM_), NULL);
+	window->AddShortcut('Z', B_SHIFT_KEY | B_COMMAND_KEY | B_CONTROL_KEY,
+		new BMessage(_ZOOM_), NULL);
+	window->AddShortcut('H', B_COMMAND_KEY | B_CONTROL_KEY,
+		new BMessage(B_HIDE_APPLICATION), NULL);
+	window->AddShortcut('F', B_COMMAND_KEY | B_CONTROL_KEY,
+		new BMessage(_SEND_TO_FRONT_), NULL);
+	window->AddShortcut('B', B_COMMAND_KEY | B_CONTROL_KEY,
+		new BMessage(_SEND_BEHIND_), NULL);
+}
+
+
 void
 BWindow::_InitData(BRect frame, const char* title, window_look look,
 	window_feel feel, uint32 flags,	uint32 workspace, int32 bitmapToken)
 {
 	STRACE(("BWindow::InitData()\n"));
 
-	if (be_app == NULL) {
+	// Hokku: an off-screen bitmap's window never reaches the backend, so a
+	// program that isn't a BApplication (a compositor drawing frames with
+	// libdecorator) can draw into bitmaps too
+	if (be_app == NULL && bitmapToken < 0) {
 		debugger("FATAL: You need a valid BApplication object to create a BWindow");
 		return;
 	}
 
 	// Ensure display thread is running BEFORE creating any windows
 	// Windows MUST be created on the display thread for proper message routing
-	if (sDisplayThread < 0) {
+	if (sDisplayThread < 0 && be_app != NULL) {
 		STRACE(("BWindow::_InitData: Display thread not yet started, starting it NOW...\n"));
 		sDisplayThread = spawn_thread(&_DisplayLoopWindow, "Cosmoe Display Loop",
 			B_NORMAL_PRIORITY, be_app->Display());
@@ -4918,33 +4957,10 @@ BWindow::_InitData(BRect frame, const char* title, window_look look,
 	// It is only installed for non-modal windows, though.
 	fNoQuitShortcut = IsModal();
 
-	if ((fFlags & B_NOT_CLOSABLE) == 0 && !IsModal()) {
-		// Modal windows default to non-closable, but you can add the
-		// shortcut manually, if a different behaviour is wanted
-		AddShortcut('W', B_COMMAND_KEY, new BMessage(B_QUIT_REQUESTED));
-	}
-
-	// Edit modifier keys
-
-	AddShortcut('X', B_COMMAND_KEY, new BMessage(B_CUT), NULL);
-	AddShortcut('C', B_COMMAND_KEY, new BMessage(B_COPY), NULL);
-	AddShortcut('V', B_COMMAND_KEY, new BMessage(B_PASTE), NULL);
-	AddShortcut('A', B_COMMAND_KEY, new BMessage(B_SELECT_ALL), NULL);
-
-	// Window modifier keys
-
-	AddShortcut('M', B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(_MINIMIZE_), NULL);
-	AddShortcut('Z', B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(_ZOOM_), NULL);
-	AddShortcut('Z', B_SHIFT_KEY | B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(_ZOOM_), NULL);
-	AddShortcut('H', B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(B_HIDE_APPLICATION), NULL);
-	AddShortcut('F', B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(_SEND_TO_FRONT_), NULL);
-	AddShortcut('B', B_COMMAND_KEY | B_CONTROL_KEY,
-		new BMessage(_SEND_BEHIND_), NULL);
+	// Hokku: an off-screen bitmap's window gets no keys, and looking up the
+	// keymap for its shortcuts would ask for a display backend
+	if (bitmapToken < 0)
+		add_default_shortcuts(this, (fFlags & B_NOT_CLOSABLE) == 0 && !IsModal());
 
 	// We set the default pulse rate, but we don't start the pulse
 	fPulseRate = 500000;

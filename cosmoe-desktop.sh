@@ -8,7 +8,17 @@ export XDG_SESSION_DESKTOP=cosmoe
 export XDG_CURRENT_DESKTOP=cosmoe
 export MOZ_ENABLE_WAYLAND=1
 export QT_QPA_PLATFORM=wayland
-export XCURSOR_THEME="${XCURSOR_THEME:-Adwaita}"
+# BeOS's pointer, with its shadow (Appearance's shadows setting and themes
+# change it in labwc's environment)
+if [ -z "${XCURSOR_THEME:-}" ]; then
+    for theme in Hokku-Shadow Adwaita; do
+        if [ -d "/usr/share/icons/$theme/cursors" ] \
+            || [ -d "/usr/local/share/icons/$theme/cursors" ]; then
+            break
+        fi
+    done
+    export XCURSOR_THEME="$theme"
+fi
 export XCURSOR_SIZE="${XCURSOR_SIZE:-24}"
 
 # A display manager normally creates this session. Re-exec under one when the
@@ -78,6 +88,26 @@ bootstrap_mime_database() {
 # Package archives do not retain the extended attributes used by Cosmoe's MIME
 # database. Recreate application metadata in the user's writable database.
 bootstrap_mime_database
+
+# The session's own labwc settings and theme (rc.xml, autostart, the Hokku
+# labwc theme), under the user's: in XDG_CONFIG_DIRS and XDG_DATA_DIRS, so
+# that other labwc sessions don't get them.
+session_data="$(cd "$(dirname "$(readlink -f "$0")")/../share/cosmoe-desktop" \
+    2>/dev/null && pwd || true)"
+if [ -n "$session_data" ]; then
+    export XDG_CONFIG_DIRS="$session_data:${XDG_CONFIG_DIRS:-/etc/xdg}"
+    export XDG_DATA_DIRS="$session_data:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+fi
+
+# What an earlier session left running if it was killed rather than logged
+# out: its hokku-session.target (still "active", so the autostart's start
+# would do nothing) and TrayBridge, which outlives the session (no Wayland
+# connection) and would give the new Deskbar every tray icon twice.
+end_session() {
+    systemctl --user stop hokku-session.target 2>/dev/null || true
+    pkill -u "$(id -u)" -x TrayBridge 2>/dev/null || true
+}
+end_session
 
 # The system keyboard layout. Installers and localectl set-x11-keymap record it
 # for X11 and the console, which labwc and Hokku don't read; both honour
@@ -158,6 +188,16 @@ done
 xdg-desktop-portal -r &
 xdg-desktop-portal-wlr -r &
 
+# A new user starts in the Gonx look, with ZSnake: before the desktop
+# starts, as applying a theme needs the compositor. Appearance's Themes tab
+# switches it.
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+if [ ! -e "$config_home/cosmoe/system/app_server/appearance" ] \
+    && [ "${HOKKU_FIRST_LOOK:-Gonx}" != none ]; then
+    hokku-theme apply "${HOKKU_FIRST_LOOK:-Gonx}" >/dev/null 2>&1 || true
+    hokku-theme zsnake on >/dev/null 2>&1 || true
+fi
+
 if ! grep -qF "Tracker" "$HOME/.config/labwc/autostart" 2>/dev/null; then
     Tracker &
 fi
@@ -178,4 +218,13 @@ fi
 EOF
 chmod 700 "$startup_script"
 
-exec labwc -s "$startup_script"
+# labwc-hokku draws the other apps' windows in Hokku's frames; plain labwc
+# in its own
+labwc=labwc
+command -v labwc-hokku >/dev/null 2>&1 && labwc=labwc-hokku
+
+status=0
+"$labwc" -s "$startup_script" || status=$?
+rm -f "$startup_script"
+end_session
+exit $status

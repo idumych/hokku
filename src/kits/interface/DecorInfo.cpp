@@ -133,15 +133,14 @@ DecorInfo::Path() const
 }
 
 
-#if 0
 const entry_ref*
 DecorInfo::Ref() const
 {
-	if (InitCheck() != B_OK || IsDefault())
+	// Hokku: the built-in decorators have no file
+	if (InitCheck() != B_OK || IsDefault() || fRef.name == NULL)
 		return NULL;
 	return &fRef;
 }
-#endif
 
 
 BString
@@ -354,6 +353,7 @@ DecorInfo::_Init(bool isUpdate)
 
 	// update fRef to match file system object
 	//entry.GetPath(&fPath);
+	entry.GetRef(&fRef);
 	entry.GetModificationTime(&fModificationTime);
 
 	BResources resources(fPath.String());
@@ -701,6 +701,17 @@ DecorInfoUtility::_ScanDecorators(BDirectory &decoratorDirectory)
 		if (decorInfo == NULL || decorInfo->InitCheck() != B_OK) {
 			fprintf(stderr, "DecorInfoUtility::_ScanDecorators()\tInitCheck() "
 				"failure on decorator, skipping.\n");
+			delete decorInfo;
+			continue;
+		}
+
+		// Hokku: an add-on with a built-in decorator's name, or one found in
+		// the user's folder and the system's, is listed once; the add-on
+		// is the one used (set_decorator())
+		bool listed = false;
+		for (int32 j = 0; j < fList.CountItems() && !listed; j++)
+			listed = fList.ItemAt(j)->Name() == decorInfo->Name();
+		if (listed) {
 			delete decorInfo;
 			continue;
 		}

@@ -103,14 +103,14 @@ The hidden menu effect of the unreleased BeOS 5.1, where a submenu's selection j
 
 **Wayland and touch**
 
-Client-side Haiku and Gonx frames, borderless windows that move themselves, menus the compositor places, and touch screens.
+Client-side window frames drawn by Haiku's own decorators, add-ons included, with rounded corners and a shadow, or a glow on a dark desktop; borderless windows that move themselves, menus the compositor places, and touch screens.
 
 </td>
 <td width="50%" valign="top">
 
 **A desktop session beside others**
 
-"Hokku" on the login screen next to Plasma or GNOME, without cluttering their menus. [Hokku OS](https://github.com/idumych/hokku-os) is a CachyOS respin with it as the desktop.
+"Hokku" on the login screen next to Plasma or GNOME, without cluttering their menus, and the same desktop as [Hokku OS](https://github.com/idumych/hokku-os), the CachyOS respin built on it: every app's window in Hokku's frames (labwc-hokku), the Gonx look for new users, tray applets and display layouts.
 
 </td>
 </tr>
@@ -297,7 +297,8 @@ Not all of them behave exactly as on Haiku yet. Showcase is the testbed for new 
 the best example of what the library can do.
 
 For a whole BeOS-style desktop without logging out, install labwc and run
-`./start_cosmoe_desktop.sh`. To have it on the login screen, `make install` adds a Hokku session.
+`./start_cosmoe_desktop.sh`. To have it on the login screen, `make install` adds a Hokku session,
+with labwc-hokku where the system's wlroots and libinput are new enough for labwc 0.20.
 
 ## Using it in your app
 

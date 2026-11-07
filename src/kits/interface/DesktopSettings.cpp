@@ -88,6 +88,7 @@ DesktopSettingsPrivate::_SetDefaults()
 	fAcceptFirstClick = true;
 	fShowAllDraggers = true;
 	fWindowShadows = true;
+	fWindowRoundedCorners = true;
 	fMenuSnake = false;
 
 	// init scrollbar info
@@ -321,6 +322,12 @@ DesktopSettingsPrivate::_Load()
 			if (settings.FindBool("window shadows", &windowShadows) == B_OK)
 				fWindowShadows = windowShadows;
 
+			bool roundedCorners;
+			if (settings.FindBool("window rounded corners", &roundedCorners)
+					== B_OK) {
+				fWindowRoundedCorners = roundedCorners;
+			}
+
 			bool menuSnake;
 			if (settings.FindBool("menu snake", &menuSnake) == B_OK)
 				fMenuSnake = menuSnake;
@@ -482,6 +489,7 @@ DesktopSettingsPrivate::Save(uint32 mask)
 			settings.AddString("control look", fControlLook);
 			settings.AddString("decorator", fDecorator);
 			settings.AddBool("window shadows", fWindowShadows);
+			settings.AddBool("window rounded corners", fWindowRoundedCorners);
 			settings.AddBool("menu snake", fMenuSnake);
 			settings.AddInt32("desktop color", _ColorToInt32(fDesktopColor));
 
@@ -814,6 +822,21 @@ DesktopSettingsPrivate::WindowShadows() const
 
 
 status_t
+DesktopSettingsPrivate::SetWindowRoundedCorners(bool rounded)
+{
+	fWindowRoundedCorners = rounded;
+	return Save(kAppearanceSettings);
+}
+
+
+bool
+DesktopSettingsPrivate::WindowRoundedCorners() const
+{
+	return fWindowRoundedCorners;
+}
+
+
+status_t
 DesktopSettingsPrivate::SetMenuSnake(bool snake)
 {
 	fMenuSnake = snake;
@@ -1004,6 +1027,13 @@ DesktopSettings::WindowShadows() const
 
 
 bool
+DesktopSettings::WindowRoundedCorners() const
+{
+	return fSettings->WindowRoundedCorners();
+}
+
+
+bool
 DesktopSettings::MenuSnake() const
 {
 	return fSettings->MenuSnake();
@@ -1141,6 +1171,13 @@ status_t
 LockedDesktopSettings::SetWindowShadows(bool shadows)
 {
 	return fSettings->SetWindowShadows(shadows);
+}
+
+
+status_t
+LockedDesktopSettings::SetWindowRoundedCorners(bool rounded)
+{
+	return fSettings->SetWindowRoundedCorners(rounded);
 }
 
 

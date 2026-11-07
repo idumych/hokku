@@ -42,6 +42,7 @@
 #include <sys/timerfd.h>
 #include <sys/eventfd.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 
 #include <xkbcommon/xkbcommon.h>
@@ -173,6 +174,11 @@ struct display {
 	struct theme *theme;
 	/* the Gonx frame, when that decorator is chosen */
 	struct gonx_style *gonx_style;
+	/* a new one from the application's thread, which the display thread
+	 * takes and re-frames the windows with (display_take_gonx_style()) */
+	pthread_mutex_t gonx_lock;
+	struct gonx_style *gonx_next;
+	int gonx_next_set;
 
 	struct wl_cursor_theme *cursor_theme;
 	struct wl_cursor **cursors;
@@ -714,6 +720,12 @@ struct window {
 	struct rectangle saved_allocation;
 	struct rectangle min_allocation;
 	struct rectangle max_allocation;
+	/* the content's size limits, as BWindow has them, when the window's
+	 * frame is its own: the allocation's are these and the frame's size,
+	 * whatever frame it has (window_content_limits_to_allocation()) */
+	struct rectangle min_content;
+	struct rectangle max_content;
+	int has_content_limits;
 	struct rectangle pending_allocation;
 	struct rectangle last_geometry;
 	int x, y;
@@ -3472,6 +3484,7 @@ frame_resize_handler(struct widget *widget,
 		frame_resize(frame->frame, width, height);
 		frame_interior(frame->frame, &interior.x, &interior.y,
 			       &interior.width, &interior.height);
+
 	}
 
 	widget_set_allocation(child, interior.x, interior.y,
@@ -6454,6 +6467,49 @@ undo_resize(struct window *window)
 	}
 }
 
+/* How much a frame of the window's own adds to its content's size */
+static void
+window_get_decoration_size(struct window *window, int *width, int *height)
+{
+	struct window_frame *frame = window->frame;
+	*width = *height = 0;
+	if (frame == NULL || frame->frame == NULL || window->fullscreen)
+		return;
+	int32_t top, bottom, left, right;
+	frame_decoration_sizes(frame->frame, &top, &bottom, &left, &right);
+	*width = left + right;
+	*height = top + bottom;
+}
+
+static void
+window_content_limits_to_allocation(struct window *window)
+{
+	if (!window->has_content_limits)
+		return;
+	int width, height;
+	window_get_decoration_size(window, &width, &height);
+	window->min_allocation.width = window->min_content.width > 0
+		? window->min_content.width + width : 0;
+	window->min_allocation.height = window->min_content.height > 0
+		? window->min_content.height + height : 0;
+	window->max_allocation.width = window->max_content.width > 0
+		? window->max_content.width + width : 0;
+	window->max_allocation.height = window->max_content.height > 0
+		? window->max_content.height + height : 0;
+}
+
+void
+window_set_content_size_limits(struct window *window, int min_width,
+			       int min_height, int max_width, int max_height)
+{
+	window->min_content.width = min_width;
+	window->min_content.height = min_height;
+	window->max_content.width = max_width;
+	window->max_content.height = max_height;
+	window->has_content_limits = 1;
+	window_content_limits_to_allocation(window);
+}
+
 static void
 window_configure_resize(struct window *window, int width, int height)
 {
@@ -6465,6 +6521,9 @@ window_configure_resize(struct window *window, int width, int height)
 	window->pending_allocation.y = 0;
 	window->pending_allocation.width = width;
 	window->pending_allocation.height = height;
+
+	/* the frame may have changed since the limits were set */
+	window_content_limits_to_allocation(window);
 
 	const int framed = window->frame != NULL
 		&& !window_is_borderless(window);
@@ -8884,16 +8943,78 @@ window_get_decorator_size(struct window *window, int *borderWidth, int *tabHeigh
 	(void)window;
 }
 
+/* Called from the application's thread: the display thread takes the
+ * style, and re-frames the windows it has, before it next handles them. */
 void
 display_set_gonx_style(struct display *display,
 		       const struct gonx_style *style)
 {
-	free(display->gonx_style);
-	display->gonx_style = NULL;
+	struct gonx_style *copy = NULL;
 	if (style != NULL) {
-		display->gonx_style = xmalloc(sizeof *style);
-		*display->gonx_style = *style;
+		copy = xmalloc(sizeof *style);
+		*copy = *style;
 	}
+
+	pthread_mutex_lock(&display->gonx_lock);
+	free(display->gonx_next);
+	display->gonx_next = copy;
+	display->gonx_next_set = 1;
+	pthread_mutex_unlock(&display->gonx_lock);
+
+	/* wakes the display thread */
+	display_trigger_redraw(display, NULL, NULL, NULL);
+}
+
+/* Each window as the new style has it: Hokku's frame rebuilt, or the
+ * compositor asked for its own frame, or for none of its own. */
+static void
+display_reframe_windows(struct display *display)
+{
+	struct window *window;
+
+	wl_list_for_each(window, &display->window_list, link) {
+		if (window->frame == NULL || window->custom)
+			continue;
+		const int client_side = window->desktop_mode
+			|| window_uses_gonx(window) || window_is_borderless(window);
+		if (window->xdg_toplevel_decoration != NULL) {
+			zxdg_toplevel_decoration_v1_set_mode(
+				window->xdg_toplevel_decoration,
+				client_side
+					? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
+					: ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+		}
+		/* a frame of Hokku's own changes now; the compositor's comes
+		 * and goes with its answer (window_apply_decoration_mode()) */
+		if (window->frame->frame != NULL) {
+			window_frame_disable_client_side_decorations(window);
+			if (window->xdg_toplevel_decoration == NULL || client_side)
+				window_frame_enable_client_side_decorations(window);
+		}
+		window_schedule_redraw(window);
+	}
+}
+
+static void
+display_take_gonx_style(struct display *display)
+{
+	pthread_mutex_lock(&display->gonx_lock);
+	if (!display->gonx_next_set) {
+		pthread_mutex_unlock(&display->gonx_lock);
+		return;
+	}
+	struct gonx_style *next = display->gonx_next;
+	display->gonx_next = NULL;
+	display->gonx_next_set = 0;
+	pthread_mutex_unlock(&display->gonx_lock);
+
+	const int same = (next == NULL && display->gonx_style == NULL)
+		|| (next != NULL && display->gonx_style != NULL
+		    && memcmp(next, display->gonx_style, sizeof *next) == 0);
+	free(display->gonx_style);
+	display->gonx_style = next;
+	if (!same)
+		display_reframe_windows(display);
 }
 
 int
@@ -10716,6 +10837,7 @@ display_create(const int *argc, const char *argv[])
 
 	wl_list_init(&d->window_list);
 	wl_list_init(&d->deferred_list);
+	pthread_mutex_init(&d->gonx_lock, NULL);
 	wl_list_init(&d->input_list);
 	wl_list_init(&d->output_list);
 	wl_list_init(&d->global_list);
@@ -11094,6 +11216,9 @@ display_run(struct display *display)
 		 * that deferred tasks will run even if there are no Wayland
 		 * events to dispatch.
 		 */
+		/* a new frame style, before windows are made with the old one */
+		display_take_gonx_style(display);
+
 		run_deferred_tasks(display);
 
 		/* Check for backend messages from BWindow via PortLink */

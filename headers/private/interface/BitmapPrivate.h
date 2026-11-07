@@ -23,6 +23,11 @@ class BBitmap::Private {
 public:
 								Private(BBitmap* bitmap);
 
+			// Hokku: what the bitmap's views draw into, premultiplied ARGB,
+			// or NULL when it doesn't accept views. Its alpha is kept, unlike
+			// in Bits(). Lock the bitmap while using it.
+			struct _cairo_surface*	ViewSurface() const;
+
 private:
 			BBitmap*			fBitmap;
 };

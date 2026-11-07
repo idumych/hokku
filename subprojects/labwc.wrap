@@ -1,0 +1,8 @@
+# labwc for labwc-hokku: other apps' windows in Hokku's frames (meson option
+# labwc_hokku). packagefiles/labwc-hokku.patch adds them; on a labwc release,
+# bump the revision and rebase the patch.
+[wrap-git]
+url = https://github.com/labwc/labwc.git
+revision = 0.20.2
+depth = 1
+diff_files = labwc-hokku.patch

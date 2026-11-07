@@ -1,0 +1,14 @@
+# The Hokku desktop session: started with labwc (a ~/.config/labwc/autostart
+# replaces this file). cosmoe-desktop.sh starts Tracker, the Deskbar and the
+# rest itself.
+
+# Apply the display layout saved for the connected screens in
+# ~/.config/kanshi/config (resolution, scale, position, rotation).
+command -v kanshi >/dev/null 2>&1 && kanshi >/dev/null 2>&1 &
+
+# Start the desktop's XDG autostart entries (the network, volume and
+# Bluetooth applets, which TrayBridge shows in the Deskbar) as systemd user
+# services that see this session.
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP \
+    XDG_SESSION_TYPE XDG_SESSION_DESKTOP
+systemctl --user start hokku-session.target

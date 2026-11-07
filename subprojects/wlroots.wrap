@@ -1,0 +1,8 @@
+# labwc's, for systems whose wlroots or libsfdo is older than labwc-hokku needs
+[wrap-git]
+url = https://gitlab.freedesktop.org/wlroots/wlroots.git
+revision = 0.20
+
+[provide]
+dependency_names = wlroots-0.20
+wlroots-0.20=wlroots

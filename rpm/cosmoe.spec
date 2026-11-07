@@ -68,6 +68,13 @@ Requires:       dbus-daemon
 Requires:       polkit-gnome
 Requires:       xdg-desktop-portal
 Requires:       xdg-desktop-portal-wlr
+Recommends:     kanshi
+Recommends:     grim
+Recommends:     wdisplays
+Recommends:     brightnessctl
+Recommends:     wireplumber
+Recommends:     network-manager-applet
+Recommends:     kvantum
 
 %description desktop
 This package provides the Cosmoe Wayland desktop session, including Tracker,
@@ -81,7 +88,14 @@ Deskbar, and a display-manager session entry.
 %meson_build
 
 %install
-%meson_install
+# labwc-hokku links the wlroots and libsfdo it may fetch statically
+%{__meson} install -C %{_vpath_builddir} --no-rebuild \
+    --destdir %{buildroot} --skip-subprojects libsfdo,wlroots
+# labwc-hokku, where the system's libraries are new enough for labwc
+: > labwc-hokku.files
+if [ -e %{buildroot}%{_bindir}/labwc-hokku ]; then
+    echo %{_bindir}/labwc-hokku > labwc-hokku.files
+fi
 
 %files
 %license License.md
@@ -91,6 +105,7 @@ Deskbar, and a display-manager session entry.
 %{_libdir}/libbe.so
 %{_libdir}/libbnetapi.so*
 %{_libdir}/libcosmoe-*.so
+%{_libdir}/libdecorator.so
 %{_libdir}/libgame.so
 %{_libdir}/libtracker.so
 %{_datadir}/cosmoe/
@@ -164,7 +179,7 @@ Deskbar, and a display-manager session entry.
 %{_datadir}/applications/*.desktop
 %{_datadir}/icons/hicolor/*/apps/*.png
 
-%files desktop
+%files desktop -f labwc-hokku.files
 %{_bindir}/Deskbar
 %{_bindir}/DeskbarPreferences
 %{_bindir}/Tracker
@@ -180,6 +195,9 @@ Deskbar, and a display-manager session entry.
 %{_datadir}/icons/hicolor/*/apps/trackerpreferences.png
 %{_datadir}/wayland-sessions/cosmoe.desktop
 %{_datadir}/xdg-desktop-portal/cosmoe-portals.conf
+%{_datadir}/cosmoe-desktop/
+%{_prefix}/lib/systemd/user/hokku-session.target
+%{_sysconfdir}/xdg/autostart/kmix-hokku.desktop
 
 %changelog
 * Mon Oct 12 2026 Bill Hayden <bill@haydentech.com> - 0.9.0-1

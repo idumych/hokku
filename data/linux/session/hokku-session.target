@@ -1,0 +1,10 @@
+# The running Hokku session, started from labwc's autostart and stopped by
+# cosmoe-desktop.sh when it ends. It starts the XDG autostart entries (tray
+# applets and the like), which systemd only starts as a dependency.
+[Unit]
+Description=Hokku desktop session
+Documentation=https://github.com/idumych/hokku
+BindsTo=graphical-session.target
+Wants=graphical-session-pre.target xdg-desktop-autostart.target
+After=graphical-session-pre.target
+Before=xdg-desktop-autostart.target

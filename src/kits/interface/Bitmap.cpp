@@ -62,6 +62,15 @@ BBitmap::Private::Private(BBitmap* bitmap)
 }
 
 
+cairo_surface_t*
+BBitmap::Private::ViewSurface() const
+{
+	if (fBitmap->fWindow == NULL)
+		return NULL;
+	return fBitmap->fWindow->fBackingSurface;
+}
+
+
 
 /*!	\brief Returns the number of bytes per row needed to store the actual
 		   bitmap data (not including any padding) given a color space and a

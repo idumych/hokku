@@ -37,6 +37,8 @@
 #include "file-util.h"
 #include "gonx-frame.h"
 
+#include <CosmoeDecor.h>
+
 enum frame_button_flags {
 	FRAME_BUTTON_ALIGN_RIGHT = 0x1,
 	FRAME_BUTTON_DECORATED = 0x2,
@@ -119,6 +121,15 @@ struct frame {
 	cairo_surface_t *gonx_shadow;
 	int gonx_shadow_x, gonx_shadow_y;
 	struct gonx_layout gonx_shadow_layout;
+
+	/* an app_server decorator drawing the frame, when the style has one:
+	 * frame->gonx is set too, for those who only ask whether the frame is
+	 * Hokku's own */
+	const struct cosmoe_decor_ops *decor_ops;
+	struct cosmoe_decor *decor;
+	struct {
+		int left, top, right, bottom;
+	} decor_shadow;
 };
 
 /* window_look values from BWindow */
@@ -175,6 +186,98 @@ frame_gonx_button_index(struct frame_button *button)
 	}
 }
 
+/* the decorator's region for a button of the frame */
+static int
+frame_decor_button_region(struct frame_button *button)
+{
+	switch (button->status_effect) {
+	case FRAME_STATUS_CLOSE:
+		return COSMOE_DECOR_REGION_CLOSE_BUTTON;
+	case FRAME_STATUS_MAXIMIZE:
+		return COSMOE_DECOR_REGION_ZOOM_BUTTON;
+	case FRAME_STATUS_MINIMIZE:
+		return COSMOE_DECOR_REGION_MINIMIZE_BUTTON;
+	default:
+		return COSMOE_DECOR_REGION_NONE;
+	}
+}
+
+/* BWindow's flags for what the frame has */
+static uint32_t
+frame_decor_flags(struct frame *frame)
+{
+	uint32_t flags = COSMOE_DECOR_NOT_CLOSABLE | COSMOE_DECOR_NOT_ZOOMABLE
+		| COSMOE_DECOR_NOT_MINIMIZABLE;
+	struct frame_button *button;
+
+	wl_list_for_each(button, &frame->buttons, link) {
+		switch (button->status_effect) {
+		case FRAME_STATUS_CLOSE:
+			flags &= ~COSMOE_DECOR_NOT_CLOSABLE;
+			break;
+		case FRAME_STATUS_MAXIMIZE:
+			flags &= ~COSMOE_DECOR_NOT_ZOOMABLE;
+			break;
+		case FRAME_STATUS_MINIMIZE:
+			flags &= ~COSMOE_DECOR_NOT_MINIMIZABLE;
+			break;
+		default:
+			break;
+		}
+	}
+	if (frame->flags & FRAME_FLAG_NO_RESIZE)
+		flags |= COSMOE_DECOR_NOT_RESIZABLE;
+	return flags;
+}
+
+/* What a decorator's region is to the pointer */
+static enum theme_location
+frame_decor_location(struct frame *frame, int x, int y)
+{
+	const int resizable = !(frame->flags & FRAME_FLAG_NO_RESIZE)
+		&& !(frame->flags & FRAME_FLAG_MAXIMIZED);
+
+	switch (frame->decor_ops->region_at(frame->decor, x, y)) {
+	case COSMOE_DECOR_REGION_TAB:
+	case COSMOE_DECOR_REGION_CLOSE_BUTTON:
+	case COSMOE_DECOR_REGION_ZOOM_BUTTON:
+	case COSMOE_DECOR_REGION_MINIMIZE_BUTTON:
+		return THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_LEFT_BORDER:
+		return resizable ? THEME_LOCATION_RESIZING_LEFT
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_RIGHT_BORDER:
+		return resizable ? THEME_LOCATION_RESIZING_RIGHT
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_TOP_BORDER:
+		return resizable ? THEME_LOCATION_RESIZING_TOP
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_BOTTOM_BORDER:
+		return resizable ? THEME_LOCATION_RESIZING_BOTTOM
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_LEFT_TOP_CORNER:
+		return resizable ? THEME_LOCATION_RESIZING_TOP_LEFT
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_LEFT_BOTTOM_CORNER:
+		return resizable ? THEME_LOCATION_RESIZING_BOTTOM_LEFT
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_RIGHT_TOP_CORNER:
+		return resizable ? THEME_LOCATION_RESIZING_TOP_RIGHT
+			: THEME_LOCATION_TITLEBAR;
+	case COSMOE_DECOR_REGION_RIGHT_BOTTOM_CORNER:
+		return resizable ? THEME_LOCATION_RESIZING_BOTTOM_RIGHT
+			: THEME_LOCATION_TITLEBAR;
+	default:
+		break;
+	}
+
+	if (x >= frame->interior.x && y >= frame->interior.y
+	    && x < frame->interior.x + frame->interior.width
+	    && y < frame->interior.y + frame->interior.height)
+		return THEME_LOCATION_CLIENT_AREA;
+	return THEME_LOCATION_EXTERIOR;
+}
+
 static struct frame_button *
 frame_button_create_from_surface(struct frame *frame, cairo_surface_t *icon,
                                  enum frame_status status_effect,
@@ -201,6 +304,10 @@ frame_get_pointer_location(struct frame *frame, int x, int y)
 {
 	uint32_t themeFlags = 0;
 
+	if (frame->decor) {
+		frame_refresh_geometry(frame);
+		return frame_decor_location(frame, x, y);
+	}
 	if (frame->gonx)
 		return gonx_frame_location(&frame->gonx_layout, x, y);
 
@@ -405,6 +512,8 @@ frame_destroy(struct frame *frame)
 
 	if (frame->gonx_shadow)
 		cairo_surface_destroy(frame->gonx_shadow);
+	if (frame->decor)
+		frame->decor_ops->destroy(frame->decor);
 	free(frame->title);
 	free(frame);
 }
@@ -528,6 +637,9 @@ frame_set_title(struct frame *frame, const char *title)
 	free(frame->title);
 	frame->title = dup;
 
+	if (frame->decor)
+		frame->decor_ops->set_title(frame->decor, title ? title : "");
+
 	frame->geometry_dirty = 1;
 	frame->status |= FRAME_STATUS_REPAINT;
 
@@ -586,6 +698,17 @@ frame_border_sizes(struct frame *frame, int32_t *top, int32_t *bottom,
 {
 	struct theme *t = frame->theme;
 
+	if (frame->decor) {
+		int l, t, r, b;
+		frame->decor_ops->set_flags(frame->decor, frame_decor_flags(frame));
+		frame->decor_ops->borders(frame->decor, &l, &t, &r, &b);
+		*top = t;
+		*bottom = b;
+		*left = l;
+		*right = r;
+		return;
+	}
+
 	if (frame->gonx) {
 		gonx_frame_sizes(frame->gonx, frame_gonx_small(frame),
 				 frame_gonx_tabless(frame), top, bottom, left,
@@ -611,6 +734,21 @@ frame_decoration_sizes(struct frame *frame, int32_t *top, int32_t *bottom,
 	struct theme *t = frame->theme;
 
 	frame_border_sizes(frame, top, bottom, left, right);
+
+	/* a decorator's shadow, or glow, may reach out on every side */
+	if (frame->decor) {
+		int shadow_left, shadow_top, shadow_right, shadow_bottom;
+		frame->decor_ops->set_maximized(frame->decor,
+			(frame->flags & (FRAME_FLAG_MAXIMIZED
+					 | FRAME_FLAG_NO_SHADOW)) != 0);
+		frame->decor_ops->shadow_extent(frame->decor, &shadow_left,
+			&shadow_top, &shadow_right, &shadow_bottom);
+		*top += shadow_top;
+		*bottom += shadow_bottom;
+		*left += shadow_left;
+		*right += shadow_right;
+		return;
+	}
 
 	/* the Gonx frame's shadow falls down and right */
 	if (frame->gonx) {
@@ -707,13 +845,80 @@ frame_refresh_gonx_geometry(struct frame *frame)
 	frame->geometry_dirty = 0;
 }
 
+static void
+frame_refresh_decor_geometry(struct frame *frame)
+{
+	struct frame_button *button;
+	int top, bottom, left, right;
+
+	frame_decoration_sizes(frame, &top, &bottom, &left, &right);
+	frame->decor_ops->shadow_extent(frame->decor, &frame->decor_shadow.left,
+		&frame->decor_shadow.top, &frame->decor_shadow.right,
+		&frame->decor_shadow.bottom);
+
+	frame->interior.x = left;
+	frame->interior.y = top;
+	frame->interior.width = frame->width - left - right;
+	frame->interior.height = frame->height - top - bottom;
+	if (frame->interior.width < 1)
+		frame->interior.width = 1;
+	if (frame->interior.height < 1)
+		frame->interior.height = 1;
+	frame->decor_ops->layout(frame->decor, frame->interior.x,
+		frame->interior.y, frame->interior.width, frame->interior.height);
+	frame->shadow_margin = 0;
+	frame->opaque_margin = 0;
+
+	wl_list_for_each(button, &frame->buttons, link) {
+		struct cosmoe_decor_rect r;
+		frame->decor_ops->button_rect(frame->decor,
+			frame_decor_button_region(button), &r);
+		if (r.right < r.left) {
+			/* no window menu button, nor one the decorator lacks */
+			button->allocation.width = 0;
+			button->allocation.height = 0;
+			continue;
+		}
+		button->allocation.x = r.left;
+		button->allocation.y = r.top;
+		button->allocation.width = r.right - r.left + 1;
+		button->allocation.height = r.bottom - r.top + 1;
+	}
+
+	frame->title_rect.x = frame->interior.x;
+	frame->title_rect.y = frame->decor_shadow.top;
+	frame->title_rect.width = frame->interior.width;
+	frame->title_rect.height = frame->interior.y - frame->decor_shadow.top;
+
+	frame->geometry_dirty = 0;
+}
+
 void
 frame_set_gonx(struct frame *frame, const struct gonx_style *style,
 	       uint32_t look)
 {
+	if (frame->decor) {
+		frame->decor_ops->destroy(frame->decor);
+		frame->decor = NULL;
+		frame->decor_ops = NULL;
+	}
+
 	if (style != NULL) {
 		frame->gonx_style = *style;
 		frame->gonx = &frame->gonx_style;
+		if (style->decor != NULL) {
+			frame->decor = style->decor->create(look,
+				frame_decor_flags(frame),
+				frame->title ? frame->title : "");
+			if (frame->decor != NULL)
+				frame->decor_ops = style->decor;
+			else {
+				/* no frame of the decorator's for the look:
+				 * Haiku's then */
+				frame->gonx_style.decor = NULL;
+				frame->gonx_style.haiku = 1;
+			}
+		}
 	} else
 		frame->gonx = NULL;
 	frame->gonx_look = look;
@@ -734,6 +939,15 @@ frame_overlay_contains(struct frame *frame, int x, int y)
 		return 0;
 
 	frame_refresh_geometry(frame);
+	if (frame->decor) {
+		/* a document window's resize knob, over the content */
+		if (x < frame->interior.x || y < frame->interior.y
+		    || x >= frame->interior.x + frame->interior.width
+		    || y >= frame->interior.y + frame->interior.height)
+			return 0;
+		return frame->decor_ops->region_at(frame->decor, x, y)
+			!= COSMOE_DECOR_REGION_NONE;
+	}
 	return gonx_frame_overlay_contains(&frame->gonx_layout, x, y);
 }
 
@@ -744,6 +958,10 @@ frame_gonx_input_rects(struct frame *frame,
 		       void *data)
 {
 	frame_refresh_geometry(frame);
+	if (frame->decor) {
+		frame->decor_ops->footprint(frame->decor, add, data);
+		return;
+	}
 	gonx_frame_input_rects(&frame->gonx_layout, add, data);
 }
 
@@ -758,6 +976,10 @@ frame_refresh_geometry(struct frame *frame)
 	if (!frame->geometry_dirty)
 		return;
 
+	if (frame->decor) {
+		frame_refresh_decor_geometry(frame);
+		return;
+	}
 	if (frame->gonx) {
 		frame_refresh_gonx_geometry(frame);
 		return;
@@ -853,6 +1075,21 @@ frame_input_rect(struct frame *frame, int32_t *x, int32_t *y,
 {
 	frame_refresh_geometry(frame);
 
+	if (frame->decor) {
+		/* the frame without its shadow */
+		if (x)
+			*x = frame->decor_shadow.left;
+		if (y)
+			*y = frame->decor_shadow.top;
+		if (width)
+			*width = frame->width - frame->decor_shadow.left
+				- frame->decor_shadow.right;
+		if (height)
+			*height = frame->height - frame->decor_shadow.top
+				- frame->decor_shadow.bottom;
+		return;
+	}
+
 	if (frame->gonx) {
 		/* the frame without its shadow */
 		if (x)
@@ -917,7 +1154,13 @@ frame_get_shadow_extent(struct frame *frame, int32_t *width, int32_t *height)
 {
 	frame_refresh_geometry(frame);
 
-	/* the Gonx frame's falls on one side, the theme's all round */
+	/* the Gonx frame's falls on one side, the theme's all round, a
+	 * decorator's as it may */
+	if (frame->decor) {
+		*width = frame->decor_shadow.left + frame->decor_shadow.right;
+		*height = frame->decor_shadow.top + frame->decor_shadow.bottom;
+		return;
+	}
 	if (frame->gonx) {
 		frame_gonx_shadow(frame, width, height);
 		return;
@@ -1284,6 +1527,10 @@ frame_repaint_overlay(struct frame *frame, cairo_t *cr)
 		return;
 
 	frame_refresh_geometry(frame);
+	if (frame->decor) {
+		frame->decor_ops->paint_overlay(frame->decor, cr);
+		return;
+	}
 	gonx_frame_paint_overlay(cr, &frame->gonx_layout, frame->gonx,
 				 (frame->flags & FRAME_FLAG_ACTIVE) != 0);
 }
@@ -1304,6 +1551,21 @@ frame_repaint(struct frame *frame, cairo_t *cr)
 
 	if (frame->flags & FRAME_FLAG_NO_SHADOW)
 		flags |= THEME_FRAME_NO_SHADOW;
+
+	if (frame->decor) {
+		frame->decor_ops->set_focus(frame->decor,
+			(frame->flags & FRAME_FLAG_ACTIVE) != 0);
+		wl_list_for_each(button, &frame->buttons, link) {
+			int region = frame_decor_button_region(button);
+			if (region != COSMOE_DECOR_REGION_NONE)
+				frame->decor_ops->set_pressed(frame->decor, region,
+					button->press_count > 0
+					&& button->hover_count > 0);
+		}
+		frame->decor_ops->paint(frame->decor, cr);
+		frame_status_clear(frame, FRAME_STATUS_REPAINT);
+		return;
+	}
 
 	if (frame->gonx) {
 		int pressed[GONX_BUTTON_COUNT] = { 0, 0, 0 };

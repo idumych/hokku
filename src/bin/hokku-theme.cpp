@@ -10,6 +10,10 @@
  *   hokku-theme current
  *   hokku-theme shadows [on | off]   whether windows and the pointer cast a
  *                                    shadow (Appearance's Look and feel)
+ *   hokku-theme corners [on | off]   whether windows have rounded corners,
+ *                                    where the decorator can
+ *   hokku-theme zsnake [on | off]    whether submenus join the item they
+ *                                    open from (Dano's ZSnake)
  */
 
 
@@ -41,7 +45,8 @@ static int
 usage()
 {
 	fprintf(stderr, "usage: hokku-theme list | apply NAME | save NAME "
-		"| current | shadows [on | off]\n");
+		"| current | shadows [on | off] | corners [on | off] "
+		"| zsnake [on | off]\n");
 	return 2;
 }
 
@@ -82,6 +87,38 @@ main(int argc, char** argv)
 			return usage();
 		if (apply_window_shadows(strcmp(argv[2], "on") == 0) != B_OK) {
 			fprintf(stderr, "hokku-theme: can't change the shadows\n");
+			return 1;
+		}
+		return 0;
+	}
+
+	if (strcmp(command, "corners") == 0) {
+		if (argc == 2) {
+			printf("%s\n",
+				BPrivate::get_window_rounded_corners() ? "on" : "off");
+			return 0;
+		}
+		if (argc != 3 || (strcmp(argv[2], "on") != 0
+				&& strcmp(argv[2], "off") != 0))
+			return usage();
+		if (BPrivate::set_window_rounded_corners(strcmp(argv[2], "on") == 0)
+				!= B_OK) {
+			fprintf(stderr, "hokku-theme: can't change the corners\n");
+			return 1;
+		}
+		return 0;
+	}
+
+	if (strcmp(command, "zsnake") == 0) {
+		if (argc == 2) {
+			printf("%s\n", BPrivate::get_menu_snake() ? "on" : "off");
+			return 0;
+		}
+		if (argc != 3 || (strcmp(argv[2], "on") != 0
+				&& strcmp(argv[2], "off") != 0))
+			return usage();
+		if (BPrivate::set_menu_snake(strcmp(argv[2], "on") == 0) != B_OK) {
+			fprintf(stderr, "hokku-theme: can't change ZSnake\n");
 			return 1;
 		}
 		return 0;

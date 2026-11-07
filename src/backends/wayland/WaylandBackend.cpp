@@ -326,9 +326,12 @@ public:
 		if (display == NULL)
 			return B_BAD_VALUE;
 
-		// "Default" is the theme's frame; Haiku and Gonx are drawn here
+		// "Default" is the theme's frame; Haiku and Gonx are drawn here, and
+		// app_server decorators, by libdecorator
 		const bool haiku = style != NULL && strcmp(style->name, "Haiku") == 0;
-		if (style == NULL || (!haiku && strcmp(style->name, "Gonx") != 0)) {
+		const bool decor = style != NULL && style->decor != NULL;
+		if (style == NULL
+			|| (!decor && !haiku && strcmp(style->name, "Gonx") != 0)) {
 			display_set_gonx_style((struct display*)display, NULL);
 			return style == NULL || strcmp(style->name, "Default") == 0
 				? B_OK : B_NAME_NOT_FOUND;
@@ -351,6 +354,7 @@ public:
 			sizeof(gonx.frame_inactive));
 		gonx.haiku = haiku;
 		gonx.shadow = style->shadow;
+		gonx.decor = style->decor;
 		display_set_gonx_style((struct display*)display, &gonx);
 		return B_OK;
 	}
@@ -749,12 +753,10 @@ public:
 			return;
 		}
 
-		// Add frame widget size to window content size
-		window_set_min_max_allocation((struct window*)window,
-				 min_width + WAYLAND_WINDOW_H_SLOP,
-				 min_height + WAYLAND_WINDOW_V_SLOP,
-				 max_width + WAYLAND_WINDOW_H_SLOP,
-				 max_height + WAYLAND_WINDOW_V_SLOP);
+		// the frame's own size is added to the content's, whatever frame the
+		// window has now or later
+		window_set_content_size_limits((struct window*)window,
+				 min_width, min_height, max_width, max_height);
 	}
 
 	virtual void WindowVerifySize(backend_window_t window, struct rectangle& frame)

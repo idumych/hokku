@@ -36,6 +36,9 @@ struct gonx_style {
 	uint8_t frame_inactive[3];
 	int haiku;			/* Haiku's frame instead of Gonx */
 	int shadow;			/* windows cast a shadow */
+	/* an app_server decorator draws the frame instead (CosmoeDecor.h);
+	 * frame.c drives it, the gonx_frame_*() functions don't */
+	const struct cosmoe_decor_ops *decor;
 };
 
 enum {

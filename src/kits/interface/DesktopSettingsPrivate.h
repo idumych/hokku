@@ -86,6 +86,8 @@ public:
 			const BString&		Decorator() const;
 			status_t			SetWindowShadows(bool shadows);
 			bool				WindowShadows() const;
+			status_t			SetWindowRoundedCorners(bool rounded);
+			bool				WindowRoundedCorners() const;
 			status_t			SetMenuSnake(bool snake);
 			bool				MenuSnake() const;
 			void				SetDesktopColor(rgb_color color);
@@ -116,6 +118,7 @@ private:
 			BString				fControlLook;
 			BString				fDecorator;
 			bool				fWindowShadows;
+			bool				fWindowRoundedCorners;
 			bool				fMenuSnake;
 			rgb_color			fDesktopColor;
 

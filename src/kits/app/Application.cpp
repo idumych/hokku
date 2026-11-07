@@ -1167,7 +1167,12 @@ BApplication::DispatchMessage(BMessage* message, BHandler* handler)
 			break;
 
 		case B_COLORS_UPDATED:
+		case B_FONTS_UPDATED:
 			_MessageAllWindows(message);
+			break;
+
+		case BPrivate::kMsgRefreshAppearance:
+			BPrivate::refresh_appearance();
 			break;
 
 		case _SHOW_DRAG_HANDLES_:
@@ -1452,6 +1457,8 @@ BApplication::_InitGUIContext()
 
 	// the window decorator needs the system fonts and colours
 	BPrivate::apply_decorator(fDisplay);
+	// and a new look, chosen while the application runs, reaches it
+	BPrivate::watch_appearance_settings();
 
 	// create global system cursors
 	B_CURSOR_SYSTEM_DEFAULT = new BCursor(B_HAND_CURSOR);

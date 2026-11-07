@@ -94,6 +94,9 @@ jobs:
             libx11-dev libx11-xcb-dev libxcursor-dev libxrandr-dev \
             libxkbcommon-dev libxkbcommon-x11-dev \
             libwayland-dev libfuse3-dev \
+            libdrm-dev libinput-dev libxml2-dev librsvg2-dev libseat-dev \
+            libdisplay-info-dev libliftoff-dev libgbm-dev libegl-dev \
+            libgles-dev hwdata wayland-protocols git \
             debhelper dpkg-dev fakeroot
 
       - name: Build Debian packages
@@ -145,7 +148,11 @@ jobs:
             wayland-devel libwebp-devel \
             libX11-devel libXcursor-devel libXrandr-devel \
             libxkbcommon-devel libxkbcommon-x11-devel \
-            fuse3-devel zlib-ng-compat-devel
+            fuse3-devel zlib-ng-compat-devel \
+            libdrm-devel libinput-devel libxml2-devel librsvg2-devel \
+            wayland-protocols-devel libseat-devel libdisplay-info-devel \
+            libliftoff-devel mesa-libgbm-devel mesa-libEGL-devel \
+            mesa-libGLES-devel hwdata-devel git
 
       - name: Build RPM packages
         run: make rpm

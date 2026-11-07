@@ -67,6 +67,7 @@ static const int32 kMsgArrowStyleSingle = 'mass';
 static const int32 kMsgArrowStyleDouble = 'masd';
 
 static const int32 kMsgShadows = 'shdw';
+static const int32 kMsgRoundedCorners = 'rncr';
 static const int32 kMsgMenuSnake = 'msnk';
 
 static const bool kDefaultDoubleScrollBarArrowsSetting = false;
@@ -84,11 +85,13 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 	fArrowStyleSingle(NULL),
 	fArrowStyleDouble(NULL),
 	fShadowsCheckBox(NULL),
+	fRoundedCornersCheckBox(NULL),
 	fMenuSnakeCheckBox(NULL),
 	fSavedControlLook(NULL),
 	fCurrentControlLook(NULL),
 	fSavedDoubleArrowsValue(_DoubleScrollBarArrows()),
 	fSavedShadows(BPrivate::get_window_shadows()),
+	fSavedRoundedCorners(BPrivate::get_window_rounded_corners()),
 	fSavedMenuSnake(BPrivate::get_menu_snake())
 {
 	BPrivate::get_control_look(fCurrentControlLook);
@@ -144,6 +147,15 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 	fShadowsCheckBox->SetToolTip(
 		B_TRANSLATE("Running applications' windows change when they restart"));
 
+	// Hokku: window frames with rounded corners, where the decorator can
+	fRoundedCornersCheckBox = new BCheckBox("rounded corners",
+		B_TRANSLATE("Round the corners of windows"),
+		new BMessage(kMsgRoundedCorners));
+	fRoundedCornersCheckBox->SetValue(
+		fSavedRoundedCorners ? B_CONTROL_ON : B_CONTROL_OFF);
+	fRoundedCornersCheckBox->SetToolTip(
+		B_TRANSLATE("Running applications' windows change when they restart"));
+
 	// Hokku: Dano's hidden ZSnake, a band from a submenu's selection to the
 	// item it opened from
 	fMenuSnakeCheckBox = new BCheckBox("menu snake",
@@ -162,8 +174,9 @@ LookAndFeelSettingsView::LookAndFeelSettingsView(const char* name)
 		.Add(scrollBarLabel, 0, 1)
 		.Add(arrowStyleBox, 1, 1)
 		.Add(fShadowsCheckBox, 1, 2)
-		.Add(fMenuSnakeCheckBox, 1, 3)
-		.AddGlue(0, 4)
+		.Add(fRoundedCornersCheckBox, 1, 3)
+		.Add(fMenuSnakeCheckBox, 1, 4)
+		.AddGlue(0, 5)
 		.SetInsets(B_USE_WINDOW_SPACING);
 
 	// TODO : Decorator Preview Image?
@@ -188,6 +201,7 @@ LookAndFeelSettingsView::AttachedToWindow()
 	fArrowStyleSingle->SetTarget(this);
 	fArrowStyleDouble->SetTarget(this);
 	fShadowsCheckBox->SetTarget(this);
+	fRoundedCornersCheckBox->SetTarget(this);
 	fMenuSnakeCheckBox->SetTarget(this);
 
 	if (fSavedDoubleArrowsValue)
@@ -251,6 +265,11 @@ LookAndFeelSettingsView::MessageReceived(BMessage* message)
 
 		case kMsgShadows:
 			_SetShadows(fShadowsCheckBox->Value() == B_CONTROL_ON);
+			break;
+
+		case kMsgRoundedCorners:
+			_SetRoundedCorners(
+				fRoundedCornersCheckBox->Value() == B_CONTROL_ON);
 			break;
 
 		case kMsgMenuSnake:
@@ -386,6 +405,17 @@ LookAndFeelSettingsView::_SetShadows(bool shadows)
 
 
 void
+LookAndFeelSettingsView::_SetRoundedCorners(bool rounded)
+{
+	if (BPrivate::get_window_rounded_corners() != rounded)
+		BPrivate::set_window_rounded_corners(rounded);
+	fRoundedCornersCheckBox->SetValue(rounded ? B_CONTROL_ON : B_CONTROL_OFF);
+
+	Window()->PostMessage(kMsgUpdate);
+}
+
+
+void
 LookAndFeelSettingsView::_SetMenuSnake(bool snake)
 {
 	if (BPrivate::get_menu_snake() != snake)
@@ -402,6 +432,7 @@ LookAndFeelSettingsView::IsDefaultable()
 	return fCurrentControlLook.Length() != 0
 		|| _DoubleScrollBarArrows() != false
 		|| !BPrivate::get_window_shadows()
+		|| !BPrivate::get_window_rounded_corners()
 		|| BPrivate::get_menu_snake();
 }
 
@@ -412,6 +443,7 @@ LookAndFeelSettingsView::SetDefaults()
 	_SetControlLook(BString(""));
 	_SetDoubleScrollBarArrows(false);
 	_SetShadows(true);
+	_SetRoundedCorners(true);
 	_SetMenuSnake(false);
 }
 
@@ -422,6 +454,7 @@ LookAndFeelSettingsView::IsRevertable()
 	return fCurrentControlLook != fSavedControlLook
 		|| _DoubleScrollBarArrows() != fSavedDoubleArrowsValue
 		|| BPrivate::get_window_shadows() != fSavedShadows
+		|| BPrivate::get_window_rounded_corners() != fSavedRoundedCorners
 		|| BPrivate::get_menu_snake() != fSavedMenuSnake;
 }
 
@@ -433,6 +466,7 @@ LookAndFeelSettingsView::Revert()
 		_SetControlLook(fSavedControlLook);
 		_SetDoubleScrollBarArrows(fSavedDoubleArrowsValue);
 		_SetShadows(fSavedShadows);
+		_SetRoundedCorners(fSavedRoundedCorners);
 		_SetMenuSnake(fSavedMenuSnake);
 	}
 }
