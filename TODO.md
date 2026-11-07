@@ -5,8 +5,6 @@
 - Cairo complains on exit due to non-empty object hash (i.e. memory leak)
   - This assert is currently disabled.
 
-- ShowImage selection rectangle does not do the "marching ants" animation
-
 - `BRecentFilesList` / `BRecentFolderList` / `BRecentAppList` only partially implemented
 
 - Drag-n-Drop from external sources is not yet implemented on any backend
@@ -67,17 +65,15 @@
 
 - Tracker/libtracker/Deskbar bugs
   - "Get Info" on a file can sometimes hang Tracker (haven't seen this in a while)
-  - Dragging a file/folder to a new window (e.g. to copy/move it to a new location) does not work
-  - "Open With" always shows an empty menu
-  - Tracker menus are layered behind the Deskbar on Wayland
+  - Dragging a file/folder to a new window (e.g. to copy/move it to a new location) does not work consistently and shows no drag/drop UI
+  - Tracker menus are layered behind the Deskbar on Wayland, this is actually very difficult to fix due to Wayland layering
   - Error on startup: "FlatIconImporter::_ParseSections() - error parsing shapes: Unknown error -1"
-    - This is due to a malformed Person vector icon in Haiku
-  - If you open an Open File Panel a second time after having opened a file the first time, it locks up the window (and the app)
-    - Save panel doesn't do that though
-	  - If you cancel, you can open as many Open panels as you want, it's only when you really open a file that it happens
-  - Drag selecting often leaves a small amount of stale pixels behind from the selection rectangle
+    - This is due to a malformed Person vector icon in Haiku, not a bug in Cosmoe
   - Resizing the columns on open/save panels produces graphical artifacts and/or shows through to the window below
   - Certain Deskbar placements that should put Deskbar in the corner of the screen position it away from the corner horizontally
+  - Some custom cursors work, others show a corrupted cursor image
+  - File search instantly completes and shows no results (due to lack of fs indexes no doubt) -- we need a backup plan
+  - When you empty the trash, the trash icon on the Desktop changes, but if you have the trash window open, the icon in the window does not
 
 
 ## Historical Bugs -- not specifically fixed, but haven't been seen in a long time, so may be fixed by another change
@@ -90,6 +86,10 @@
 - Sometimes views don't draw completely on the inital draw, and a refresh/resize will be needed to force a full paint
 
 - Opening a menu can occasionally cause a crash, though haven't seen this in a while (Wayland)
+
+- If you open an Open File Panel a second time after having opened a file the first time, it locks up the window (and the app)
+	- Save panel doesn't do that though
+	- If you cancel, you can open as many Open panels as you want, it's only when you really open a file that it happens
 
 
 ## Platform-Specific Bugs
@@ -142,7 +142,10 @@ Cosmoe is designed to be as compatible as possible with Haiku/Be code, but there
   - Workaround: use XFS or Btrfs
 
 - BFont.StringWidth() takes an extra optional parameter in Cosmoe to set scaling mode
-  - If you were originally passing something besides an int32 into the second parameter, you'll need to cast to int32 to avoid an ambigious call between the 2 StringWidth methods.
+  - Normally, this is transparent to your code, but if you were originally passing something besides an int32 into the second parameter, you'll need to cast to int32 to avoid an ambigious call between the 2 StringWidth methods.
+
+- Haiku allows drawing outside of the Draw() loop (e.g. in a Pulse() call) without an Invalidate() being necessary
+  - Cosmoe requires an explicit Invalidate() for those pixels to reach the screen
 
 - Apps that need runtime lookup of their own Class::Instantiate(BMessage*) symbols need the following linker flags in their Makefile. Apps using only the built-in archivable classes do not need it.
 	ifeq ($(shell uname -s),Linux)
