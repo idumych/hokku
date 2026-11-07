@@ -26,8 +26,12 @@
 
 #include <ctype.h>
 #include <cairo.h>
+#include <map>
+#include <mutex>
 #include <new>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <string>
 #include <strings.h>
 #include <vector>
 
@@ -365,8 +369,10 @@ try_import_icon_path(const char* path, BBitmap* icon)
 	if (path == NULL || path[0] == '\0' || icon == NULL)
 		return B_BAD_VALUE;
 
-	BEntry entry(path);
-	if (!entry.Exists() || !entry.IsFile())
+	// (Not with a BEntry: this is asked hundreds of times per theme for an icon
+	// that isn't there, and a BEntry reads through the folder each time.)
+	struct stat status;
+	if (lstat(path, &status) != 0 || !S_ISREG(status.st_mode))
 		return B_ENTRY_NOT_FOUND;
 
 	return import_bitmap_from_path(path, icon);
@@ -445,6 +451,23 @@ import_xdg_icon_by_name(const char* iconName, icon_size size, BBitmap* icon)
 {
 	if (iconName == NULL || iconName[0] == '\0' || icon == NULL)
 		return B_BAD_VALUE;
+
+	// An icon that isn't there takes every theme to find that out, and a menu
+	// asks each time it opens. One that gets installed shows up within a while.
+	static std::mutex sMissingLock;
+	static std::map<std::string, bigtime_t> sMissing;
+	const bigtime_t kMissingFor = 10 * 60 * 1000000LL;
+	const std::string missingKey = std::string(iconName) + ":"
+		+ std::to_string((int)size);
+	{
+		std::lock_guard<std::mutex> _(sMissingLock);
+		auto missing = sMissing.find(missingKey);
+		if (missing != sMissing.end()) {
+			if (system_time() - missing->second < kMissingFor)
+				return B_ENTRY_NOT_FOUND;
+			sMissing.erase(missing);
+		}
+	}
 
 	status_t lastError = B_ENTRY_NOT_FOUND;
 
@@ -590,6 +613,10 @@ import_xdg_icon_by_name(const char* iconName, icon_size size, BBitmap* icon)
 		}
 	}
 
+	if (lastError == B_ENTRY_NOT_FOUND) {
+		std::lock_guard<std::mutex> _(sMissingLock);
+		sMissing[missingKey] = system_time();
+	}
 	return lastError;
 }
 
