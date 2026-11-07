@@ -133,15 +133,14 @@ DecorInfo::Path() const
 }
 
 
-#if 0
 const entry_ref*
 DecorInfo::Ref() const
 {
-	if (InitCheck() != B_OK || IsDefault())
+	// Hokku: the built-in decorators have no file
+	if (InitCheck() != B_OK || IsDefault() || fRef.name == NULL)
 		return NULL;
 	return &fRef;
 }
-#endif
 
 
 BString
@@ -354,6 +353,7 @@ DecorInfo::_Init(bool isUpdate)
 
 	// update fRef to match file system object
 	//entry.GetPath(&fPath);
+	entry.GetRef(&fRef);
 	entry.GetModificationTime(&fModificationTime);
 
 	BResources resources(fPath.String());
