@@ -685,9 +685,11 @@ class CairoContext {
 				continue;
 
 			BRegion transformedClip(currentState->clipping_region);
-			transformedClip.OffsetBy(-(int32)bounds->left, -(int32)bounds->top);
+			// (scaled first: the bounds are in the view's pixels, the region in
+			// the coordinates the scale applies to)
 			applyScaleAndOffsetToRegion(transformedClip, combinedScale,
 				combinedOrigin);
+			transformedClip.OffsetBy(-(int32)bounds->left, -(int32)bounds->top);
 			combinedClippingArea.IntersectWith(&transformedClip);
 		}
 
