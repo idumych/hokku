@@ -1150,6 +1150,16 @@ int	fs_stat_dev(dev_t dev, fs_info *info)
 		if (vfs.f_flag & ST_NOSUID)
 			; /* not mapped but kept for future */
 
+		/* A file system with extended attributes has what BFS's attributes
+		   and queries need; ENODATA is the answer of one, for an attribute
+		   that the root folder does not have. */
+#if defined(HAVE_SYS_XATTR_H)
+		if (lgetxattr(ent->mnt_dir, "user.COSMOE:PROBE", NULL, 0) >= 0
+			|| errno == ENODATA) {
+			info->flags |= B_FS_HAS_ATTR | B_FS_HAS_MIME | B_FS_HAS_QUERY;
+		}
+#endif
+
 		ret = 0;
 		break;
 	}

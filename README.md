@@ -505,6 +505,21 @@ to the Haiku project, whose work made both possible.
 - **`BScreen::WaitForRetrace()`** waits for the next tick of a 60 Hz clock, since the
   display server doesn't tell apps when the screen refreshes.
 
+### Queries
+
+- **`BQuery` works** (it was a stub; every call failed). Haiku's own parser and matching
+  decide what a predicate means: wildcards, numbers compared as numbers, `&&`, `||`, `!`,
+  `name`, `size`, `last_modified` and `%dates%`. 95 of 98 predicates, run on the same files,
+  gave the same result as BFS on R1/beta6; of the rest, two were attributes without an index
+  there, and Hokku refuses an unclosed `(` that beta6 accepted. `BVolume::KnowsQuery()` and
+  `KnowsAttr()` are true on a file system with extended attributes.
+- **No indices yet, so a query walks.** On the home folder's volume it reads the settings
+  folder and the home folder (about 2 µs a file: 9 s for 4.5 million), on the root volume
+  nothing, and on any other volume all of it. Hidden entries are left out, links aren't
+  followed, and no file is opened, so nothing watching a file sees it as changed.
+  `fs_stat_index()` still fails, which keeps `BRoster` from walking when it looks for an app.
+- **Linux only.** Live queries, and `fs_open_query()` and its relatives, aren't there yet.
+
 ### Windows, menus and input
 
 - **New windows open at their frame's position**, as app_server places them. They were

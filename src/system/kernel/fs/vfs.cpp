@@ -631,19 +631,6 @@ BPrivate::Storage::close_attr_dir(int dir)
 
 
 //------------------------------------------------------------------------------
-// Query Functions
-//------------------------------------------------------------------------------
-
-status_t
-_kern_open_query(dev_t device, const char *query, uint32 flags, int &result)
-{
-	if (flags & B_LIVE_QUERY)
-		return B_BAD_VALUE;
-	result = -1;
-	return (result < 0) ? errno : B_OK;
-}
-
-//------------------------------------------------------------------------------
 // Miscellaneous Functions
 //------------------------------------------------------------------------------
 

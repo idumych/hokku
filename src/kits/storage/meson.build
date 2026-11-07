@@ -22,6 +22,8 @@ srcs_storage = [
     'PathFinder.cpp',
     'PathMonitor.cpp',
     'Query.cpp',
+    'QueryEngine.cpp',
+    'QueryParserUtils.cpp',
     'QueryPredicate.cpp',
     'ResourceFile.cpp',
     'ResourceItem.cpp',

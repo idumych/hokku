@@ -17,6 +17,7 @@ struct entry_ref;
 namespace BPrivate {
 	namespace Storage {
 		class QueryNode;
+		class QueryRun;
 		class QueryStack;
 		class QueryTree;
 	};
@@ -106,7 +107,7 @@ private:
 			uint32			fFlags;
 			port_id			fPort;
 			long			fToken;
-			int				fQueryFd;
+			BPrivate::Storage::QueryRun* fRun;
 			int32			_reservedData[4];
 };
 
