@@ -74,6 +74,11 @@
 
 #include <DesktopSettings.h>
 
+#if defined(__linux__)
+#include <dlfcn.h>
+#endif
+#include <CosmoeDecor.h>
+
 #ifdef HAVE_PANGO
 #include <pango/pangocairo.h>
 #include <fontconfig/fontconfig.h>
@@ -1936,6 +1941,71 @@ get_decorator(BString& path)
 }
 
 
+/*!	Hokku: where the decorator add-on of this name is, in the decorators
+	folders of the add-ons folders, the user's first.
+*/
+static bool
+find_decorator_add_on(const BString& name, BPath& path)
+{
+	static const directory_which kDirectories[] = {
+		B_USER_NONPACKAGED_ADDONS_DIRECTORY,
+		B_USER_ADDONS_DIRECTORY,
+		B_SYSTEM_NONPACKAGED_ADDONS_DIRECTORY,
+		B_SYSTEM_ADDONS_DIRECTORY
+	};
+	for (size_t i = 0; i < B_COUNT_OF(kDirectories); i++) {
+		if (find_directory(kDirectories[i], &path) != B_OK
+			|| path.Append("decorators") != B_OK
+			|| path.Append(name.String()) != B_OK) {
+			continue;
+		}
+		struct stat st;
+		if (stat(path.Path(), &st) == 0 && S_ISREG(st.st_mode))
+			return true;
+	}
+	return false;
+}
+
+
+/*!	Hokku: the calls for an app_server decorator to draw the frames with,
+	from libdecorator next to libbe, or NULL without it or the decorator.
+*/
+static const cosmoe_decor_ops*
+load_decorator(const BString& name)
+{
+#if defined(__linux__)
+	static cosmoe_decor_load_func sLoad = NULL;
+	static bool sTried = false;
+	if (!sTried) {
+		sTried = true;
+		void* library = NULL;
+		Dl_info info;
+		if (dladdr((void*)&load_decorator, &info) != 0
+			&& info.dli_fname != NULL) {
+			BPath path(info.dli_fname);
+			BPath directory;
+			if (path.GetParent(&directory) == B_OK
+				&& directory.Append("libdecorator.so") == B_OK) {
+				library = dlopen(directory.Path(), RTLD_NOW | RTLD_LOCAL);
+			}
+		}
+		if (library == NULL)
+			library = dlopen("libdecorator.so", RTLD_NOW | RTLD_LOCAL);
+		if (library != NULL) {
+			sLoad = (cosmoe_decor_load_func)dlsym(library,
+				"cosmoe_decor_load");
+		} else
+			fprintf(stderr, "Hokku: no libdecorator: %s\n", dlerror());
+	}
+	if (sLoad == NULL)
+		return NULL;
+	return sLoad(name.String());
+#else
+	return NULL;
+#endif
+}
+
+
 /*!	\brief Private function which sets the window decorator for the system.
 	\param path BString with the path to the decorator to set
 
@@ -1944,8 +2014,9 @@ get_decorator(BString& path)
 status_t
 set_decorator(const BString& path)
 {
-	// The decorators are built into the backends: "Default" (the backend's
-	// own frame), "Haiku" and "Gonx".
+	// "Default" is the backend's own frame, "Haiku" and "Gonx" are built in,
+	// and app_server decorator add-ons are found by their name, or a path to
+	// one where they are looked for
 	BString name;
 	if (path.ICompare("Default") == 0)
 		name = "Default";
@@ -1953,8 +2024,14 @@ set_decorator(const BString& path)
 		name = "Haiku";
 	else if (path.ICompare("Gonx") == 0)
 		name = "Gonx";
-	else
-		return B_NAME_NOT_FOUND;
+	else {
+		BPath addOn(path.String());
+		if (addOn.InitCheck() != B_OK || addOn.Leaf() == NULL)
+			return B_NAME_NOT_FOUND;
+		name = addOn.Leaf();
+		if (!find_decorator_add_on(name, addOn))
+			return B_NAME_NOT_FOUND;
+	}
 
 	status_t status;
 	{
@@ -2114,6 +2191,17 @@ apply_decorator(void* display)
 	set_rgb(style.frame, ui_color(B_WINDOW_BORDER_COLOR));
 	set_rgb(style.frame_inactive, ui_color(B_WINDOW_INACTIVE_BORDER_COLOR));
 	style.shadow = get_window_shadows() ? 1 : 0;
+
+	// Haiku's frame and the add-ons are app_server's decorators, run here.
+	// Without libdecorator Haiku's is the backend's copy of it, and Gonx is
+	// the backend's unless its add-on is installed.
+	if (name != "Default") {
+		style.decor = load_decorator(name);
+		if (style.decor == NULL && name != "Haiku" && name != "Gonx") {
+			fprintf(stderr, "Hokku: no decorator \"%s\"\n", name.String());
+			snprintf(style.name, sizeof(style.name), "Default");
+		}
+	}
 
 	// bold titles, plain on the small tabs of floating windows, as the
 	// app_server decorators do

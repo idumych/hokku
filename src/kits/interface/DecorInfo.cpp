@@ -705,6 +705,17 @@ DecorInfoUtility::_ScanDecorators(BDirectory &decoratorDirectory)
 			continue;
 		}
 
+		// Hokku: an add-on with a built-in decorator's name, or one found in
+		// the user's folder and the system's, is listed once; the add-on
+		// is the one used (set_decorator())
+		bool listed = false;
+		for (int32 j = 0; j < fList.CountItems() && !listed; j++)
+			listed = fList.ItemAt(j)->Name() == decorInfo->Name();
+		if (listed) {
+			delete decorInfo;
+			continue;
+		}
+
 		fList.AddItem(decorInfo);
 	}
 

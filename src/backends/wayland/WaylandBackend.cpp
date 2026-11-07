@@ -326,9 +326,12 @@ public:
 		if (display == NULL)
 			return B_BAD_VALUE;
 
-		// "Default" is the theme's frame; Haiku and Gonx are drawn here
+		// "Default" is the theme's frame; Haiku and Gonx are drawn here, and
+		// app_server decorators, by libdecorator
 		const bool haiku = style != NULL && strcmp(style->name, "Haiku") == 0;
-		if (style == NULL || (!haiku && strcmp(style->name, "Gonx") != 0)) {
+		const bool decor = style != NULL && style->decor != NULL;
+		if (style == NULL
+			|| (!decor && !haiku && strcmp(style->name, "Gonx") != 0)) {
 			display_set_gonx_style((struct display*)display, NULL);
 			return style == NULL || strcmp(style->name, "Default") == 0
 				? B_OK : B_NAME_NOT_FOUND;
@@ -351,6 +354,7 @@ public:
 			sizeof(gonx.frame_inactive));
 		gonx.haiku = haiku;
 		gonx.shadow = style->shadow;
+		gonx.decor = style->decor;
 		display_set_gonx_style((struct display*)display, &gonx);
 		return B_OK;
 	}
