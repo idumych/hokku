@@ -518,7 +518,17 @@ to the Haiku project, whose work made both possible.
   nothing, and on any other volume all of it. Hidden entries are left out, links aren't
   followed, and no file is opened, so nothing watching a file sees it as changed.
   `fs_stat_index()` still fails, which keeps `BRoster` from walking when it looks for an app.
-- **Linux only.** Live queries, and `fs_open_query()` and its relatives, aren't there yet.
+- **Live queries.** With `SetTarget()`, a query goes on sending `B_QUERY_UPDATE`, so Tracker's
+  Find window follows the files. `Fetch()` doesn't wait: the first walk is on the query's own
+  thread. The same changes on BFS and here gave the same messages, but for the rename of a
+  folder with a match in it: BFS says nothing, here the path changes and so does the entry.
+  A home folder can have more folders than a user has inotify watches, so a query watches
+  4096 of them: where it started, where it has a match, then the nearest. A change there
+  comes at once; one anywhere else comes when the query walks again, at a low priority,
+  once a minute or, if walking takes long, about 3% of one CPU (4 minutes for 4.5 million
+  files). `B_QUERY_WATCH_ALL` adds nothing yet: a move is a removal and a creation, and a
+  change that doesn't affect the match isn't reported.
+- **Linux only.** `fs_open_query()` and its relatives aren't there yet.
 
 ### Windows, menus and input
 

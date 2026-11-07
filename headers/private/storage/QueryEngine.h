@@ -6,6 +6,7 @@
 #define _QUERY_ENGINE_H
 
 
+#include <OS.h>
 #include <SupportDefs.h>
 
 #include <sys/types.h>
@@ -19,18 +20,19 @@ namespace Storage {
 
 
 /*!	A running query. BFS answers a query from its indices; a Linux file system
-	has none, so this reads the attributes of the files it comes across, one
-	call of GetNextRef() at a time.
+	has none, so this reads the attributes of the files it comes across.
 */
 class QueryRun;
 
 
-/*!	Starts a query of a volume.
+/*!	Starts a query of a volume. With \c B_LIVE_QUERY in \a flags, it goes on
+	sending \c B_QUERY_UPDATE messages to \a token on \a port (-1: the preferred
+	handler).
 	\return \c B_OK, \c B_BAD_VALUE for a predicate that cannot be parsed,
-		\c B_NOT_SUPPORTED for a live query and on systems other than Linux.
+		\c B_NOT_SUPPORTED on systems other than Linux.
 */
 status_t	open_query(dev_t device, const char* predicate, uint32 flags,
-				QueryRun** _run);
+				port_id port, int32 token, QueryRun** _run);
 void		close_query(QueryRun* run);
 
 /*!	The next entry that matches.

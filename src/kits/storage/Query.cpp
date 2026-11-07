@@ -319,7 +319,7 @@ BQuery::Fetch()
 	_ParseDates(parsedPredicate);
 
 	return open_query(fDevice, parsedPredicate.String(),
-		fFlags | ((fPort >= 0) ? B_LIVE_QUERY : 0), &fRun);
+		fFlags | ((fPort >= 0) ? B_LIVE_QUERY : 0), fPort, fToken, &fRun);
 }
 
 

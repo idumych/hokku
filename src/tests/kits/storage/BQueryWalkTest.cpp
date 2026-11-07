@@ -12,13 +12,16 @@
 
 
 #include <Directory.h>
+#include <AppDefs.h>
 #include <Entry.h>
 #include <File.h>
 #include <FindDirectory.h>
 #include <fs_attr.h>
 #include <fs_info.h>
 #include <Looper.h>
+#include <Message.h>
 #include <Messenger.h>
+#include <NodeMonitor.h>
 #include <Node.h>
 #include <Path.h>
 #include <Query.h>
@@ -35,8 +38,10 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <mutex>
 #include <set>
 #include <string>
+#include <vector>
 
 
 static int sChecks = 0;
@@ -372,19 +377,291 @@ test_api()
 		CHECK(query.GetNextDirents(dirent, sizeof(buffer), 1) == 0);
 	}
 
-	// a live query is refused until it is one, rather than never being updated
+}
+
+
+/*!	Keeps what a live query says. */
+class Collector : public BLooper {
+public:
+	Collector()
+		:
+		BLooper("live query target")
 	{
+	}
+
+	virtual void MessageReceived(BMessage* message)
+	{
+		if (message->what != B_QUERY_UPDATE) {
+			BLooper::MessageReceived(message);
+			return;
+		}
+		std::lock_guard<std::mutex> lock(fLock);
+		const int32 opcode = message->GetInt32("opcode", 0);
+		std::string name = message->GetString("name", "");
+		if (name.rfind(sHome + "/", 0) == 0)
+			name = name.substr(sHome.size() + 1);
+		fUpdates.push_back(std::string(opcode == B_ENTRY_CREATED ? "+"
+			: opcode == B_ENTRY_REMOVED ? "-" : "?") + name);
+		fLastHadFields = message->GetInt32("device", -1) == (int32)sDevice
+			&& message->GetInt64("directory", 0) != 0
+			&& message->GetInt64("node", 0) != 0;
+	}
+
+	/*!	What came within the time, waiting for as many as are expected and then
+		a moment longer, for those that should not come.
+	*/
+	std::vector<std::string> Take(size_t expected, int seconds = 5)
+	{
+		for (int i = 0; i < seconds * 20; i++) {
+			{
+				std::lock_guard<std::mutex> lock(fLock);
+				if (fUpdates.size() >= expected)
+					break;
+			}
+			usleep(50000);
+		}
+		usleep(200000);
+		std::lock_guard<std::mutex> lock(fLock);
+		std::vector<std::string> updates;
+		updates.swap(fUpdates);
+		return updates;
+	}
+
+	bool LastHadFields()
+	{
+		std::lock_guard<std::mutex> lock(fLock);
+		return fLastHadFields;
+	}
+
+private:
+	std::mutex	fLock;
+	std::vector<std::string> fUpdates;
+	bool		fLastHadFields = false;
+};
+
+
+static void
+check_updates(Collector* collector, const char* what,
+	const std::vector<std::string>& expected, int seconds = 5)
+{
+	const std::vector<std::string> updates
+		= collector->Take(expected.size(), seconds);
+	sChecks++;
+	if (updates == expected)
+		return;
+
+	sFailures++;
+	printf("FAIL live, %s: got", what);
+	for (const std::string& update : updates)
+		printf(" '%s'", update.c_str());
+	printf("; expected");
+	for (const std::string& update : expected)
+		printf(" '%s'", update.c_str());
+	printf("\n");
+}
+
+
+static std::vector<std::string>
+read_all(BQuery& query)
+{
+	std::vector<std::string> names;
+	entry_ref ref;
+	while (query.GetNextRef(&ref) == B_OK)
+		names.push_back(BPath(&ref).Leaf());
+	std::sort(names.begin(), names.end());
+	return names;
+}
+
+
+static void
+test_live()
+{
+	Collector* collector = new Collector;
+	collector->Run();
+
+	BVolume volume(sDevice);
+	BQuery query;
+	query.SetVolume(&volume);
+	query.SetPredicate("Live:Tag==\"yes*\"");
+	CHECK(query.SetTarget(BMessenger()) == B_BAD_VALUE);
+	CHECK(query.SetTarget(BMessenger(collector)) == B_OK);
+	CHECK(query.IsLive());
+
+	make_file("live/before");
+	set_string("live/before", "Live:Tag", "yes");
+	make_file("live/other");
+	CHECK(query.Fetch() == B_OK);
+	CHECK(query.SetPredicate("x==1") == B_NOT_ALLOWED);
+
+	// what matched at the start is read, not sent
+	CHECK(read_all(query) == std::vector<std::string>{"before"});
+	CHECK(query.Rewind() == B_OK);
+	CHECK(read_all(query) == std::vector<std::string>{"before"});
+	check_updates(collector, "nothing yet", {}, 0);
+
+	// an attribute starts to match, changes and stops
+	set_string("live/other", "Live:Tag", "yes");
+	check_updates(collector, "attribute set", {"+live/other"});
+	CHECK(collector->LastHadFields());
+	set_string("live/other", "Live:Tag", "yes, still");
+	check_updates(collector, "still matches", {}, 0);
+	set_string("live/other", "Live:Tag", "no");
+	check_updates(collector, "attribute changed", {"-live/other"});
+
+	// a removed attribute
+	set_string("live/other", "Live:Tag", "yes");
+	check_updates(collector, "again", {"+live/other"});
+	BNode((sHome + "/live/other").c_str()).RemoveAttr("Live:Tag");
+	check_updates(collector, "attribute removed", {"-live/other"});
+
+	// a new file, with an attribute
+	make_file("live/new");
+	check_updates(collector, "no attribute yet", {}, 0);
+	set_string("live/new", "Live:Tag", "yes");
+	check_updates(collector, "new file", {"+live/new"});
+
+	// a rename, to a name and to a hidden name
+	CHECK(rename((sHome + "/live/new").c_str(),
+		(sHome + "/live/renamed").c_str()) == 0);
+	check_updates(collector, "renamed", {"-live/new", "+live/renamed"});
+	CHECK(rename((sHome + "/live/renamed").c_str(),
+		(sHome + "/live/.hidden now").c_str()) == 0);
+	check_updates(collector, "now hidden", {"-live/renamed"});
+
+	// a removed file
+	CHECK(unlink((sHome + "/live/before").c_str()) == 0);
+	check_updates(collector, "deleted", {"-live/before"});
+
+	// a new folder, its file, and a file in a new folder made after
+	CHECK(create_directory((sHome + "/live/made").c_str(), 0755) == B_OK);
+	usleep(200000);
+	make_file("live/made/inside");
+	set_string("live/made/inside", "Live:Tag", "yes");
+	check_updates(collector, "in a new folder", {"+live/made/inside"});
+
+	// a folder that comes with what is in it
+	const std::string away = sHome + ".away";
+	CHECK(create_directory((away + "/deep").c_str(), 0755) == B_OK);
+	{
+		BFile file((away + "/deep/there").c_str(),
+			B_READ_WRITE | B_CREATE_FILE);
+		BString value("yes");
+		file.WriteAttrString("Live:Tag", &value);
+	}
+	CHECK(rename(away.c_str(), (sHome + "/live/moved in").c_str()) == 0);
+	check_updates(collector, "folder moved in", {"+live/moved in/deep/there"});
+
+	// and one that goes with it, and is not listened to any more
+	CHECK(rename((sHome + "/live/moved in").c_str(), away.c_str()) == 0);
+	check_updates(collector, "folder moved out",
+		{"-live/moved in/deep/there"});
+	{
+		BNode node((away + "/deep/there").c_str());
+		node.RemoveAttr("Live:Tag");
+		BString value("yes");
+		node.WriteAttrString("Live:Tag", &value);
+	}
+	check_updates(collector, "out of sight", {}, 0);
+	std::error_code ignored;
+
+	// a new folder of the old name is another folder, and is listened to
+	// (the moved one still exists, so that its watch would be alive if it had
+	// been kept)
+	CHECK(create_directory((sHome + "/live/moved in/deep").c_str(), 0755)
+		== B_OK);
+	usleep(300000);
+	make_file("live/moved in/deep/again");
+	set_string("live/moved in/deep/again", "Live:Tag", "yes");
+	check_updates(collector, "same name, new folder",
+		{"+live/moved in/deep/again"});
+	std::filesystem::remove_all(away, ignored);
+
+	// a folder deleted with a match in it
+	std::filesystem::remove_all(sHome + "/live/made", ignored);
+	check_updates(collector, "folder deleted", {"-live/made/inside"});
+
+	// after Clear() nothing more comes
+	CHECK(query.Clear() == B_OK);
+	make_file("live/after");
+	set_string("live/after", "Live:Tag", "yes");
+	check_updates(collector, "after Clear", {}, 0);
+
+	collector->PostMessage(B_QUIT_REQUESTED);
+}
+
+
+/*!	A messenger's target can be a looper's preferred handler, whichever it is. */
+static void
+test_live_preferred_handler()
+{
+	Collector* collector = new Collector;
+	collector->Run();
+	{
+		BVolume volume(sDevice);
 		BQuery query;
 		query.SetVolume(&volume);
-		query.SetPredicate("SEN:ID==\"0ID1\"");
-		CHECK(query.SetTarget(BMessenger()) == B_BAD_VALUE);
-		BLooper* looper = new BLooper("target");
-		looper->Run();
-		CHECK(query.SetTarget(BMessenger(looper)) == B_OK);
-		CHECK(query.IsLive());
-		CHECK(query.Fetch() == B_NOT_SUPPORTED);
-		looper->PostMessage(B_QUIT_REQUESTED);
+		query.SetPredicate("Preferred:Tag==\"yes\"");
+		CHECK(query.SetTarget(BMessenger(NULL, collector)) == B_OK);
+		CHECK(query.Fetch() == B_OK);
+		CHECK(read_all(query).empty());
+		make_file("preferred");
+		set_string("preferred", "Preferred:Tag", "yes");
+		check_updates(collector, "preferred handler", {"+preferred"});
 	}
+	collector->PostMessage(B_QUIT_REQUESTED);
+}
+
+
+/*!	Without watches, or none left for a folder, a walk finds the change. */
+static void
+test_live_found_by_walking()
+{
+	setenv("HOKKU_QUERY_WATCH_LIMIT", "1", 1);
+	setenv("HOKKU_QUERY_WALK_INTERVAL", "1", 1);
+	make_file("walked/one/deep");
+	make_file("walked/two/deep");
+	set_string("walked/one/deep", "Walked:Tag", "yes");
+
+	Collector* collector = new Collector;
+	collector->Run();
+	{
+		BVolume volume(sDevice);
+		BQuery query;
+		query.SetVolume(&volume);
+		query.SetPredicate("Walked:Tag==\"yes\"");
+		CHECK(query.SetTarget(BMessenger(collector)) == B_OK);
+		CHECK(query.Fetch() == B_OK);
+		CHECK(read_all(query) == std::vector<std::string>{"deep"});
+
+		// the one watch is on the settings folder, nowhere near this
+		set_string("walked/two/deep", "Walked:Tag", "yes");
+		check_updates(collector, "walked: started", {"+walked/two/deep"}, 10);
+		BNode((sHome + "/walked/one/deep").c_str()).RemoveAttr("Walked:Tag");
+		check_updates(collector, "walked: stopped", {"-walked/one/deep"}, 10);
+		CHECK(unlink((sHome + "/walked/two/deep").c_str()) == 0);
+		check_updates(collector, "walked: deleted", {"-walked/two/deep"}, 10);
+	}
+	collector->PostMessage(B_QUIT_REQUESTED);
+	unsetenv("HOKKU_QUERY_WATCH_LIMIT");
+	unsetenv("HOKKU_QUERY_WALK_INTERVAL");
+}
+
+
+/*!	A query can be dropped at any moment of its walk. */
+static void
+test_live_closed_at_once()
+{
+	Collector* collector = new Collector;
+	collector->Run();
+	for (int i = 0; i < 50; i++) {
+		BVolume volume(sDevice);
+		BQuery query;
+		query.SetVolume(&volume);
+		query.SetPredicate("SEN:ID==\"*\"");
+		CHECK(query.SetTarget(BMessenger(collector)) == B_OK);
+		CHECK(query.Fetch() == B_OK);
+	}
+	collector->PostMessage(B_QUIT_REQUESTED);
 }
 
 
@@ -438,6 +715,10 @@ main()
 	test_settings_folder_is_searched();
 	test_api();
 	test_what_is_left_out();
+	test_live();
+	test_live_preferred_handler();
+	test_live_found_by_walking();
+	test_live_closed_at_once();
 	test_a_volume_is_not_walked_twice();
 
 	std::error_code ignored;
