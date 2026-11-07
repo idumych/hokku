@@ -51,7 +51,6 @@ endif
 
 # TrayExport is part of BDeskbar on a desktop without Hokku's Deskbar, whether
 # Hokku's apps are wanted or not.
-glteapot_enabled = false
 if not get_option('enable_apps')
     app_dirs = is_linux ? ['trayexport'] : []
 endif
@@ -274,78 +273,83 @@ foreach app_dir : app_dirs
     endif
 endforeach
 
-deskbar_applications_menu = [
-    'CharacterMap',
-    'DeskCalc',
-    'Icon-O-Matic',
-    'ShowImage',
-    'StyledEdit',
-    'Terminal',
-]
+# The menu of Hokku's Deskbar, which links to Hokku's apps
+if get_option('enable_apps')
 
-deskbar_demos_menu = [
-    'Showcase',
-    'Clock',
-	'Chart',
-    'FontDemo',
-    'Gradients',
-    'Mandelbrot',
-    'Pairs',
-    'Pulse',
-    'Sudoku',
-]
-if glteapot_enabled
-    deskbar_demos_menu += ['GLTeapot']
+    deskbar_applications_menu = [
+        'CharacterMap',
+        'DeskCalc',
+        'Icon-O-Matic',
+        'ShowImage',
+        'StyledEdit',
+        'Terminal',
+    ]
+
+    deskbar_demos_menu = [
+        'Showcase',
+        'Clock',
+    	'Chart',
+        'FontDemo',
+        'Gradients',
+        'Mandelbrot',
+        'Pairs',
+        'Pulse',
+        'Sudoku',
+    ]
+    if glteapot_enabled
+        deskbar_demos_menu += ['GLTeapot']
+    endif
+
+    deskbar_preferences_menu = [
+        'Appearance',
+    	'Backgrounds',
+        'DeskbarPreferences',
+    	'Keymap',
+    	'Notifications',
+        'Time',
+    	'TrackerPreferences',
+    ]
+
+    # Ensure Deskbar's system menu source exists for SetNavDir fallback.
+    deskbar_menu_entries_dir = dir_cosmoe_data / 'deskbar'
+
+    # The menu's links point to the apps relatively where meson can work that
+    # out (1.3 and later), so a moved install (an AppImage, say) keeps them.
+    deskbar_menu_bindir = dir_prefix / get_option('bindir')
+    if meson.version().version_compare('>=1.3.0')
+        deskbar_menu_bindir = import('fs').relative_to(deskbar_menu_bindir,
+            deskbar_menu_entries_dir / 'menu' / 'Applications')
+    endif
+
+    foreach item : deskbar_applications_menu
+        install_symlink(item,
+            pointing_to : (deskbar_menu_bindir / item),
+            install_dir : deskbar_menu_entries_dir / 'menu' / 'Applications')
+    endforeach
+
+    foreach item : deskbar_demos_menu
+        install_symlink(item,
+            pointing_to : (deskbar_menu_bindir / item),
+            install_dir : deskbar_menu_entries_dir / 'menu' / 'Demos')
+    endforeach
+
+    foreach item : deskbar_preferences_menu
+        symlink_name = item.replace('Preferences', '')
+        install_symlink(symlink_name,
+            pointing_to : (deskbar_menu_bindir / item),
+            install_dir : deskbar_menu_entries_dir / 'menu' / 'Preferences')
+    endforeach
+
+    deskbar_menu_entries_conf = configuration_data()
+    deskbar_menu_entries_conf.set('DESKBAR_MENU_DIRECTORY',
+        deskbar_menu_entries_dir / 'menu')
+
+    deskbar_menu_entries = configure_file(
+        input : 'deskbar/menu_entries',
+        output : 'menu_entries',
+        configuration : deskbar_menu_entries_conf,
+    )
+
+    install_data(deskbar_menu_entries, install_dir : deskbar_menu_entries_dir)
+
 endif
-
-deskbar_preferences_menu = [
-    'Appearance',
-	'Backgrounds',
-    'DeskbarPreferences',
-	'Keymap',
-	'Notifications',
-    'Time',
-	'TrackerPreferences',
-]
-
-# Ensure Deskbar's system menu source exists for SetNavDir fallback.
-deskbar_menu_entries_dir = dir_cosmoe_data / 'deskbar'
-
-# The menu's links point to the apps relatively where meson can work that
-# out (1.3 and later), so a moved install (an AppImage, say) keeps them.
-deskbar_menu_bindir = dir_prefix / get_option('bindir')
-if meson.version().version_compare('>=1.3.0')
-    deskbar_menu_bindir = import('fs').relative_to(deskbar_menu_bindir,
-        deskbar_menu_entries_dir / 'menu' / 'Applications')
-endif
-
-foreach item : deskbar_applications_menu
-    install_symlink(item,
-        pointing_to : (deskbar_menu_bindir / item),
-        install_dir : deskbar_menu_entries_dir / 'menu' / 'Applications')
-endforeach
-
-foreach item : deskbar_demos_menu
-    install_symlink(item,
-        pointing_to : (deskbar_menu_bindir / item),
-        install_dir : deskbar_menu_entries_dir / 'menu' / 'Demos')
-endforeach
-
-foreach item : deskbar_preferences_menu
-    symlink_name = item.replace('Preferences', '')
-    install_symlink(symlink_name,
-        pointing_to : (deskbar_menu_bindir / item),
-        install_dir : deskbar_menu_entries_dir / 'menu' / 'Preferences')
-endforeach
-
-deskbar_menu_entries_conf = configuration_data()
-deskbar_menu_entries_conf.set('DESKBAR_MENU_DIRECTORY',
-    deskbar_menu_entries_dir / 'menu')
-
-deskbar_menu_entries = configure_file(
-    input : 'deskbar/menu_entries',
-    output : 'menu_entries',
-    configuration : deskbar_menu_entries_conf,
-)
-
-install_data(deskbar_menu_entries, install_dir : deskbar_menu_entries_dir)
