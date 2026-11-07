@@ -753,12 +753,10 @@ public:
 			return;
 		}
 
-		// Add frame widget size to window content size
-		window_set_min_max_allocation((struct window*)window,
-				 min_width + WAYLAND_WINDOW_H_SLOP,
-				 min_height + WAYLAND_WINDOW_V_SLOP,
-				 max_width + WAYLAND_WINDOW_H_SLOP,
-				 max_height + WAYLAND_WINDOW_V_SLOP);
+		// the frame's own size is added to the content's, whatever frame the
+		// window has now or later
+		window_set_content_size_limits((struct window*)window,
+				 min_width, min_height, max_width, max_height);
 	}
 
 	virtual void WindowVerifySize(backend_window_t window, struct rectangle& frame)

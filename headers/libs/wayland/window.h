@@ -590,6 +590,12 @@ window_schedule_redraw(struct window *window);
 void
 window_schedule_resize(struct window *window, int width, int height);
 
+/* The content's size limits, when the window has a frame of its own: the
+ * allocation's follow from them and the frame's size, whatever frame. */
+void
+window_set_content_size_limits(struct window *window, int min_width,
+			       int min_height, int max_width, int max_height);
+
 void window_set_min_max_allocation(struct window *window,
 	int min_width, int min_height,
 	int max_width, int max_height);

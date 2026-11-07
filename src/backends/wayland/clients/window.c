@@ -720,6 +720,12 @@ struct window {
 	struct rectangle saved_allocation;
 	struct rectangle min_allocation;
 	struct rectangle max_allocation;
+	/* the content's size limits, as BWindow has them, when the window's
+	 * frame is its own: the allocation's are these and the frame's size,
+	 * whatever frame it has (window_content_limits_to_allocation()) */
+	struct rectangle min_content;
+	struct rectangle max_content;
+	int has_content_limits;
 	struct rectangle pending_allocation;
 	struct rectangle last_geometry;
 	int x, y;
@@ -3478,6 +3484,7 @@ frame_resize_handler(struct widget *widget,
 		frame_resize(frame->frame, width, height);
 		frame_interior(frame->frame, &interior.x, &interior.y,
 			       &interior.width, &interior.height);
+
 	}
 
 	widget_set_allocation(child, interior.x, interior.y,
@@ -6460,6 +6467,49 @@ undo_resize(struct window *window)
 	}
 }
 
+/* How much a frame of the window's own adds to its content's size */
+static void
+window_get_decoration_size(struct window *window, int *width, int *height)
+{
+	struct window_frame *frame = window->frame;
+	*width = *height = 0;
+	if (frame == NULL || frame->frame == NULL || window->fullscreen)
+		return;
+	int32_t top, bottom, left, right;
+	frame_decoration_sizes(frame->frame, &top, &bottom, &left, &right);
+	*width = left + right;
+	*height = top + bottom;
+}
+
+static void
+window_content_limits_to_allocation(struct window *window)
+{
+	if (!window->has_content_limits)
+		return;
+	int width, height;
+	window_get_decoration_size(window, &width, &height);
+	window->min_allocation.width = window->min_content.width > 0
+		? window->min_content.width + width : 0;
+	window->min_allocation.height = window->min_content.height > 0
+		? window->min_content.height + height : 0;
+	window->max_allocation.width = window->max_content.width > 0
+		? window->max_content.width + width : 0;
+	window->max_allocation.height = window->max_content.height > 0
+		? window->max_content.height + height : 0;
+}
+
+void
+window_set_content_size_limits(struct window *window, int min_width,
+			       int min_height, int max_width, int max_height)
+{
+	window->min_content.width = min_width;
+	window->min_content.height = min_height;
+	window->max_content.width = max_width;
+	window->max_content.height = max_height;
+	window->has_content_limits = 1;
+	window_content_limits_to_allocation(window);
+}
+
 static void
 window_configure_resize(struct window *window, int width, int height)
 {
@@ -6471,6 +6521,9 @@ window_configure_resize(struct window *window, int width, int height)
 	window->pending_allocation.y = 0;
 	window->pending_allocation.width = width;
 	window->pending_allocation.height = height;
+
+	/* the frame may have changed since the limits were set */
+	window_content_limits_to_allocation(window);
 
 	const int framed = window->frame != NULL
 		&& !window_is_borderless(window);
