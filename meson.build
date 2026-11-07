@@ -679,6 +679,11 @@ subdir('src/kits/network')
 # BGLView (libopengl) with real libbe
 subdir('src/kits/opengl')
 
+# app_server's decorators, for the frames the Wayland backend draws
+if wayland_enabled
+	subdir('src/servers/app/decorator')
+endif
+
 # Build bin tools with real libbe (they were skipped in src/bin to avoid bootstrap)
 
 # The installed rc, linked against the real libbe: this is the one users and
