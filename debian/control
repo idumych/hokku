@@ -30,7 +30,20 @@ Build-Depends:
  libxcursor-dev,
  libxrandr-dev,
  libfuse3-dev,
- zlib1g-dev
+ zlib1g-dev,
+ libdrm-dev,
+ libinput-dev,
+ libxml2-dev,
+ librsvg2-dev,
+ libseat-dev,
+ libdisplay-info-dev,
+ libliftoff-dev,
+ libgbm-dev,
+ libegl-dev,
+ libgles-dev,
+ hwdata,
+ wayland-protocols,
+ git
 Standards-Version: 4.6.2
 Homepage: https://cosmoe.org
 Rules-Requires-Root: no
@@ -84,6 +97,15 @@ Depends:
  xdg-desktop-portal,
  xdg-desktop-portal-wlr,
  ${misc:Depends}
+Recommends:
+ kanshi,
+ grim,
+ wdisplays,
+ brightnessctl,
+ wireplumber,
+ network-manager-gnome,
+ qt-style-kvantum,
+ fonts-noto-core
 Description: Cosmoe Wayland desktop session
  This package provides the Cosmoe Wayland desktop session, including Tracker,
  Deskbar, and a display-manager session entry.

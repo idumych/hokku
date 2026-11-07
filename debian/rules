@@ -14,3 +14,12 @@ override_dh_auto_build:
 
 override_dh_auto_install:
 	COSMOE_DEBIAN_RULES=1 $(MAKE) deb
+
+# labwc-hokku is built where the system's libraries are new enough for labwc
+# (not on Ubuntu 24.04), which leaves the session with plain labwc
+override_dh_install:
+	dh_install
+	if [ -e debian/tmp/usr/bin/labwc-hokku ]; then \
+		install -D -m 755 debian/tmp/usr/bin/labwc-hokku \
+			debian/cosmoe-desktop/usr/bin/labwc-hokku; \
+	fi

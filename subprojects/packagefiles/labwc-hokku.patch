@@ -1,0 +1,1668 @@
+diff --git a/include/ssd-internal.h b/include/ssd-internal.h
+index 600b907..182f799 100644
+--- a/include/ssd-internal.h
++++ b/include/ssd-internal.h
+@@ -133,6 +133,9 @@ struct ssd {
+ 	 * For xdg-shell views with CSD, this margin is zero.
+ 	 */
+ 	struct border margin;
++
++	/* Hokku's frame in place of the titlebar and border, or NULL */
++	struct ssd_hokku *hokku;
+ };
+ 
+ struct ssd_button {
+@@ -186,4 +189,15 @@ void ssd_shadow_create(struct ssd *ssd);
+ void ssd_shadow_update(struct ssd *ssd);
+ void ssd_shadow_destroy(struct ssd *ssd);
+ 
++struct wlr_cursor;
++void ssd_hokku_create(struct ssd *ssd);
++void ssd_hokku_update(struct ssd *ssd);
++void ssd_hokku_set_active(struct ssd *ssd, bool active);
++void ssd_hokku_enable_keybind_inhibit_indicator(struct ssd *ssd, bool enable);
++void ssd_hokku_destroy(struct ssd *ssd);
++struct border ssd_hokku_thickness(struct view *view);
++struct border ssd_hokku_border_thickness(struct view *view);
++bool ssd_hokku_resizing_type(const struct ssd *ssd, struct wlr_cursor *cursor,
++	enum lab_node_type *type);
++
+ #endif /* LABWC_SSD_INTERNAL_H */
+diff --git a/include/ssd.h b/include/ssd.h
+index 9c61747..7951406 100644
+--- a/include/ssd.h
++++ b/include/ssd.h
+@@ -69,6 +69,12 @@ enum lab_ssd_mode ssd_mode_parse(const char *mode);
+ struct border ssd_thickness(struct view *view);
+ struct wlr_box ssd_max_extents(struct view *view);
+ 
++/* Hokku's frames (theme key window.decorator), see ssd-hokku.c */
++struct theme;
++void ssd_hokku_theme_sizes(struct theme *theme);
++/* After a mouse button is pressed or released, or the hovered button changes */
++void ssd_hokku_update_pressed(void);
++
+ /* SSD debug helpers */
+ bool ssd_debug_is_root_node(const struct ssd *ssd, struct wlr_scene_node *node);
+ const char *ssd_debug_get_node_name(const struct ssd *ssd,
+diff --git a/include/theme.h b/include/theme.h
+index 2fb499a..39e6a01 100644
+--- a/include/theme.h
++++ b/include/theme.h
+@@ -30,6 +30,15 @@ enum lab_justification {
+ 	LAB_JUSTIFY_RIGHT,
+ };
+ 
++/* Hokku's window frames, drawn in place of the titlebar and border */
++enum lab_hokku_frame {
++	LAB_HOKKU_FRAME_NONE,
++	LAB_HOKKU_FRAME_HAIKU,
++	LAB_HOKKU_FRAME_GONX,
++	/* a decorator of Hokku's libdecorator: Haiku's, an add-on's */
++	LAB_HOKKU_FRAME_DECOR,
++};
++
+ struct theme_snapping_overlay {
+ 	bool bg_enabled;
+ 	bool border_enabled;
+@@ -73,6 +82,13 @@ struct theme {
+ 	float window_toggled_keybinds_color[4];
+ 	enum lab_justification window_label_text_justify;
+ 
++	/* window.decorator, window.decorator.font and window.decorator.shadow */
++	enum lab_hokku_frame window_hokku_frame;
++	/* window.decorator as given: "Hokku" follows Hokku's own setting */
++	char *window_hokku_frame_name;
++	char *window_hokku_frame_font;
++	bool window_hokku_frame_shadow;
++
+ 	/* buttons */
+ 	int window_button_width;
+ 	int window_button_height;
+diff --git a/meson.build b/meson.build
+index 283cbb5..4563132 100644
+--- a/meson.build
++++ b/meson.build
+@@ -190,8 +190,24 @@ endif
+ 
+ subdir('include')
+ subdir('src')
+-subdir('docs')
+-subdir('clients')
++
++# Hokku's frame code: from Hokku's own build when part of it, else copied
++# into src/ssd/hokku (see labwc-hokku's PKGBUILD)
++if get_option('hokku')
++  labwc_deps += dependency('hokku-frames')
++else
++  labwc_deps += declare_dependency(
++    include_directories: include_directories('src/ssd/hokku'))
++  labwc_sources += files(
++    'src/ssd/hokku/gonx-frame.c',
++    'src/ssd/hokku/haiku-frame.c',
++  )
++endif
++
++if not get_option('hokku')
++  subdir('docs')
++  subdir('clients')
++endif
+ 
+ dep_cmocka = dependency('cmocka', required: get_option('test'))
+ if dep_cmocka.found()
+@@ -199,7 +215,7 @@ if dep_cmocka.found()
+ endif
+ 
+ executable(
+-  meson.project_name(),
++  get_option('hokku') ? 'labwc-hokku' : meson.project_name(),
+   labwc_sources,
+   include_directories: [labwc_inc],
+   dependencies: labwc_deps,
+@@ -207,6 +223,8 @@ executable(
+   link_args: link_args,
+ )
+ 
++# Built as part of Hokku, the system's labwc package keeps all of these
++if not get_option('hokku')
+ install_data('data/labwc.desktop', install_dir: get_option('datadir') / 'wayland-sessions')
+ 
+ install_data('data/labwc-portals.conf', install_dir: get_option('datadir') / 'xdg-desktop-portal')
+@@ -227,3 +245,4 @@ foreach icon : icons
+   icon_path = join_paths('data', icon)
+   install_data(icon_path, install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')
+ endforeach
++endif
+diff --git a/meson_options.txt b/meson_options.txt
+index e059220..7076c69 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -7,4 +7,5 @@ option('nls', type: 'feature', value: 'auto', description: 'Enable native langua
+ option('systemd-session', type: 'feature', value: 'auto', description: 'Install labwc-session.target systemd user unit')
+ option('static_analyzer', type: 'feature', value: 'disabled', description: 'Run gcc static analyzer')
+ option('test', type: 'feature', value: 'disabled', description: 'Run tests')
++option('hokku', type: 'boolean', value: false, description: 'Built as part of Hokku: labwc-hokku beside the system\'s labwc, Hokku\'s frame code from Hokku\'s build (its hokku-frames dependency), none of labwc\'s data installed')
+ option('sections', type: 'feature', value: 'disabled', description: 'Show unused functions')
+diff --git a/src/input/cursor.c b/src/input/cursor.c
+index e8ac7d9..1d7d367 100644
+--- a/src/input/cursor.c
++++ b/src/input/cursor.c
+@@ -1148,6 +1148,7 @@ cursor_process_button_press(struct seat *seat, uint32_t button, uint32_t time_ms
+ 		/* Store cursor context for later action processing */
+ 		cursor_context_save(&seat->pressed, &ctx);
+ 		interactive_set_grab_context(&ctx);
++		ssd_hokku_update_pressed();
+ 	}
+ 
+ 	if (server.input_mode == LAB_INPUT_STATE_MENU) {
+@@ -1217,6 +1218,7 @@ cursor_process_button_release(struct seat *seat, uint32_t button,
+ 	const bool notify = !lab_set_contains(&seat->bound_buttons, button);
+ 
+ 	cursor_context_save(&seat->pressed, NULL);
++	ssd_hokku_update_pressed();
+ 
+ 	if (server.input_mode == LAB_INPUT_STATE_MENU) {
+ 		/* TODO: take into account overflow of time_msec */
+diff --git a/src/ssd/hokku/cairo-util.h b/src/ssd/hokku/cairo-util.h
+new file mode 100644
+index 0000000..97dfb6e
+--- /dev/null
++++ b/src/ssd/hokku/cairo-util.h
+@@ -0,0 +1,25 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++#ifndef LABWC_HOKKU_CAIRO_UTIL_H
++#define LABWC_HOKKU_CAIRO_UTIL_H
++
++/*
++ * The part of Hokku's cairo-util.h (from Weston) that its frame sources use:
++ * where a point lies on the frame.
++ */
++enum theme_location {
++	THEME_LOCATION_INTERIOR = 0,
++	THEME_LOCATION_RESIZING_TOP = 1,
++	THEME_LOCATION_RESIZING_BOTTOM = 2,
++	THEME_LOCATION_RESIZING_LEFT = 4,
++	THEME_LOCATION_RESIZING_TOP_LEFT = 5,
++	THEME_LOCATION_RESIZING_BOTTOM_LEFT = 6,
++	THEME_LOCATION_RESIZING_RIGHT = 8,
++	THEME_LOCATION_RESIZING_TOP_RIGHT = 9,
++	THEME_LOCATION_RESIZING_BOTTOM_RIGHT = 10,
++	THEME_LOCATION_RESIZING_MASK = 15,
++	THEME_LOCATION_EXTERIOR = 16,
++	THEME_LOCATION_TITLEBAR = 17,
++	THEME_LOCATION_CLIENT_AREA = 18,
++};
++
++#endif /* LABWC_HOKKU_CAIRO_UTIL_H */
+diff --git a/src/ssd/hokku/config.h b/src/ssd/hokku/config.h
+new file mode 100644
+index 0000000..388ad72
+--- /dev/null
++++ b/src/ssd/hokku/config.h
+@@ -0,0 +1,3 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Hokku's frame sources include their project's config.h; nothing in it is
++ * needed here. */
+diff --git a/src/ssd/meson.build b/src/ssd/meson.build
+index a316409..0866647 100644
+--- a/src/ssd/meson.build
++++ b/src/ssd/meson.build
+@@ -6,4 +6,5 @@ labwc_sources += files(
+   'ssd-border.c',
+   'ssd-extents.c',
+   'ssd-shadow.c',
++  'ssd-hokku.c',
+ )
+diff --git a/src/ssd/ssd-border.c b/src/ssd/ssd-border.c
+index c2c99f8..1321c72 100644
+--- a/src/ssd/ssd-border.c
++++ b/src/ssd/ssd-border.c
+@@ -74,6 +74,11 @@ ssd_border_update(struct ssd *ssd)
+ 	assert(ssd);
+ 	assert(ssd->border.tree);
+ 
++	if (ssd->hokku) {
++		ssd_hokku_update(ssd);
++		return;
++	}
++
+ 	struct view *view = ssd->view;
+ 	if (view->maximized == VIEW_AXIS_BOTH
+ 			&& ssd->border.tree->node.enabled) {
+diff --git a/src/ssd/ssd-extents.c b/src/ssd/ssd-extents.c
+index 3840b10..e215cdc 100644
+--- a/src/ssd/ssd-extents.c
++++ b/src/ssd/ssd-extents.c
+@@ -6,6 +6,7 @@
+ #include "config/rcxml.h"
+ #include "labwc.h"
+ #include "output.h"
++#include "ssd.h"
+ #include "ssd-internal.h"
+ #include "theme.h"
+ #include "view.h"
+@@ -14,17 +15,12 @@ void
+ ssd_extents_create(struct ssd *ssd)
+ {
+ 	struct view *view = ssd->view;
+-	struct theme *theme = rc.theme;
+-
+-	int border_width = MAX(0, MAX(rc.resize_minimum_area, theme->border_width));
+ 
+ 	ssd->extents.tree = lab_wlr_scene_tree_create(ssd->tree);
+ 	struct wlr_scene_tree *parent = ssd->extents.tree;
+ 	if (view->fullscreen || view->maximized == VIEW_AXIS_BOTH) {
+ 		wlr_scene_node_set_enabled(&parent->node, false);
+ 	}
+-	wlr_scene_node_set_position(&parent->node,
+-		-border_width, -(ssd->titlebar.height + border_width));
+ 
+ 	float invisible[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+ 	ssd->extents.top = lab_wlr_scene_rect_create(parent, 0, 0, invisible);
+@@ -102,16 +98,23 @@ ssd_extents_update(struct ssd *ssd)
+ 
+ 	struct theme *theme = rc.theme;
+ 
++	/*
++	 * Round the decorations, or round the border of Hokku's frames,
++	 * which can be thicker (Gonx's flap hangs beside its border)
++	 */
++	struct border thickness =
++		theme->window_hokku_frame != LAB_HOKKU_FRAME_NONE
++		? ssd_hokku_border_thickness(view) : ssd_thickness(view);
+ 	int width = view->current.width;
+ 	int height = view_effective_height(view, /* use_pending */ false);
+-	int full_height = height + theme->border_width * 2 + ssd->titlebar.height;
+-	int full_width = width + 2 * theme->border_width;
+-	int border_width = MAX(rc.resize_minimum_area, theme->border_width);
++	int full_height = height + thickness.top + thickness.bottom;
++	int full_width = width + thickness.left + thickness.right;
+ 	int extended_area = MAX(0, rc.resize_minimum_area - theme->border_width);
+ 
+ 	/* Make sure we update the y offset based on titlebar shown / hidden */
+ 	wlr_scene_node_set_position(&ssd->extents.tree->node,
+-		-border_width, -(ssd->titlebar.height + border_width));
++		-(thickness.left + extended_area),
++		-(thickness.top + extended_area));
+ 
+ 	/*
+ 	 * Convert all output usable areas that the
+diff --git a/src/ssd/ssd-hokku.c b/src/ssd/ssd-hokku.c
+new file mode 100644
+index 0000000..bcd2c71
+--- /dev/null
++++ b/src/ssd/ssd-hokku.c
+@@ -0,0 +1,1169 @@
++// SPDX-License-Identifier: GPL-2.0-only
++
++/*
++ * Hokku's window frames round other apps' windows: Haiku's yellow tab or
++ * Gonx's, drawn by the same code as Hokku's own windows (hokku/gonx-frame.c
++ * and hokku/haiku-frame.c, from Hokku's sources) when the theme sets
++ * window.decorator. They stand in for the titlebar and border:
++ *
++ * ssd->tree (LAB_NODE_SSD_ROOT)
++ * +--border
++ * |  +--four buffers the frame is painted into: above, below and beside
++ * |  |  the window, reaching past the frame on the right and below for its
++ * |  |  shadow
++ * |  +--four invisible rects taking the pointer on the border, which
++ * |     ssd_get_resizing_type() places with the frame's own hit test
++ * +--titlebar (LAB_NODE_TITLEBAR)
++ *    +--invisible rects on the tab (and Gonx's shelf and flap)
++ *    +--a button (LAB_NODE_BUTTON_*) on each of the frame's buttons
++ *
++ * The border also holds the keybind-inhibit indicator, a line along its top
++ * in window.active.indicator.toggled-keybind.color.
++ *
++ * and above the window, in view->scene_tree, buffers for the parts of the
++ * frame that lie over the content: Gonx's rounded inner corners.
++ *
++ * The frame is repainted when the window's size, title or focus changes, and
++ * when one of its buttons is held down, which shows it pressed while the
++ * pointer is on it, as on Haiku.
++ *
++ * With Hokku's libdecorator installed, the frame is a decorator's instead,
++ * as Hokku's own windows have it: Haiku's, or any decorator add-on, with
++ * its rounded corners and a shadow, or a glow on a dark desktop, all round.
++ * Its whole frame is painted once into a surface the four buffers show
++ * parts of. "window.decorator: Hokku" takes the decorator Hokku's settings
++ * name, and labwc reconfigures itself when they change.
++ */
++
++#define _POSIX_C_SOURCE 200809L
++#include <assert.h>
++#include <dlfcn.h>
++#include <math.h>
++#include <signal.h>
++#include <sys/inotify.h>
++#include <unistd.h>
++#include <pango/pangocairo.h>
++#include <string.h>
++#include <strings.h>
++#include <wlr/types/wlr_cursor.h>
++#include <wlr/types/wlr_scene.h>
++#include "buffer.h"
++#include "common/font.h"
++#include "common/list.h"
++#include "common/macros.h"
++#include "common/mem.h"
++#include "common/scene-helpers.h"
++#include "config/rcxml.h"
++#include "hokku/cairo-util.h"
++#include "gonx-frame.h"
++#include "CosmoeDecor.h"
++#include "labwc.h"
++#include "node.h"
++#include "scaled-buffer/scaled-buffer.h"
++#include "ssd.h"
++#include "ssd-internal.h"
++#include "theme.h"
++#include "view.h"
++
++enum hokku_part {
++	HOKKU_TOP,
++	HOKKU_BOTTOM,
++	HOKKU_LEFT,
++	HOKKU_RIGHT,
++	HOKKU_PART_COUNT
++};
++
++enum hokku_tab_part {
++	HOKKU_TAB,
++	HOKKU_SHELF,
++	HOKKU_FLAP,
++	HOKKU_TAB_PART_COUNT
++};
++
++/* The size of the inner corners' overlays, which Gonx draws 3x3 */
++#define HOKKU_CORNER_SIZE 4
++
++/* One of the buffers the frame is painted into */
++struct hokku_paint {
++	struct ssd_hokku *frame;
++	struct scaled_buffer *buffer;
++	struct wlr_box box; /* in the frame's coordinates */
++	bool overlay; /* the parts over the content */
++
++	/* the shadow's alpha for box, kept while the layout stays */
++	cairo_surface_t *shadow;
++	int shadow_x, shadow_y;
++	struct wlr_box shadow_box;
++	struct gonx_layout shadow_layout;
++};
++
++struct ssd_hokku {
++	struct gonx_style style;
++	struct gonx_layout layout;
++	/* the frame's thickness */
++	struct border margin;
++	/* where the content is in the frame's coordinates */
++	int origin_x, origin_y;
++	/* how far its shadow reaches past it, right and down */
++	int shadow_right, shadow_bottom;
++	char *title;
++	bool active;
++	bool dirty;
++	bool inhibits_keybinds;
++	int pressed[GONX_BUTTON_COUNT];
++
++	struct hokku_paint *paint[HOKKU_PART_COUNT];
++	struct wlr_scene_tree *overlay;
++	struct hokku_paint *corner[4];
++	struct wlr_scene_rect *border_input[HOKKU_PART_COUNT];
++	struct wlr_scene_rect *tab_input[HOKKU_TAB_PART_COUNT];
++	struct wlr_scene_rect *button_input[GONX_BUTTON_COUNT];
++	struct ssd_button *button[GONX_BUTTON_COUNT];
++	struct wlr_scene_rect *indicator;
++
++	/* a decorator's frame (decor_ops): the decorator, how far its shadow
++	 * reaches on each side, and the whole frame painted */
++	struct cosmoe_decor *decor;
++	const struct cosmoe_decor_ops *ops;	/* what made it */
++	bool decor_tabless;
++	struct border shadow;
++	struct wlr_box content;
++	int width, height;
++	cairo_surface_t *full;
++};
++
++/* Hokku's libdecorator, loaded the first time a theme names a decorator */
++static struct {
++	bool tried;
++	cosmoe_decor_load_func load;
++	cosmoe_decor_reload_func reload;
++	cosmoe_decor_current_func current;
++	cosmoe_decor_settings_folder_func settings_folder;
++	int watch;
++	struct wl_event_source *watch_source;
++	struct wl_event_source *timer;
++} libdecorator = { .watch = -1 };
++
++/* the decorator drawing frames, when the theme has one */
++static const struct cosmoe_decor_ops *decor_ops;
++
++/* window_look values from BWindow */
++enum {
++	DECOR_TITLED_LOOK = 1,
++	DECOR_MODAL_LOOK = 3,
++};
++
++/* The frame's thickness with a tab and without, for ssd_thickness() */
++static struct border hokku_sizes[2];
++
++/*
++ * How far the border reaches out from the window, with a tab and without:
++ * less than the thickness where Gonx's flap hangs beside it
++ */
++static struct border hokku_border_sizes[2];
++
++/* The button drawn pressed: held down, with the pointer on it */
++static struct ssd_button *shown_pressed;
++
++static const enum lab_node_type button_types[GONX_BUTTON_COUNT] = {
++	[GONX_CLOSE] = LAB_NODE_BUTTON_CLOSE,
++	[GONX_ZOOM] = LAB_NODE_BUTTON_MAXIMIZE,
++	[GONX_MINIMIZE] = LAB_NODE_BUTTON_ICONIFY,
++};
++
++static void
++set_rgb(uint8_t rgb[3], const float color[4])
++{
++	/* labwc's colours are premultiplied */
++	float alpha = color[3] > 0 ? color[3] : 1;
++	for (int i = 0; i < 3; i++) {
++		rgb[i] = (uint8_t)lroundf(CLAMP(color[i] / alpha, 0, 1) * 255);
++	}
++}
++
++/*
++ * window.decorator.font, or rc.xml's titlebar font. The frame's font sizes
++ * are in pixels, as on Haiku; rc.xml's are points at 96 dpi.
++ */
++static void
++describe_font(char *out, size_t size, const struct theme *theme, bool plain)
++{
++	const char *wanted = theme->window_hokku_frame_font;
++	PangoFontDescription *desc;
++	if (wanted && *wanted) {
++		desc = pango_font_description_from_string(wanted);
++	} else {
++		desc = font_to_pango_desc(&rc.font_activewindow);
++		int pixels = (int)lround(rc.font_activewindow.size * 96.0 / 72.0);
++		pango_font_description_set_size(desc, MAX(pixels, 1) * PANGO_SCALE);
++	}
++	if (plain) {
++		/* floating windows' small tabs have plain titles */
++		pango_font_description_set_weight(desc, PANGO_WEIGHT_NORMAL);
++	}
++	char *description = pango_font_description_to_string(desc);
++	snprintf(out, size, "%s", description);
++	g_free(description);
++	pango_font_description_free(desc);
++}
++
++static void
++style_from_theme(const struct theme *theme, struct gonx_style *style)
++{
++	memset(style, 0, sizeof(*style));
++	set_rgb(style->tab, theme->window[SSD_ACTIVE].title_bg.color);
++	set_rgb(style->tab_inactive, theme->window[SSD_INACTIVE].title_bg.color);
++	set_rgb(style->text, theme->window[SSD_ACTIVE].label_text_color);
++	set_rgb(style->text_inactive,
++		theme->window[SSD_INACTIVE].label_text_color);
++	set_rgb(style->frame, theme->window[SSD_ACTIVE].border_color);
++	set_rgb(style->frame_inactive, theme->window[SSD_INACTIVE].border_color);
++	describe_font(style->title_font, sizeof(style->title_font), theme,
++		/* plain */ false);
++	describe_font(style->small_title_font, sizeof(style->small_title_font),
++		theme, /* plain */ true);
++	style->haiku = theme->window_hokku_frame == LAB_HOKKU_FRAME_HAIKU;
++	style->shadow = theme->window_hokku_frame_shadow;
++}
++
++/* a decorator of Hokku's draws the frame, if it can (below) */
++static bool decor_theme_sizes(struct theme *theme);
++
++void
++ssd_hokku_theme_sizes(struct theme *theme)
++{
++	if (decor_theme_sizes(theme)) {
++		return;
++	}
++
++	struct gonx_style style;
++	style_from_theme(theme, &style);
++
++	for (int tabless = 0; tabless <= 1; tabless++) {
++		struct border *sizes = &hokku_sizes[tabless];
++		gonx_frame_sizes(&style, /* small */ 0, tabless, &sizes->top,
++			&sizes->bottom, &sizes->left, &sizes->right);
++
++		/* the border of a frame of any size */
++		struct gonx_layout l = {
++			.width = 400 + sizes->left + sizes->right,
++			.height = 300 + sizes->top + sizes->bottom,
++			.tabless = tabless,
++			.resizable = 1,
++		};
++		gonx_frame_layout(&l, &style, "");
++		hokku_border_sizes[tabless] = (struct border){
++			.top = l.content.top - l.border.top,
++			.right = l.border.right - l.content.right,
++			.bottom = l.border.bottom - l.content.bottom,
++			.left = l.content.left - l.border.left,
++		};
++	}
++
++	/*
++	 * For the parts of labwc that only know a titlebar over a border of
++	 * one width (extents, shadows, window placement)
++	 */
++	theme->border_width = hokku_sizes[0].bottom;
++	theme->titlebar_height =
++		MAX(hokku_sizes[0].top - hokku_sizes[0].bottom, 1);
++}
++
++struct border
++ssd_hokku_thickness(struct view *view)
++{
++	return hokku_sizes[!view_titlebar_visible(view)];
++}
++
++struct border
++ssd_hokku_border_thickness(struct view *view)
++{
++	return hokku_border_sizes[!view_titlebar_visible(view)];
++}
++
++static bool
++has_title_button(enum lab_node_type type)
++{
++	for (int i = 0; i < rc.nr_title_buttons_left; i++) {
++		if (rc.title_buttons_left[i] == type) {
++			return true;
++		}
++	}
++	for (int i = 0; i < rc.nr_title_buttons_right; i++) {
++		if (rc.title_buttons_right[i] == type) {
++			return true;
++		}
++	}
++	return false;
++}
++
++static bool
++rect_valid(const struct gonx_rect *r)
++{
++	return r->right >= r->left && r->bottom >= r->top;
++}
++
++/* The frame's rect r, from frame to scene coordinates */
++static void
++place_rect(struct ssd_hokku *frame, struct wlr_scene_rect *rect,
++		struct gonx_rect r)
++{
++	if (!rect_valid(&r)) {
++		wlr_scene_node_set_enabled(&rect->node, false);
++		return;
++	}
++	wlr_scene_rect_set_size(rect, r.right - r.left + 1, r.bottom - r.top + 1);
++	wlr_scene_node_set_position(&rect->node, r.left - frame->origin_x,
++		r.top - frame->origin_y);
++	wlr_scene_node_set_enabled(&rect->node, true);
++}
++
++/*
++ * The shadow under the part of the frame in paint's box. Its blur is the slow
++ * part, so it is made again only when the box or the frame's layout changes,
++ * not when the window is focused or a button pressed.
++ */
++static void
++paint_shadow(cairo_t *cairo, struct hokku_paint *paint)
++{
++	struct ssd_hokku *frame = paint->frame;
++	if (!paint->shadow || !wlr_box_equal(&paint->shadow_box, &paint->box)
++			|| memcmp(&paint->shadow_layout, &frame->layout,
++				sizeof(frame->layout))) {
++		if (paint->shadow) {
++			cairo_surface_destroy(paint->shadow);
++		}
++		const struct gonx_rect clip = {
++			paint->box.x, paint->box.y,
++			paint->box.x + paint->box.width - 1,
++			paint->box.y + paint->box.height - 1,
++		};
++		paint->shadow = gonx_frame_create_shadow(&frame->layout,
++			&frame->style, &clip, &paint->shadow_x, &paint->shadow_y);
++		paint->shadow_box = paint->box;
++		paint->shadow_layout = frame->layout;
++	}
++	gonx_frame_paint_shadow_surface(cairo, &frame->layout, paint->shadow,
++		paint->shadow_x, paint->shadow_y);
++}
++
++static struct lab_data_buffer *
++paint_create_buffer(struct scaled_buffer *scaled_buffer, double scale)
++{
++	struct hokku_paint *paint = scaled_buffer->data;
++	struct ssd_hokku *frame = paint->frame;
++
++	struct lab_data_buffer *buffer = buffer_create_cairo(
++		paint->box.width, paint->box.height, scale);
++	if (!buffer) {
++		return NULL;
++	}
++
++	cairo_t *cairo = cairo_create(buffer->surface);
++	cairo_translate(cairo, -paint->box.x, -paint->box.y);
++	if (frame->decor) {
++		/* its part of the frame painted whole */
++		if (frame->full && !paint->overlay) {
++			cairo_set_source_surface(cairo, frame->full, 0, 0);
++			cairo_set_operator(cairo, CAIRO_OPERATOR_SOURCE);
++			cairo_paint(cairo);
++		}
++	} else if (paint->overlay) {
++		gonx_frame_paint_overlay(cairo, &frame->layout, &frame->style,
++			frame->active);
++	} else {
++		gonx_frame_paint(cairo, &frame->layout, &frame->style,
++			frame->title, frame->active, frame->pressed);
++		if (frame->shadow_right > 0 || frame->shadow_bottom > 0) {
++			paint_shadow(cairo, paint);
++		}
++	}
++	cairo_destroy(cairo);
++	cairo_surface_flush(buffer->surface);
++	return buffer;
++}
++
++static void
++paint_destroy(struct scaled_buffer *scaled_buffer)
++{
++	struct hokku_paint *paint = scaled_buffer->data;
++	if (paint->shadow) {
++		cairo_surface_destroy(paint->shadow);
++	}
++	free(paint);
++}
++
++static bool
++paint_equal(struct scaled_buffer *a, struct scaled_buffer *b)
++{
++	/* each frame is its window's own */
++	return false;
++}
++
++static const struct scaled_buffer_impl paint_impl = {
++	.create_buffer = paint_create_buffer,
++	.destroy = paint_destroy,
++	.equal = paint_equal,
++};
++
++/* The painted frame is only seen; the rects take the pointer */
++static bool
++paint_accepts_input(struct wlr_scene_buffer *buffer, double *sx, double *sy)
++{
++	return false;
++}
++
++static void
++place_paint(struct ssd_hokku *frame, struct hokku_paint *paint,
++		struct wlr_box box)
++{
++	struct wlr_scene_node *node = &paint->buffer->scene_buffer->node;
++	paint->box = box;
++	if (wlr_box_empty(&box)) {
++		wlr_scene_node_set_enabled(node, false);
++		return;
++	}
++	wlr_scene_node_set_position(node, box.x - frame->origin_x,
++		box.y - frame->origin_y);
++	wlr_scene_node_set_enabled(node, true);
++	scaled_buffer_request_update(paint->buffer, box.width, box.height);
++}
++
++static struct hokku_paint *
++create_paint(struct ssd_hokku *frame, struct wlr_scene_tree *parent,
++		bool overlay)
++{
++	struct hokku_paint *paint = znew(*paint);
++	paint->frame = frame;
++	paint->overlay = overlay;
++	paint->buffer = scaled_buffer_create(parent, &paint_impl,
++		/* drop_buffer */ true);
++	paint->buffer->data = paint;
++	paint->buffer->scene_buffer->point_accepts_input = paint_accepts_input;
++	return paint;
++}
++
++static void
++lay_out(struct ssd_hokku *frame, struct view *view, struct gonx_layout *l)
++{
++	bool tabless = !view_titlebar_visible(view);
++	frame->margin = hokku_sizes[tabless];
++	frame->origin_x = frame->margin.left;
++	frame->origin_y = frame->margin.top;
++
++	memset(l, 0, sizeof(*l));
++	l->width = view->current.width + frame->margin.left
++		+ frame->margin.right;
++	l->height = view_effective_height(view, /* use_pending */ false)
++		+ frame->margin.top + frame->margin.bottom;
++	l->tabless = tabless;
++	l->resizable = 1;
++	for (int b = 0; b < GONX_BUTTON_COUNT; b++) {
++		l->has_button[b] = has_title_button(button_types[b]);
++	}
++	gonx_frame_layout(l, &frame->style, frame->title);
++}
++
++/* -------- Hokku's libdecorator -------- */
++
++static bool
++load_libdecorator(void)
++{
++	if (libdecorator.tried) {
++		return libdecorator.load != NULL;
++	}
++	libdecorator.tried = true;
++
++	void *library = dlopen("libdecorator.so", RTLD_NOW | RTLD_LOCAL);
++	if (!library) {
++		wlr_log(WLR_INFO, "no Hokku libdecorator: %s", dlerror());
++		return false;
++	}
++	cosmoe_decor_init_func init = (cosmoe_decor_init_func)dlsym(library,
++		"cosmoe_decor_init_standalone");
++	libdecorator.reload = (cosmoe_decor_reload_func)dlsym(library,
++		"cosmoe_decor_reload_settings");
++	libdecorator.current = (cosmoe_decor_current_func)dlsym(library,
++		"cosmoe_decor_current");
++	libdecorator.settings_folder = (cosmoe_decor_settings_folder_func)
++		dlsym(library, "cosmoe_decor_settings_folder");
++	cosmoe_decor_load_func load = (cosmoe_decor_load_func)dlsym(library,
++		"cosmoe_decor_load");
++	if (!init || !load || !libdecorator.reload || !libdecorator.current
++			|| !libdecorator.settings_folder || init() != 0) {
++		wlr_log(WLR_ERROR, "Hokku's libdecorator is too old or failed");
++		return false;
++	}
++	libdecorator.load = load;
++	return true;
++}
++
++static int
++handle_settings_timer(void *data)
++{
++	/* a reconfigure, as labwc --reconfigure does */
++	kill(getpid(), SIGHUP);
++	return 0;
++}
++
++static int
++handle_settings_changed(int fd, uint32_t mask, void *data)
++{
++	char events[4096];
++	while (read(fd, events, sizeof(events)) > 0) {
++		/* drained; what changed doesn't matter */
++	}
++	/* a theme writes several files: once they are all written */
++	if (!libdecorator.timer) {
++		libdecorator.timer = wl_event_loop_add_timer(server.wl_event_loop,
++			handle_settings_timer, NULL);
++	}
++	wl_event_source_timer_update(libdecorator.timer, 300);
++	return 0;
++}
++
++/*
++ * Hokku's settings (the decorator, colours, fonts, shadows, corners) change
++ * in Appearance, Power Theme and setdecor; the frames follow.
++ */
++static void
++watch_settings(void)
++{
++	if (libdecorator.watch >= 0) {
++		return;
++	}
++	char folder[4096];
++	libdecorator.settings_folder(folder, sizeof(folder));
++	if (!*folder) {
++		return;
++	}
++	int fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
++	if (fd < 0) {
++		return;
++	}
++	if (inotify_add_watch(fd, folder, IN_CLOSE_WRITE | IN_MOVED_TO
++			| IN_CREATE | IN_DELETE) < 0) {
++		wlr_log(WLR_INFO, "can't watch %s for Hokku's settings", folder);
++		close(fd);
++		return;
++	}
++	libdecorator.watch = fd;
++	libdecorator.watch_source = wl_event_loop_add_fd(server.wl_event_loop,
++		fd, WL_EVENT_READABLE, handle_settings_changed, NULL);
++}
++
++static uint32_t
++decor_flags(void)
++{
++	uint32_t flags = 0;
++	if (!has_title_button(LAB_NODE_BUTTON_CLOSE)) {
++		flags |= COSMOE_DECOR_NOT_CLOSABLE;
++	}
++	if (!has_title_button(LAB_NODE_BUTTON_MAXIMIZE)) {
++		flags |= COSMOE_DECOR_NOT_ZOOMABLE;
++	}
++	if (!has_title_button(LAB_NODE_BUTTON_ICONIFY)) {
++		flags |= COSMOE_DECOR_NOT_MINIMIZABLE;
++	}
++	return flags;
++}
++
++/*
++ * The theme's decorator, if libdecorator draws it: the one it names, or with
++ * "Hokku" the one Hokku's settings name. Leaves the theme as it was if not,
++ * Haiku and Gonx then having frames of their own here.
++ */
++static bool
++decor_theme_sizes(struct theme *theme)
++{
++	decor_ops = NULL;
++	const char *wanted = theme->window_hokku_frame_name;
++	if (!wanted || !load_libdecorator()) {
++		return false;
++	}
++
++	char name[256];
++	bool follow = !strcasecmp(wanted, "Hokku");
++	if (follow) {
++		libdecorator.current(name, sizeof(name));
++		watch_settings();
++	} else {
++		snprintf(name, sizeof(name), "%s", wanted);
++	}
++	libdecorator.reload();
++
++	if (!strcasecmp(name, "Default")) {
++		/* Hokku's "Default" is the desktop's own: labwc's */
++		theme->window_hokku_frame = LAB_HOKKU_FRAME_NONE;
++		return true;
++	}
++	decor_ops = libdecorator.load(name);
++	if (!decor_ops) {
++		if (!strcasecmp(name, "Haiku")) {
++			theme->window_hokku_frame = LAB_HOKKU_FRAME_HAIKU;
++		} else if (!strcasecmp(name, "Gonx")) {
++			theme->window_hokku_frame = LAB_HOKKU_FRAME_GONX;
++		} else {
++			wlr_log(WLR_ERROR, "no Hokku decorator \"%s\"", name);
++			theme->window_hokku_frame = LAB_HOKKU_FRAME_NONE;
++			return true;
++		}
++		return false;
++	}
++	theme->window_hokku_frame = LAB_HOKKU_FRAME_DECOR;
++
++	/* the border of a window of any size, with a tab and without */
++	for (int tabless = 0; tabless <= 1; tabless++) {
++		struct border *sizes = &hokku_sizes[tabless];
++		*sizes = (struct border){ 0 };
++		struct cosmoe_decor *decor = decor_ops->create(
++			tabless ? DECOR_MODAL_LOOK : DECOR_TITLED_LOOK, decor_flags(),
++			"Window");
++		if (decor) {
++			decor_ops->layout(decor, 100, 100, 400, 300);
++			decor_ops->borders(decor, &sizes->left, &sizes->top,
++				&sizes->right, &sizes->bottom);
++			decor_ops->destroy(decor);
++		}
++		hokku_border_sizes[tabless] = *sizes;
++	}
++	theme->border_width = hokku_sizes[0].bottom;
++	theme->titlebar_height =
++		MAX(hokku_sizes[0].top - hokku_sizes[0].bottom, 1);
++	return true;
++}
++
++static struct cosmoe_decor *
++decor_create(struct ssd_hokku *frame, bool tabless)
++{
++	frame->decor_tabless = tabless;
++	frame->ops = decor_ops;
++	return decor_ops->create(tabless ? DECOR_MODAL_LOOK : DECOR_TITLED_LOOK,
++		decor_flags(), frame->title ? frame->title : "");
++}
++
++/* the frame's rect, as a gonx_rect for place_rect() */
++static struct gonx_rect
++decor_rect(const struct cosmoe_decor_rect *r)
++{
++	return (struct gonx_rect){ r->left, r->top, r->right, r->bottom };
++}
++
++static const int decor_button_regions[GONX_BUTTON_COUNT] = {
++	[GONX_CLOSE] = COSMOE_DECOR_REGION_CLOSE_BUTTON,
++	[GONX_ZOOM] = COSMOE_DECOR_REGION_ZOOM_BUTTON,
++	[GONX_MINIMIZE] = COSMOE_DECOR_REGION_MINIMIZE_BUTTON,
++};
++
++/* Paints the whole frame, for the buffers to show their parts of */
++static void
++decor_paint_full(struct ssd_hokku *frame)
++{
++	if (frame->full) {
++		cairo_surface_destroy(frame->full);
++		frame->full = NULL;
++	}
++	if (!frame->decor || frame->width <= 0 || frame->height <= 0) {
++		return;
++	}
++	frame->full = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
++		frame->width, frame->height);
++	cairo_t *cairo = cairo_create(frame->full);
++	decor_ops->set_focus(frame->decor, frame->active);
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		decor_ops->set_pressed(frame->decor, decor_button_regions[i],
++			frame->pressed[i]);
++	}
++	decor_ops->paint(frame->decor, cairo);
++	cairo_destroy(cairo);
++	cairo_surface_flush(frame->full);
++}
++
++static void
++decor_update(struct ssd_hokku *frame, struct view *view, bool dirty)
++{
++	bool tabless = !view_titlebar_visible(view);
++	if (!frame->decor || tabless != frame->decor_tabless) {
++		if (frame->decor) {
++			frame->ops->destroy(frame->decor);
++		}
++		frame->decor = decor_create(frame, tabless);
++		dirty = true;
++		if (!frame->decor) {
++			return;
++		}
++	}
++
++	/* as on Hokku's own windows, none when the window fills the screen */
++	decor_ops->set_maximized(frame->decor,
++		view->maximized == VIEW_AXIS_BOTH);
++	struct border shadow = { 0 };
++	decor_ops->shadow_extent(frame->decor, &shadow.left, &shadow.top,
++		&shadow.right, &shadow.bottom);
++	struct border m = hokku_sizes[tabless];
++	struct wlr_box content = {
++		.x = shadow.left + m.left,
++		.y = shadow.top + m.top,
++		.width = MAX(view->current.width, 1),
++		.height = MAX(view_effective_height(view, /* use_pending */ false),
++			1),
++	};
++	if (!dirty && wlr_box_equal(&content, &frame->content)
++			&& !memcmp(&shadow, &frame->shadow, sizeof(shadow))) {
++		return;
++	}
++	decor_ops->layout(frame->decor, content.x, content.y, content.width,
++		content.height);
++	decor_ops->borders(frame->decor, &m.left, &m.top, &m.right, &m.bottom);
++	frame->margin = m;
++	frame->shadow = shadow;
++	frame->content = content;
++	frame->origin_x = content.x;
++	frame->origin_y = content.y;
++	frame->width = content.x + content.width + m.right + shadow.right;
++	frame->height = content.y + content.height + m.bottom + shadow.bottom;
++	decor_paint_full(frame);
++
++	const int x = content.x, y = content.y;
++	const int right = x + content.width, bottom = y + content.height;
++	const struct wlr_box boxes[HOKKU_PART_COUNT] = {
++		[HOKKU_TOP] = { 0, 0, frame->width, y },
++		[HOKKU_BOTTOM] = { 0, bottom, frame->width, frame->height - bottom },
++		[HOKKU_LEFT] = { 0, y, x, content.height },
++		[HOKKU_RIGHT] = { right, y, frame->width - right, content.height },
++	};
++	for (int i = 0; i < HOKKU_PART_COUNT; i++) {
++		place_paint(frame, frame->paint[i], boxes[i]);
++	}
++	for (int i = 0; i < 4; i++) {
++		place_paint(frame, frame->corner[i], (struct wlr_box){ 0 });
++	}
++
++	/* the border round the content, and the tab */
++	struct cosmoe_decor_rect border_rect, tab_rect;
++	decor_ops->frame_rects(frame->decor, &border_rect, &tab_rect);
++	const struct gonx_rect b = decor_rect(&border_rect);
++	const struct gonx_rect c = { x, y, right - 1, bottom - 1 };
++	place_rect(frame, frame->border_input[HOKKU_TOP], (struct gonx_rect){
++		b.left, b.top, b.right, c.top - 1 });
++	place_rect(frame, frame->border_input[HOKKU_BOTTOM], (struct gonx_rect){
++		b.left, c.bottom + 1, b.right, b.bottom });
++	place_rect(frame, frame->border_input[HOKKU_LEFT], (struct gonx_rect){
++		b.left, c.top, c.left - 1, c.bottom });
++	place_rect(frame, frame->border_input[HOKKU_RIGHT], (struct gonx_rect){
++		c.right + 1, c.top, b.right, c.bottom });
++	place_rect(frame, frame->tab_input[HOKKU_TAB], decor_rect(&tab_rect));
++	place_rect(frame, frame->tab_input[HOKKU_SHELF],
++		(struct gonx_rect){ 0, 0, -1, -1 });
++	place_rect(frame, frame->tab_input[HOKKU_FLAP],
++		(struct gonx_rect){ 0, 0, -1, -1 });
++
++	/* the indicator: the border's top rows */
++	place_rect(frame, frame->indicator, (struct gonx_rect){ b.left, b.top,
++		b.right, b.top + MAX((c.left - b.left) / 2, 1) - 1 });
++	wlr_scene_node_set_enabled(&frame->indicator->node,
++		frame->inhibits_keybinds && frame->active);
++
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		if (!frame->button[i]) {
++			continue;
++		}
++		struct cosmoe_decor_rect r;
++		decor_ops->button_rect(frame->decor, decor_button_regions[i], &r);
++		struct wlr_scene_node *node = frame->button[i]->node;
++		if (r.right < r.left) {
++			wlr_scene_node_set_enabled(node, false);
++			continue;
++		}
++		wlr_scene_rect_set_size(frame->button_input[i],
++			r.right - r.left + 1, r.bottom - r.top + 1);
++		wlr_scene_node_set_position(node, r.left - frame->origin_x,
++			r.top - frame->origin_y);
++		wlr_scene_node_set_enabled(node, true);
++	}
++}
++
++/* repaints a decorator's frame where it changed: its look, not its size */
++static void
++decor_repaint(struct ssd_hokku *frame)
++{
++	decor_paint_full(frame);
++	for (int i = 0; i < HOKKU_PART_COUNT; i++) {
++		struct hokku_paint *paint = frame->paint[i];
++		if (!wlr_box_empty(&paint->box)) {
++			scaled_buffer_request_update(paint->buffer, paint->box.width,
++				paint->box.height);
++		}
++	}
++}
++
++static bool
++decor_resizing_type(const struct ssd_hokku *frame, struct view *view,
++		int x, int y, enum lab_node_type *type)
++{
++	switch (decor_ops->region_at(frame->decor, x, y)) {
++	case COSMOE_DECOR_REGION_LEFT_BORDER:
++		*type = LAB_NODE_BORDER_LEFT;
++		return true;
++	case COSMOE_DECOR_REGION_RIGHT_BORDER:
++		*type = LAB_NODE_BORDER_RIGHT;
++		return true;
++	case COSMOE_DECOR_REGION_TOP_BORDER:
++		*type = LAB_NODE_BORDER_TOP;
++		return true;
++	case COSMOE_DECOR_REGION_BOTTOM_BORDER:
++		*type = LAB_NODE_BORDER_BOTTOM;
++		return true;
++	case COSMOE_DECOR_REGION_LEFT_TOP_CORNER:
++		*type = LAB_NODE_CORNER_TOP_LEFT;
++		return true;
++	case COSMOE_DECOR_REGION_LEFT_BOTTOM_CORNER:
++		*type = LAB_NODE_CORNER_BOTTOM_LEFT;
++		return true;
++	case COSMOE_DECOR_REGION_RIGHT_TOP_CORNER:
++		*type = LAB_NODE_CORNER_TOP_RIGHT;
++		return true;
++	case COSMOE_DECOR_REGION_RIGHT_BOTTOM_CORNER:
++		*type = LAB_NODE_CORNER_BOTTOM_RIGHT;
++		return true;
++	case COSMOE_DECOR_REGION_NONE:
++		/* the window, or off the frame where labwc's resize areas are */
++		if (x >= frame->content.x && y >= frame->content.y
++				&& x < frame->content.x + frame->content.width
++				&& y < frame->content.y + frame->content.height) {
++			*type = LAB_NODE_NONE;
++			return true;
++		}
++		return false;
++	default:
++		/* the tab and its buttons */
++		*type = LAB_NODE_NONE;
++		return true;
++	}
++}
++
++void
++ssd_hokku_update(struct ssd *ssd)
++{
++	struct ssd_hokku *frame = ssd->hokku;
++	struct view *view = ssd->view;
++	assert(frame);
++
++	/* view->title is never NULL (instead it can be an empty string) */
++	const char *title = rc.show_title ? view->title : "";
++	if (!frame->title || strcmp(frame->title, title)) {
++		xstrdup_replace(frame->title, title);
++		frame->dirty = true;
++		if (frame->decor) {
++			decor_ops->set_title(frame->decor, title);
++		}
++	}
++
++	if (decor_ops) {
++		decor_update(frame, view, frame->dirty);
++		frame->dirty = false;
++		return;
++	}
++
++	/* as on Hokku's own windows, none when the window fills the screen */
++	int shadow_right = 0, shadow_bottom = 0;
++	if (frame->style.shadow && view->maximized != VIEW_AXIS_BOTH) {
++		gonx_frame_shadow_extent(&shadow_right, &shadow_bottom);
++	}
++	struct gonx_layout layout;
++	lay_out(frame, view, &layout);
++	if (!frame->dirty && shadow_right == frame->shadow_right
++			&& shadow_bottom == frame->shadow_bottom
++			&& !memcmp(&layout, &frame->layout, sizeof(layout))) {
++		return;
++	}
++	frame->layout = layout;
++	frame->shadow_right = shadow_right;
++	frame->shadow_bottom = shadow_bottom;
++	frame->dirty = false;
++
++	const struct gonx_layout *l = &frame->layout;
++	const struct border m = frame->margin;
++	const int middle = l->height - m.top - m.bottom;
++	const int sr = shadow_right, sb = shadow_bottom;
++	const struct wlr_box boxes[HOKKU_PART_COUNT] = {
++		[HOKKU_TOP] = { 0, 0, l->width + sr, m.top },
++		[HOKKU_BOTTOM] = { 0, l->height - m.bottom, l->width + sr,
++			m.bottom + sb },
++		[HOKKU_LEFT] = { 0, m.top, m.left, middle },
++		[HOKKU_RIGHT] = { l->width - m.right, m.top, m.right + sr, middle },
++	};
++	for (int i = 0; i < HOKKU_PART_COUNT; i++) {
++		place_paint(frame, frame->paint[i], boxes[i]);
++	}
++
++	/* Gonx's inner corners; Haiku's frame has none */
++	const int n = HOKKU_CORNER_SIZE;
++	const struct gonx_rect c = l->content;
++	const bool corners = !l->haiku && !view->shaded
++		&& c.right - c.left + 1 >= 2 * n && c.bottom - c.top + 1 >= 2 * n;
++	for (int i = 0; i < 4; i++) {
++		struct wlr_box box = {
++			.x = i % 2 ? c.right - n + 1 : c.left,
++			.y = i >= 2 ? c.bottom - n + 1 : c.top,
++			.width = corners ? n : 0,
++			.height = corners ? n : 0,
++		};
++		place_paint(frame, frame->corner[i], box);
++	}
++
++	/* the border round the content */
++	const struct gonx_rect b = l->border;
++	place_rect(frame, frame->border_input[HOKKU_TOP], (struct gonx_rect){
++		b.left, b.top, b.right, c.top - 1 });
++	place_rect(frame, frame->border_input[HOKKU_BOTTOM], (struct gonx_rect){
++		b.left, c.bottom + 1, b.right, b.bottom });
++	place_rect(frame, frame->border_input[HOKKU_LEFT], (struct gonx_rect){
++		b.left, c.top, c.left - 1, c.bottom });
++	place_rect(frame, frame->border_input[HOKKU_RIGHT], (struct gonx_rect){
++		c.right + 1, c.top, b.right, c.bottom });
++
++	place_rect(frame, frame->tab_input[HOKKU_TAB], l->title);
++	place_rect(frame, frame->tab_input[HOKKU_SHELF], l->shelf);
++	place_rect(frame, frame->tab_input[HOKKU_FLAP], l->flap);
++
++	/* the indicator: the border's top rows, as wide as the frame */
++	place_rect(frame, frame->indicator, (struct gonx_rect){ b.left, b.top,
++		b.right, b.top + MAX(l->side / 2, 1) - 1 });
++	wlr_scene_node_set_enabled(&frame->indicator->node,
++		frame->inhibits_keybinds && frame->active);
++
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		if (!frame->button[i]) {
++			continue;
++		}
++		struct gonx_rect r = l->button[i];
++		struct wlr_scene_node *node = frame->button[i]->node;
++		if (!rect_valid(&r)) {
++			wlr_scene_node_set_enabled(node, false);
++			continue;
++		}
++		/* the button's node holds its rect at (0, 0) */
++		wlr_scene_rect_set_size(frame->button_input[i],
++			r.right - r.left + 1, r.bottom - r.top + 1);
++		wlr_scene_node_set_position(node, r.left - m.left, r.top - m.top);
++		wlr_scene_node_set_enabled(node, true);
++	}
++}
++
++void
++ssd_hokku_enable_keybind_inhibit_indicator(struct ssd *ssd, bool enable)
++{
++	struct ssd_hokku *frame = ssd->hokku;
++	frame->inhibits_keybinds = enable;
++	wlr_scene_node_set_enabled(&frame->indicator->node,
++		enable && frame->active);
++}
++
++/* Shows the button pressed or not, if it is one of Hokku's frames' */
++static void
++show_pressed(struct ssd_button *button, bool pressed)
++{
++	struct view *view = button ? node_view_from_node(button->node) : NULL;
++	struct ssd_hokku *frame = view && view->ssd ? view->ssd->hokku : NULL;
++	if (!frame) {
++		return;
++	}
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		if (frame->button[i] == button) {
++			frame->pressed[i] = pressed;
++		}
++	}
++	if (frame->decor) {
++		decor_repaint(frame);
++		return;
++	}
++	/* the buttons are on the tab, above the window */
++	struct hokku_paint *top = frame->paint[HOKKU_TOP];
++	if (!wlr_box_empty(&top->box)) {
++		scaled_buffer_request_update(top->buffer, top->box.width,
++			top->box.height);
++	}
++}
++
++void
++ssd_hokku_update_pressed(void)
++{
++	struct ssd_button *button = server.hovered_button;
++	if (button && button->node != server.seat.pressed.ctx.node) {
++		button = NULL;
++	}
++	if (button == shown_pressed) {
++		return;
++	}
++	show_pressed(shown_pressed, false);
++	shown_pressed = button;
++	show_pressed(button, true);
++}
++
++void
++ssd_hokku_set_active(struct ssd *ssd, bool active)
++{
++	struct ssd_hokku *frame = ssd ? ssd->hokku : NULL;
++	if (!frame || frame->active == active) {
++		return;
++	}
++	frame->active = active;
++	frame->dirty = true;
++	ssd_hokku_update(ssd);
++}
++
++void
++ssd_hokku_create(struct ssd *ssd)
++{
++	struct view *view = ssd->view;
++	struct ssd_hokku *frame = znew(*frame);
++	ssd->hokku = frame;
++	style_from_theme(rc.theme, &frame->style);
++	frame->dirty = true;
++
++	/* the border goes under the titlebar, whose rects take the tab */
++	ssd->border.tree = lab_wlr_scene_tree_create(ssd->tree);
++	ssd->titlebar.tree = lab_wlr_scene_tree_create(ssd->tree);
++	node_descriptor_create(&ssd->titlebar.tree->node,
++		LAB_NODE_TITLEBAR, view, /*data*/ NULL);
++
++	/* empty, for the parts of ssd.c that switch them with the focus */
++	enum ssd_active_state active;
++	FOR_EACH_ACTIVE_STATE(active) {
++		ssd->border.subtrees[active].tree =
++			lab_wlr_scene_tree_create(ssd->border.tree);
++		struct ssd_titlebar_subtree *subtree =
++			&ssd->titlebar.subtrees[active];
++		subtree->tree = lab_wlr_scene_tree_create(ssd->titlebar.tree);
++		wl_list_init(&subtree->buttons_left);
++		wl_list_init(&subtree->buttons_right);
++	}
++
++	for (int i = 0; i < HOKKU_PART_COUNT; i++) {
++		frame->paint[i] = create_paint(frame, ssd->border.tree,
++			/* overlay */ false);
++	}
++	frame->overlay = lab_wlr_scene_tree_create(view->scene_tree);
++	wlr_scene_node_raise_to_top(&frame->overlay->node);
++	for (int i = 0; i < 4; i++) {
++		frame->corner[i] = create_paint(frame, frame->overlay,
++			/* overlay */ true);
++	}
++
++	const float invisible[4] = { 0, 0, 0, 0 };
++	for (int i = 0; i < HOKKU_PART_COUNT; i++) {
++		frame->border_input[i] = lab_wlr_scene_rect_create(
++			ssd->border.tree, 1, 1, invisible);
++	}
++	for (int i = 0; i < HOKKU_TAB_PART_COUNT; i++) {
++		frame->tab_input[i] = lab_wlr_scene_rect_create(
++			ssd->titlebar.tree, 1, 1, invisible);
++	}
++	frame->indicator = lab_wlr_scene_rect_create(ssd->border.tree, 1, 1,
++		rc.theme->window_toggled_keybinds_color);
++	wlr_scene_node_set_enabled(&frame->indicator->node, false);
++
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		if (!has_title_button(button_types[i])) {
++			continue;
++		}
++		struct wlr_scene_tree *root =
++			lab_wlr_scene_tree_create(ssd->titlebar.tree);
++		struct ssd_button *button = znew(*button);
++		button->node = &root->node;
++		button->type = button_types[i];
++		node_descriptor_create(&root->node, button->type, view, button);
++		wl_list_append(&ssd->titlebar.subtrees[SSD_ACTIVE].buttons_right,
++			&button->link);
++		frame->button[i] = button;
++		frame->button_input[i] =
++			lab_wlr_scene_rect_create(root, 1, 1, invisible);
++	}
++
++	ssd_hokku_update(ssd);
++}
++
++void
++ssd_hokku_destroy(struct ssd *ssd)
++{
++	if (!ssd->hokku) {
++		return;
++	}
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		if (shown_pressed && shown_pressed == ssd->hokku->button[i]) {
++			shown_pressed = NULL;
++		}
++	}
++	wlr_scene_node_destroy(&ssd->hokku->overlay->node);
++	if (ssd->hokku->decor) {
++		ssd->hokku->ops->destroy(ssd->hokku->decor);
++	}
++	if (ssd->hokku->full) {
++		cairo_surface_destroy(ssd->hokku->full);
++	}
++	free(ssd->hokku->title);
++	zfree(ssd->hokku);
++}
++
++/*
++ * The frame's own hit test: Haiku's border resizes the window from its edges
++ * and its bottom right corner. Returns false off the frame (in the extents),
++ * where labwc's resize areas apply.
++ */
++bool
++ssd_hokku_resizing_type(const struct ssd *ssd, struct wlr_cursor *cursor,
++		enum lab_node_type *type)
++{
++	const struct ssd_hokku *frame = ssd->hokku;
++	struct view *view = ssd->view;
++	int x = (int)floor(cursor->x) - view->current.x + frame->origin_x;
++	int y = (int)floor(cursor->y) - view->current.y + frame->origin_y;
++
++	if (frame->decor) {
++		return decor_resizing_type(frame, view, x, y, type);
++	}
++
++	/* Gonx's buttons stand on its shelf, which overlaps the border */
++	for (int i = 0; i < GONX_BUTTON_COUNT; i++) {
++		const struct gonx_rect *r = &frame->layout.button[i];
++		if (x >= r->left && x <= r->right && y >= r->top
++				&& y <= r->bottom) {
++			*type = LAB_NODE_NONE;
++			return true;
++		}
++	}
++
++	switch (gonx_frame_location(&frame->layout, x, y)) {
++	case THEME_LOCATION_RESIZING_TOP:
++		*type = LAB_NODE_BORDER_TOP;
++		return true;
++	case THEME_LOCATION_RESIZING_BOTTOM:
++		*type = LAB_NODE_BORDER_BOTTOM;
++		return true;
++	case THEME_LOCATION_RESIZING_LEFT:
++		*type = LAB_NODE_BORDER_LEFT;
++		return true;
++	case THEME_LOCATION_RESIZING_RIGHT:
++		*type = LAB_NODE_BORDER_RIGHT;
++		return true;
++	case THEME_LOCATION_RESIZING_TOP_LEFT:
++		*type = LAB_NODE_CORNER_TOP_LEFT;
++		return true;
++	case THEME_LOCATION_RESIZING_TOP_RIGHT:
++		*type = LAB_NODE_CORNER_TOP_RIGHT;
++		return true;
++	case THEME_LOCATION_RESIZING_BOTTOM_LEFT:
++		*type = LAB_NODE_CORNER_BOTTOM_LEFT;
++		return true;
++	case THEME_LOCATION_RESIZING_BOTTOM_RIGHT:
++		*type = LAB_NODE_CORNER_BOTTOM_RIGHT;
++		return true;
++	case THEME_LOCATION_EXTERIOR:
++		return false;
++	default:
++		/* the tab, its buttons, or the window */
++		*type = LAB_NODE_NONE;
++		return true;
++	}
++}
+diff --git a/src/ssd/ssd-shadow.c b/src/ssd/ssd-shadow.c
+index 9a45612..0ac3367 100644
+--- a/src/ssd/ssd-shadow.c
++++ b/src/ssd/ssd-shadow.c
+@@ -218,6 +218,10 @@ ssd_shadow_create(struct ssd *ssd)
+ 			/* Window shadows are disabled */
+ 			continue;
+ 		}
++		if (theme->window_hokku_frame != LAB_HOKKU_FRAME_NONE) {
++			/* Haiku's and Gonx's frames have none */
++			continue;
++		}
+ 
+ 		subtree->tree = lab_wlr_scene_tree_create(ssd->shadow.tree);
+ 		struct wlr_scene_tree *parent = subtree->tree;
+diff --git a/src/ssd/ssd-titlebar.c b/src/ssd/ssd-titlebar.c
+index d1a0881..53509e0 100644
+--- a/src/ssd/ssd-titlebar.c
++++ b/src/ssd/ssd-titlebar.c
+@@ -270,6 +270,11 @@ update_visible_buttons(struct ssd *ssd)
+ void
+ ssd_titlebar_update(struct ssd *ssd)
+ {
++	if (ssd->hokku) {
++		ssd_hokku_update(ssd);
++		return;
++	}
++
+ 	struct view *view = ssd->view;
+ 	int width = view->current.width;
+ 	int corner_width = ssd_get_corner_width();
+@@ -435,6 +440,10 @@ get_title_offsets(struct ssd *ssd, int *offset_left, int *offset_right)
+ void
+ ssd_update_title(struct ssd *ssd)
+ {
++	if (ssd && ssd->hokku) {
++		ssd_hokku_update(ssd);
++		return;
++	}
+ 	if (!ssd || !rc.show_title) {
+ 		return;
+ 	}
+@@ -507,6 +516,7 @@ ssd_update_hovered_button(struct wlr_scene_node *node)
+ 	if (button) {
+ 		update_button_state(button, LAB_BS_HOVERED, true);
+ 	}
++	ssd_hokku_update_pressed();
+ }
+ 
+ bool
+diff --git a/src/ssd/ssd.c b/src/ssd/ssd.c
+index e2ab637..632c66b 100644
+--- a/src/ssd/ssd.c
++++ b/src/ssd/ssd.c
+@@ -41,6 +41,11 @@ ssd_thickness(struct view *view)
+ 
+ 	struct theme *theme = rc.theme;
+ 
++	/* Hokku's frames keep their border when maximized, as on Haiku */
++	if (theme->window_hokku_frame != LAB_HOKKU_FRAME_NONE) {
++		return ssd_hokku_thickness(view);
++	}
++
+ 	if (view->maximized == VIEW_AXIS_BOTH) {
+ 		struct border thickness = { 0 };
+ 		if (view_titlebar_visible(view)) {
+@@ -96,6 +101,11 @@ ssd_get_resizing_type(const struct ssd *ssd, struct wlr_cursor *cursor)
+ 		return LAB_NODE_NONE;
+ 	}
+ 
++	enum lab_node_type hokku_type;
++	if (ssd->hokku && ssd_hokku_resizing_type(ssd, cursor, &hokku_type)) {
++		return hokku_type;
++	}
++
+ 	struct wlr_box view_box = view->current;
+ 	view_box.height = view_effective_height(view, /* use_pending */ false);
+ 
+@@ -165,8 +175,12 @@ ssd_create(struct view *view, bool active)
+ 	 * TODO: Set the state here instead so the order does not matter
+ 	 * anymore.
+ 	 */
+-	ssd_titlebar_create(ssd);
+-	ssd_border_create(ssd);
++	if (rc.theme->window_hokku_frame != LAB_HOKKU_FRAME_NONE) {
++		ssd_hokku_create(ssd);
++	} else {
++		ssd_titlebar_create(ssd);
++		ssd_border_create(ssd);
++	}
+ 	if (!view_titlebar_visible(view)) {
+ 		/* Ensure we keep the old state on Reconfigure or when exiting fullscreen */
+ 		ssd_set_titlebar(ssd, false);
+@@ -284,6 +298,7 @@ ssd_destroy(struct ssd *ssd)
+ 	ssd_extents_destroy(ssd);
+ 	ssd_shadow_destroy(ssd);
+ 	wlr_scene_node_destroy(&ssd->tree->node);
++	ssd_hokku_destroy(ssd);
+ 
+ 	free(ssd);
+ }
+@@ -325,6 +340,7 @@ ssd_set_active(struct ssd *ssd, bool active)
+ 				active == active_state);
+ 		}
+ 	}
++	ssd_hokku_set_active(ssd, active);
+ }
+ 
+ void
+@@ -345,6 +361,10 @@ ssd_enable_keybind_inhibit_indicator(struct ssd *ssd, bool enable)
+ 	if (!ssd) {
+ 		return;
+ 	}
++	if (ssd->hokku) {
++		ssd_hokku_enable_keybind_inhibit_indicator(ssd, enable);
++		return;
++	}
+ 
+ 	float *color = enable
+ 		? rc.theme->window_toggled_keybinds_color
+diff --git a/src/theme.c b/src/theme.c
+index 71e577c..e905bf7 100644
+--- a/src/theme.c
++++ b/src/theme.c
+@@ -516,6 +516,26 @@ parse_justification(const char *str)
+ 	}
+ }
+ 
++/*
++ * Haiku and Gonx have frames of their own here; any other name is one of
++ * Hokku's decorators. Which is drawn is settled once the theme is read
++ * (ssd_hokku_theme_sizes()): Hokku's libdecorator draws whichever it has.
++ */
++static enum lab_hokku_frame
++parse_hokku_frame(const char *str)
++{
++	if (!strcasecmp(str, "Haiku")) {
++		return LAB_HOKKU_FRAME_HAIKU;
++	} else if (!strcasecmp(str, "Gonx")) {
++		return LAB_HOKKU_FRAME_GONX;
++	} else if (!*str || !strcasecmp(str, "none")
++			|| !strcasecmp(str, "Default")) {
++		return LAB_HOKKU_FRAME_NONE;
++	} else {
++		return LAB_HOKKU_FRAME_DECOR;
++	}
++}
++
+ /*
+  * We generally use Openbox defaults, but if no theme file can be found it's
+  * better to populate the theme variables with some sane values as no-one
+@@ -554,6 +574,10 @@ theme_builtin(struct theme *theme)
+ 	parse_hexstr("#000000", theme->window[SSD_ACTIVE].label_text_color);
+ 	parse_hexstr("#000000", theme->window[SSD_INACTIVE].label_text_color);
+ 	theme->window_label_text_justify = parse_justification("Center");
++	theme->window_hokku_frame = LAB_HOKKU_FRAME_NONE;
++	theme->window_hokku_frame_name = NULL;
++	theme->window_hokku_frame_font = NULL;
++	theme->window_hokku_frame_shadow = true;
+ 
+ 	theme->window_button_width = 26;
+ 	theme->window_button_height = 26;
+@@ -766,6 +790,16 @@ entry(struct theme *theme, const char *key, const char *value)
+ 	if (match_glob(key, "window.label.text.justify")) {
+ 		theme->window_label_text_justify = parse_justification(value);
+ 	}
++	if (match_glob(key, "window.decorator")) {
++		theme->window_hokku_frame = parse_hokku_frame(value);
++		xstrdup_replace(theme->window_hokku_frame_name, value);
++	}
++	if (match_glob(key, "window.decorator.font")) {
++		xstrdup_replace(theme->window_hokku_frame_font, value);
++	}
++	if (match_glob(key, "window.decorator.shadow")) {
++		set_bool(value, &theme->window_hokku_frame_shadow);
++	}
+ 
+ 	if (match_glob(key, "window.button.width")) {
+ 		theme->window_button_width = atoi(value);
+@@ -1812,6 +1846,14 @@ post_processing(struct theme *theme)
+ 		fill_colors_with_osd_theme(theme,
+ 			theme->snapping_overlay_edge.border_color);
+ 	}
++
++	/*
++	 * Hokku's frame's tab and border stand for the titlebar and border.
++	 * Last, so that the menus and OSDs keep the theme's border width.
++	 */
++	if (theme->window_hokku_frame != LAB_HOKKU_FRAME_NONE) {
++		ssd_hokku_theme_sizes(theme);
++	}
+ }
+ 
+ void
+@@ -1868,6 +1910,9 @@ theme_finish(struct theme *theme)
+ 		}
+ 	}
+ 
++	zfree(theme->window_hokku_frame_name);
++	zfree(theme->window_hokku_frame_font);
++
+ 	enum ssd_active_state active;
+ 	FOR_EACH_ACTIVE_STATE(active) {
+ 		zfree_pattern(theme->window[active].titlebar_pattern);

@@ -23,3 +23,8 @@ option('enable_libgame',
   type : 'boolean',
   value : true,
   description : 'Build Game Kit as standalone libgame')
+
+option('labwc_hokku',
+  type : 'feature',
+  value : 'auto',
+  description : 'Build labwc-hokku, labwc drawing other apps\' windows in Hokku\'s frames, for the desktop session (fetches labwc, and wlroots if the system\'s is older than 0.20)')

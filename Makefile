@@ -76,7 +76,9 @@ deb:
 	meson setup $(DEB_BUILDDIR) --prefix=/usr --libdir=lib/$(DEB_MULTIARCH) \
 		-Denable_unit_test_compile=false
 	ninja -C $(DEB_BUILDDIR)
-	DESTDIR=$(DEB_DESTDIR) ninja -C $(DEB_BUILDDIR) install
+	# labwc-hokku links the wlroots and libsfdo it may fetch statically
+	DESTDIR=$(DEB_DESTDIR) meson install -C $(DEB_BUILDDIR) --no-rebuild \
+		--skip-subprojects libsfdo,wlroots
 else
 deb:
 	rm -rf debian/packages

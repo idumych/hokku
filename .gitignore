@@ -72,3 +72,9 @@ rpm/packages
 # AppImages (packaging/appimage)
 /obj/
 *.AppImage
+
+# subprojects meson downloads (labwc-hokku)
+/subprojects/labwc/
+/subprojects/wlroots/
+/subprojects/libsfdo/
+/subprojects/packagecache/
