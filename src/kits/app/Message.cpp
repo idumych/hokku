@@ -2251,6 +2251,13 @@ BMessage::_SendMessage(port_id port, team_id portOwner, int32 token,
 	header->reply_team = replyToPrivate.Team();
 	header->reply_port = replyToPrivate.Port();
 	header->reply_target = replyToPrivate.Token();
+	if ((fHeader->flags & MESSAGE_FLAG_NO_RETURN_ADDRESS) != 0) {
+		header->reply_team = -1;
+		header->reply_port = -1;
+		header->reply_target = B_NULL_TOKEN;
+		// (It is about this sending: passed on, the message has a sender.)
+		header->flags &= ~MESSAGE_FLAG_NO_RETURN_ADDRESS;
+	}
 	header->flags |= MESSAGE_FLAG_WAS_DELIVERED;
 
 	if (direct == NULL) {

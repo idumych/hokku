@@ -516,13 +516,13 @@ to the Haiku project, whose work made both possible.
 - **What a query looks at.** On the home folder's volume, the settings folder and the home
   folder; on the root volume nothing; on any other volume all of it. Hidden entries are left
   out, links aren't followed, and no file is opened, so nothing watching a file sees it as
-  changed. `fs_stat_index()` still fails, which keeps `BRoster` from looking when it wants an
-  app.
+  changed.
 - **A list stands in for the indices.** Few files have attributes (70,000 of 4.5 million in the
   home folder it was measured on), so a predicate that can only match a file with an attribute
   looks at those files alone: 0.17 s there, instead of 9 s for walking. The list is kept in
   `~/.cache/cosmoe/query-index`. It has no values, so what a query says of a file is what the
-  file says now. It comes from a walk, and `BNode::WriteAttr()` adds to it in every program.
+  file says now. It comes from a walk, and `BNode::WriteAttr()` adds to it in every program
+  (`fs_write_attr()` called directly doesn't, as in `addattr`).
   What it can lack is a file that got its attributes elsewhere (`setfattr`, `cp -a`, a restore)
   or was moved by another program, until the next walk: when a query finds the list old (10
   minutes, or a hundred times what a walk takes) or an entry gone (1 minute, or thirty times),
@@ -539,7 +539,30 @@ to the Haiku project, whose work made both possible.
   list if it can use it. If it has to walk, that's at a low priority and about 3% of one CPU
   (4 minutes for 4.5 million files). `B_QUERY_WATCH_ALL` adds nothing yet: a move is a removal and a creation, and a
   change that doesn't affect the match isn't reported.
+- **Every index exists, so far as a program can tell.** There is nothing to keep up, and
+  anything an index is for can be asked: `fs_stat_index()` succeeds and `fs_create_index()` says
+  `B_FILE_EXISTS` on a volume with queries. `BRoster` explicitly doesn't use queries to look for
+  an app, which would be no way to start one.
+- **`watch_volume()`** was declared but not there. It watches the folders that a query starts
+  from and up to 4096 nearest, as they are when it's called: a folder made later isn't covered,
+  nor is one too deep. Its messages, like those of the node monitor and of live queries, come
+  with no reply address, as from the kernel on Haiku: a handler that answers every message would
+  otherwise answer itself for ever.
 - **Linux only.** `fs_open_query()` and its relatives aren't there yet.
+
+### Attributes
+
+- **A value can be any size.** BFS keeps any size, but btrfs took about 10 KB of one value. A
+  value that doesn't fit is split into hidden `COSMOE:MORE:<n>:<name>` attributes, 4 KB each, that
+  reads, `GetAttrInfo()`, listing, renaming and removing all treat as one value; a value that fits
+  stays one, for other programs. If a value can't be written, the old one stays. This doesn't
+  help on ext4, which limits all of a file's attributes together to about a block unless it was
+  made with `ea_inode`.
+- **A failed write says why:** `B_DEVICE_FULL`, `B_NAME_TOO_LONG`, `B_PERMISSION_DENIED`,
+  `B_READ_ONLY_DEVICE` or `B_NOT_SUPPORTED`, instead of `B_BAD_VALUE` for everything.
+- **A read can be of part of a value,** with an offset or a smaller buffer, as on Haiku. It used
+  to ignore the offset and fail on a small buffer.
+- **`resattr`** is there.
 
 ### Windows, menus and input
 

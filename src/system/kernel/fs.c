@@ -1242,6 +1242,193 @@ int	fs_stat_dev(dev_t dev, fs_info *info)
 }
 
 
+#if defined(HAVE_SYS_XATTR_H) && defined(__linux__)
+/*
+ * BFS keeps a value of any size, Linux file systems don't: btrfs took about
+ * 10 KB of one, though it holds thousands of 1 KB values for a file. So a value
+ * that doesn't fit is split: its start is the attribute itself, which is then
+ * exactly this size, and the rest is in hidden attributes "COSMOE:MORE:<n>:<name>"
+ * for n from 1. A value that fits stays one, as other programs expect.
+ *
+ * (ext4 limits all attributes of a file together, to about one block, unless it
+ * was made with ea_inode. This doesn't help there.)
+ */
+#define COSMOE_ATTR_SPLIT_SIZE 4096
+#define COSMOE_ATTR_MORE_PREFIX "COSMOE:MORE:"
+#define COSMOE_XATTR_NAME_MAX 255
+
+static int
+_MoreAttrName(char* name, size_t size, const char* attribute, int index)
+{
+	int length = snprintf(name, size, "user." COSMOE_ATTR_MORE_PREFIX "%d:%s",
+		index, attribute);
+	return length > 0 && length <= COSMOE_XATTR_NAME_MAX && (size_t)length < size;
+}
+
+
+static int
+_HasMoreAttr(int fd, const char* attribute)
+{
+	char name[COSMOE_XATTR_NAME_MAX + 1];
+	return _MoreAttrName(name, sizeof(name), attribute, 1)
+		&& fgetxattr(fd, name, NULL, 0) >= 0;
+}
+
+
+/*! The size of a value, split or not. */
+static ssize_t
+_AttrSize(int fd, const char* attrName, const char* attribute)
+{
+	ssize_t total = fgetxattr(fd, attrName, NULL, 0);
+	if (total != COSMOE_ATTR_SPLIT_SIZE)
+		return total;
+
+	char name[COSMOE_XATTR_NAME_MAX + 1];
+	for (int index = 1; _MoreAttrName(name, sizeof(name), attribute, index);
+			index++) {
+		ssize_t size = fgetxattr(fd, name, NULL, 0);
+		if (size < 0)
+			break;
+		total += size;
+	}
+	return total;
+}
+
+
+/*! A whole value in new memory, for the caller to free. */
+static ssize_t
+_ReadWholeAttr(int fd, const char* attrName, const char* attribute, char** _data)
+{
+	ssize_t total = _AttrSize(fd, attrName, attribute);
+	if (total < 0)
+		return total;
+
+	char* data = (char*)malloc(total > 0 ? total : 1);
+	if (data == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	ssize_t done = fgetxattr(fd, attrName, data, total);
+	char name[COSMOE_XATTR_NAME_MAX + 1];
+	for (int index = 1; done >= 0 && done < total
+			&& _MoreAttrName(name, sizeof(name), attribute, index); index++) {
+		ssize_t size = fgetxattr(fd, name, data + done, total - done);
+		done = size >= 0 ? done + size : -1;
+	}
+	if (done != total) {
+		free(data);
+		errno = EIO;
+		return -1;
+	}
+
+	*_data = data;
+	return total;
+}
+
+
+static void
+_RemoveMoreAttrs(int fd, const char* attribute, int firstIndex)
+{
+	char name[COSMOE_XATTR_NAME_MAX + 1];
+	for (int index = firstIndex; _MoreAttrName(name, sizeof(name), attribute,
+			index) && fremovexattr(fd, name) == 0; index++) {
+	}
+}
+
+
+/*! The start goes last: until then the attribute is what it was. */
+static int
+_WriteSplitAttr(int fd, const char* attrName, const char* attribute,
+	const char* data, size_t size)
+{
+	char name[COSMOE_XATTR_NAME_MAX + 1];
+	int index = 1;
+	for (size_t offset = COSMOE_ATTR_SPLIT_SIZE; offset < size;
+			offset += COSMOE_ATTR_SPLIT_SIZE, index++) {
+		if (!_MoreAttrName(name, sizeof(name), attribute, index)) {
+			errno = ENAMETOOLONG;
+			return -1;
+		}
+		size_t length = size - offset;
+		if (length > COSMOE_ATTR_SPLIT_SIZE)
+			length = COSMOE_ATTR_SPLIT_SIZE;
+		if (fsetxattr(fd, name, data + offset, length, 0) != 0)
+			return -1;
+	}
+	if (fsetxattr(fd, attrName, data, COSMOE_ATTR_SPLIT_SIZE, 0) != 0)
+		return -1;
+
+	_RemoveMoreAttrs(fd, attribute, index);
+	return 0;
+}
+
+
+/*! Writes a value in one piece if it fits. If it can't be written, the attribute
+	stays what it was, as far as there is room for that.
+*/
+static int
+_WriteAttrValue(int fd, const char* attrName, const char* attribute,
+	const void* buffer, size_t size)
+{
+	if (fsetxattr(fd, attrName, buffer, size, 0) == 0) {
+		if (_HasMoreAttr(fd, attribute))
+			_RemoveMoreAttrs(fd, attribute, 1);
+		return 0;
+	}
+
+	if ((errno != E2BIG && errno != ENOSPC) || size <= COSMOE_ATTR_SPLIT_SIZE)
+		return -1;
+
+	char* old = NULL;
+	ssize_t oldSize = _ReadWholeAttr(fd, attrName, attribute, &old);
+	if (_WriteSplitAttr(fd, attrName, attribute, (const char*)buffer, size) == 0) {
+		free(old);
+		return 0;
+	}
+
+	int error = errno;
+	if (oldSize >= 0) {
+		if (oldSize <= COSMOE_ATTR_SPLIT_SIZE) {
+			_RemoveMoreAttrs(fd, attribute, 1);
+			fsetxattr(fd, attrName, old, oldSize, 0);
+		} else
+			_WriteSplitAttr(fd, attrName, attribute, old, oldSize);
+		free(old);
+	} else
+		_RemoveMoreAttrs(fd, attribute, 1);
+	errno = error;
+	return -1;
+}
+
+
+/*! Why an attribute could not be written, as a BeBook error. */
+static int
+_AttrWriteError(int error)
+{
+	switch (error) {
+		case E2BIG:
+		case ENOSPC:
+		case EDQUOT:
+			return B_DEVICE_FULL;
+		case ENAMETOOLONG:
+			return B_NAME_TOO_LONG;
+		case EACCES:
+		case EPERM:
+			return B_PERMISSION_DENIED;
+		case EROFS:
+			return B_READ_ONLY_DEVICE;
+		case ENOTSUP:
+			return B_NOT_SUPPORTED;
+		case ENOMEM:
+			return B_NO_MEMORY;
+		default:
+			return B_BAD_VALUE;
+	}
+}
+#endif	// HAVE_SYS_XATTR_H && __linux__
+
+
 ssize_t	fs_write_attr(int fd, const char *attribute, uint32 type, off_t pos, const void *buffer, size_t writeBytes)
 {
 	if (!attribute) {
@@ -1261,11 +1448,15 @@ ssize_t	fs_write_attr(int fd, const char *attribute, uint32 type, off_t pos, con
 #ifdef __APPLE__
 	int err = fsetxattr(fd, attrName, buffer, writeBytes, 0, 0);  // macOS: position, options
 #else
-	int err = fsetxattr(fd, attrName, buffer, writeBytes, 0);     // Linux
+	int err = _WriteAttrValue(fd, attrName, attribute, buffer, writeBytes);
 #endif
 	if (err != 0) {
 		// Setting errno a B_ value intentionally to match BeBook API
+#ifdef __APPLE__
 		errno = B_BAD_VALUE;
+#else
+		errno = _AttrWriteError(errno);
+#endif
 		return (ssize_t)-1;
 	}
 	if (!_WritePersistentAttrTypeForFD(fd, attribute, type)) {
@@ -1347,7 +1538,25 @@ ssize_t	fs_read_attr(int fd, const char *attribute, uint32 type, off_t pos, void
 #ifdef __APPLE__
 	ssize_t err = fgetxattr(fd, attrName, buffer, readBytes, 0, 0);  // macOS
 #else
-	ssize_t err = fgetxattr(fd, attrName, buffer, readBytes);        // Linux
+	// As on Haiku, a read can be of a part of a value. (Most are of all of it,
+	// and that takes one call.)
+	ssize_t err = pos == 0 ? fgetxattr(fd, attrName, buffer, readBytes) : 0;
+	if (pos != 0 || (err < 0 && errno == ERANGE)
+		|| (err == COSMOE_ATTR_SPLIT_SIZE && _HasMoreAttr(fd, attribute))) {
+		char* whole = NULL;
+		ssize_t size = _ReadWholeAttr(fd, attrName, attribute, &whole);
+		if (size >= 0) {
+			err = 0;
+			if (pos >= 0 && pos < size) {
+				err = size - pos;
+				if ((size_t)err > readBytes)
+					err = readBytes;
+				memcpy(buffer, whole + pos, err);
+			}
+			free(whole);
+		} else
+			err = -1;
+	}
 #endif
 	if (err < 0) {
 		// Setting errno a B_ value intentionally to match BeBook API
@@ -1425,6 +1634,10 @@ int	fs_remove_attr(int fd, const char *attribute)
 		return -1;
 	}
 
+#ifndef __APPLE__
+	_RemoveMoreAttrs(fd, attribute, 1);
+#endif
+
 	(void)_RemovePersistentAttrTypeForFD(fd, attribute);
 
 	_RemoveAttrTypeForFD(fd, attribute);
@@ -1475,7 +1688,7 @@ int	fs_stat_attr(int fd, const char *attribute, struct attr_info *attrInfo)
 #ifdef __APPLE__
 	int size = fgetxattr(fd, attrName, NULL, 0, 0, 0);  // macOS
 #else
-	int size = fgetxattr(fd, attrName, NULL, 0);        // Linux
+	ssize_t size = _AttrSize(fd, attrName, attribute);
 #endif
 
 	if (size < 0)
@@ -1615,14 +1828,27 @@ fs_close_attr(int fd)
 }
 
 
+/* There are no indices to keep up, but everything that an index is for can be
+   asked of a volume that knows queries (see QueryEngine.cpp): so far as a program
+   can tell, it has every index already. */
+static int
+_VolumeHasIndices(dev_t device)
+{
+	fs_info info;
+	return fs_stat_dev(device, &info) == 0 && (info.flags & B_FS_HAS_QUERY) != 0;
+}
+
+
 int
 fs_create_index(dev_t device, const char *name, uint32 type, uint32 flags)
 {
-	(void)device;
-	(void)name;
 	(void)type;
 	(void)flags;
-	errno = B_NOT_SUPPORTED;
+	if (name == NULL) {
+		errno = B_BAD_VALUE;
+		return -1;
+	}
+	errno = _VolumeHasIndices(device) ? B_FILE_EXISTS : B_NOT_SUPPORTED;
 	return -1;
 }
 
@@ -1640,11 +1866,23 @@ fs_remove_index(dev_t device, const char *name)
 int
 fs_stat_index(dev_t device, const char *name, void *indexInfo)
 {
-	(void)device;
-	(void)name;
-	(void)indexInfo;
-	errno = B_NOT_SUPPORTED;
-	return -1;
+	if (name == NULL || indexInfo == NULL) {
+		errno = B_BAD_VALUE;
+		return -1;
+	}
+	if (!_VolumeHasIndices(device)) {
+		errno = B_ENTRY_NOT_FOUND;
+		return -1;
+	}
+
+	/* What an index would say of itself, as far as there is anything to say. */
+	index_info* info = (index_info*)indexInfo;
+	memset(info, 0, sizeof(*info));
+	info->type = B_STRING_TYPE;
+	info->uid = getuid();
+	info->gid = getgid();
+	errno = 0;
+	return 0;
 }
 
 

@@ -491,6 +491,7 @@ load_attr_names_for_fd(int fd, std::vector<std::string>& names)
 			if (strncmp(entry, "user.", 5) == 0) {
 				std::string stripped(entry + 5);
 				if (stripped != kAttrTypeMapAttr
+					&& stripped.rfind("COSMOE:MORE:", 0) != 0
 					&& std::find(names.begin(), names.end(), stripped)
 					== names.end()) {
 					names.emplace_back(std::move(stripped));

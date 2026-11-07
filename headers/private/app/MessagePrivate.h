@@ -31,7 +31,8 @@ enum {
 	MESSAGE_FLAG_WAS_DELIVERED = 0x0010,
 	MESSAGE_FLAG_HAS_SPECIFIERS = 0x0020,
 	MESSAGE_FLAG_WAS_DROPPED = 0x0040,
-	MESSAGE_FLAG_PASS_BY_AREA = 0x0080
+	MESSAGE_FLAG_PASS_BY_AREA = 0x0080,
+	MESSAGE_FLAG_NO_RETURN_ADDRESS = 0x0200
 	// Cosmoe: Intentionally leaving this one undefined to help find usages
 	//MESSAGE_FLAG_REPLY_AS_KMESSAGE = 0x0100
 };
@@ -175,6 +176,14 @@ class BMessage::Private {
 		FlattenToArea(message_header **header) const
 		{
 			return fMessage->_FlattenToArea(header);
+		}
+
+		// A message from the system, as the kernel sends them on Haiku: there is
+		// no one to answer, and a reply goes nowhere.
+		void
+		SetNoReturnAddress()
+		{
+			fMessage->fHeader->flags |= MESSAGE_FLAG_NO_RETURN_ADDRESS;
 		}
 
 		status_t

@@ -13,6 +13,7 @@
 
 #include <Directory.h>
 #include <AppDefs.h>
+#include <Application.h>
 #include <Entry.h>
 #include <File.h>
 #include <FindDirectory.h>
@@ -435,7 +436,8 @@ public:
 			name = name.substr(sHome.size() + 1);
 		fUpdates.push_back(std::string(opcode == B_ENTRY_CREATED ? "+"
 			: opcode == B_ENTRY_REMOVED ? "-" : "?") + name);
-		fLastHadFields = message->GetInt32("device", -1) == (int32)sDevice
+		fLastHadFields = !message->ReturnAddress().IsValid()
+			&& message->GetInt32("device", -1) == (int32)sDevice
 			&& message->GetInt64("directory", 0) != 0
 			&& message->GetInt64("node", 0) != 0;
 	}
@@ -511,6 +513,9 @@ test_live()
 {
 	Collector* collector = new Collector;
 	collector->Run();
+	// As in a real application, where a message without a reply address would
+	// get that of the application.
+	be_app_messenger = BMessenger(collector);
 
 	BVolume volume(sDevice);
 	BQuery query;

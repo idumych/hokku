@@ -81,3 +81,12 @@ executable(
     link_with: lib_libbe,
     install: false
 )
+
+executable(
+    'LargeAttributeTest',
+    ['LargeAttributeTest.cpp'],
+    include_directories: common_inc,
+    dependencies: [dep_libroot],
+    link_with: lib_libbe,
+    install: false
+)

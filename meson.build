@@ -687,6 +687,15 @@ executable(
 )
 
 executable(
+    'resattr',
+    'src/bin/resattr.cpp',
+    dependencies: dep_libbe,
+    include_directories: common_inc,
+    install: true,
+    install_dir: get_option('bindir'),
+)
+
+executable(
     'catattr',
     'src/bin/catattr.cpp',
     dependencies: dep_libbe,

@@ -11,6 +11,9 @@
 
 #include <sys/types.h>
 
+#include <string>
+#include <vector>
+
 
 struct entry_ref;
 
@@ -41,6 +44,11 @@ void		close_query(QueryRun* run);
 */
 status_t	next_query_ref(QueryRun* run, entry_ref* ref);
 status_t	rewind_query(QueryRun* run);
+
+/*!	The folders of a volume that a program can afford to watch, which is not all
+	of them: where a query starts, and those nearest.
+*/
+std::vector<std::string> folders_to_watch(dev_t device);
 
 /*!	A file was given an attribute: queries are to know of it. */
 void		note_attribute_written(int fd);

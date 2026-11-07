@@ -1556,6 +1556,12 @@ query_for_app(const char* signature, entry_ref* appRef)
 			if (!volume.KnowsQuery())
 				continue;
 
+#ifdef __linux__
+			// Cosmoe: A query can have to walk the home folder, which is no
+			// way to start an application, and the apps are not found there.
+			continue;
+#endif
+
 			index_info info;
 			if (fs_stat_index(volume.Device(), "BEOS:APP_SIG", &info) != 0) {
 				// This volume doesn't seem to have the index we're looking for;

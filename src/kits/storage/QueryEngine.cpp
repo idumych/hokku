@@ -54,6 +54,8 @@
 #include <string.h>
 
 #include <new>
+#include <string>
+#include <vector>
 
 #include <Entry.h>
 #include <fs_query.h>
@@ -94,6 +96,13 @@ status_t
 rewind_query(QueryRun*)
 {
 	return B_NOT_SUPPORTED;
+}
+
+
+std::vector<std::string>
+folders_to_watch(dev_t)
+{
+	return std::vector<std::string>();
 }
 
 
@@ -145,6 +154,7 @@ note_attribute_written(int)
 #include <Path.h>
 
 #include <AppDefs.h>
+#include <MessagePrivate.h>
 #include <MessengerPrivate.h>
 #include <TokenSpace.h>
 
@@ -368,6 +378,46 @@ roots_of_volume(dev_t device)
 	}
 	endmntent(mounts);
 	return roots;
+}
+
+
+/*!	The folders nearest the start, without a walk of everything: the ones to
+	watch, of those where there can be too many.
+*/
+static std::vector<std::string>
+nearest_folders(dev_t device, const std::vector<fs::path>& roots, size_t limit,
+	const std::atomic<bool>* stop)
+{
+	std::vector<std::string> folders;
+	std::vector<std::string> level;
+	for (const fs::path& root : roots)
+		level.push_back(root.native());
+
+	while (!level.empty() && !*stop && folders.size() < limit) {
+		std::vector<std::string> next;
+		for (const std::string& folder : level) {
+			std::error_code error;
+			fs::directory_iterator entry(folder,
+				fs::directory_options::skip_permission_denied, error);
+			const fs::directory_iterator end;
+			while (!error && entry != end && folders.size() < limit) {
+				const fs::path path = entry->path();
+				std::error_code ignored;
+				struct stat status;
+				if (path.filename().native()[0] != '.'
+					&& !entry->is_symlink(ignored)
+					&& entry->is_directory(ignored)
+					&& lstat(path.c_str(), &status) == 0
+					&& status.st_dev == device) {
+					folders.push_back(path.native());
+					next.push_back(path.native());
+				}
+				entry.increment(error);
+			}
+		}
+		level.swap(next);
+	}
+	return folders;
 }
 
 
@@ -1082,7 +1132,10 @@ private:
 				if (matches(fExpression, path.c_str(), name.c_str()))
 					_AddFirstResult(path, &withMatch);
 			}
-			_NearestFolders(&candidates);
+			for (std::string& folder : nearest_folders(fDevice, fRoots,
+					fWatchLimit, &fStop)) {
+				candidates.push_back({_Depth(folder), std::move(folder)});
+			}
 		} else {
 			std::unique_ptr<IndexBuilder> builder;
 			if (!hasIndex && !fIndex.empty())
@@ -1146,41 +1199,6 @@ private:
 			std::nth_element(candidates->begin(),
 				candidates->begin() + fWatchLimit, candidates->end());
 			candidates->resize(fWatchLimit);
-		}
-	}
-
-	/*!	The folders nearest the start, without a walk of everything. */
-	void _NearestFolders(std::vector<Candidate>* candidates)
-	{
-		std::vector<std::string> level;
-		for (const fs::path& root : fRoots)
-			level.push_back(root.native());
-
-		while (!level.empty() && !fStop && candidates->size() < fWatchLimit) {
-			std::vector<std::string> next;
-			for (const std::string& folder : level) {
-				std::error_code error;
-				fs::directory_iterator entry(folder,
-					fs::directory_options::skip_permission_denied, error);
-				const fs::directory_iterator end;
-				while (!error && entry != end
-					&& candidates->size() < fWatchLimit) {
-					const fs::path path = entry->path();
-					std::error_code ignored;
-					struct stat status;
-					if (path.filename().native()[0] != '.'
-						&& !entry->is_symlink(ignored)
-						&& entry->is_directory(ignored)
-						&& lstat(path.c_str(), &status) == 0
-						&& status.st_dev == fDevice) {
-						candidates->push_back({_Depth(path.native()),
-							path.native()});
-						next.push_back(path.native());
-					}
-					entry.increment(error);
-				}
-			}
-			level.swap(next);
 		}
 	}
 
@@ -1421,6 +1439,8 @@ private:
 		BMessenger messenger;
 		BMessenger::Private(messenger).SetTo(info.team, fPort,
 			fToken == -1 ? B_PREFERRED_TOKEN : fToken);
+		// (From the system, as on Haiku: see send_node_monitor_message().)
+		BMessage::Private(&message).SetNoReturnAddress();
 		messenger.SendMessage(&message, (BHandler*)NULL, kSendTimeout);
 	}
 
@@ -1505,6 +1525,23 @@ status_t
 rewind_query(QueryRun* run)
 {
 	return run->Rewind();
+}
+
+
+std::vector<std::string>
+folders_to_watch(dev_t device)
+{
+	const std::vector<fs::path> roots = roots_of_volume(device);
+	const std::atomic<bool> stop(false);
+	std::vector<std::string> folders;
+	for (const fs::path& root : roots)
+		folders.push_back(root.native());
+	for (std::string& folder : nearest_folders(device, roots,
+			environment_value("HOKKU_QUERY_WATCH_LIMIT", kDefaultWatchLimit),
+			&stop)) {
+		folders.push_back(std::move(folder));
+	}
+	return folders;
 }
 
 

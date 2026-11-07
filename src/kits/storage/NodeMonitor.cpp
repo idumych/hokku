@@ -13,7 +13,10 @@
 #include <Looper.h>
 #include <Message.h>
 #include <Messenger.h>
+#include <MessagePrivate.h>
 #include <MessengerPrivate.h>
+#include <QueryEngine.h>
+#include <fs_info.h>
 #include <NodeMonitor.h>
 #include <storage_support.h>
 
@@ -324,6 +327,9 @@ send_node_monitor_message(const node_monitor_target& target, BMessage& message)
 	BMessenger messenger;
 	BMessenger::Private(messenger).SetTo(info.team, target.port,
 		target.handlerToken);
+	// As from the kernel on Haiku. A handler that answers every message would
+	// otherwise answer itself, and its answer, for ever.
+	BMessage::Private(&message).SetNoReturnAddress();
 	return messenger.SendMessage(&message);
 }
 
@@ -1288,6 +1294,46 @@ _kstop_notifying_(port_id port, int32 handlerToken)
 // actual implementation
 
 // Subscribes or unsubscribes a target to node and/or mount watching.
+/*!	Watches for entries that come and go on a volume. On Haiku that is all of it.
+	Here it is what a program can afford (see folders_to_watch()): the folders
+	there are at the time, the settings and the home folder and those nearest.
+*/
+status_t
+watch_volume(dev_t volume, uint32 flags, BMessenger target)
+{
+	if ((flags & ~(B_WATCH_NAME | B_WATCH_STAT | B_WATCH_ATTR)) != 0)
+		return B_BAD_VALUE;
+
+	const uint32 folderFlags = B_WATCH_DIRECTORY
+		| (flags & (B_WATCH_STAT | B_WATCH_ATTR));
+	status_t result = B_OK;
+	bool watching = false;
+	for (const std::string& folder
+			: BPrivate::Storage::folders_to_watch(volume)) {
+		const status_t status = watch_path(folder.c_str(), folderFlags, target);
+		if (status == B_OK)
+			watching = true;
+		else
+			result = status;
+	}
+	if (watching || result != B_OK)
+		return watching ? B_OK : result;
+
+	// Nothing to watch on a volume that a query doesn't look at either, like the
+	// root: that's fine, if there is such a volume.
+	fs_info info;
+	return fs_stat_dev(volume, &info) == 0 ? B_OK : B_BAD_VALUE;
+}
+
+
+status_t
+watch_volume(dev_t volume, uint32 flags, const BHandler* handler,
+	const BLooper* looper)
+{
+	return watch_volume(volume, flags, BMessenger(handler, looper));
+}
+
+
 status_t
 watch_node(const node_ref* node, uint32 flags, BMessenger target)
 {
