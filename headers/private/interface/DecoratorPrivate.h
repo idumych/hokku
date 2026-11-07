@@ -24,6 +24,11 @@ status_t preview_decorator(const BString& name, BWindow* window);
 bool get_window_shadows();
 status_t set_window_shadows(bool shadows);
 
+// Hokku: whether window frames round their corners, where the decorator
+// can (a decorator add-on that is a RoundedDecorator, or Haiku's)
+bool get_window_rounded_corners();
+status_t set_window_rounded_corners(bool rounded);
+
 // Hokku: Dano's ZSnake, a band joining a submenu's selection to the item
 // it hangs from (menus opened afterwards show it)
 bool get_menu_snake();

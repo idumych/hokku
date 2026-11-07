@@ -1998,6 +1998,32 @@ set_window_shadows(bool shadows)
 }
 
 
+//!	Hokku: whether window frames round their corners
+bool
+get_window_rounded_corners()
+{
+	DesktopSettings settings;
+	return settings.WindowRoundedCorners();
+}
+
+
+status_t
+set_window_rounded_corners(bool rounded)
+{
+	status_t status;
+	{
+		LockedDesktopSettings settings;
+		status = settings.SetWindowRoundedCorners(rounded);
+	}
+	if (status != B_OK)
+		return status;
+
+	if (be_app != NULL && be_app->Display() != NULL)
+		apply_decorator(be_app->Display());
+	return B_OK;
+}
+
+
 bool
 get_menu_snake()
 {
