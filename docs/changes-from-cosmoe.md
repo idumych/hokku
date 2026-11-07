@@ -121,15 +121,28 @@ by area. The [README](../README.md) has the short version.
   - Colours, fonts (Noto Sans at 9 and 11 points) and the desktop colour.
 - **Haiku's window frame.** `setdecor Haiku` gives Hokku windows app_server's Default
   decorator on Wayland (the yellow tab, bevelled border, resize notches and a document
-  window's knob), ported to cairo and drawn client-side. `Default` stays the desktop's own
-  frames.
+  window's knob), drawn client-side by app_server's own code (below), with rounded corners
+  as on Renku's composited desktop. Without `libdecorator.so` it is the backends' cairo copy
+  of it. `Default` stays the desktop's own frames.
+- **Decorator add-ons.** Haiku's window decorators build for Hokku from unchanged sources
+  and draw its frames on Wayland. `libdecorator.so` runs them in the application: Renku's
+  `Decorator`, `TabDecorator`, `DefaultDecorator`, `RoundedDecorator` and `WindowShape`,
+  over a thin app_server layer on libbe (a `DrawingEngine` that draws through a `BView` of
+  an off-screen bitmap, `ServerFont` over `BFont`, the app's settings). Add-ons build
+  against the headers in `include/private/app_server`, link `-ldecorator -lbe`, carry their
+  resources in a `.cosmoe_rsrc` section, and go in `~/cosmoe/addons/decorators` or
+  `<libdir>/addons/decorators`, where `setdecor`, Appearance and `DecorInfo` find them by
+  name. An installed Gonx add-on takes the built-in Gonx's place. All of
+  [Power Theme](https://github.com/idumych/power-theme)'s decorators build and run, and
+  Power Theme itself runs on Hokku, building them there.
 - **Document windows resize from the frame's knob** in the Gonx and Haiku frames; the
   content's widget used to take the pointer there.
 - **Standalone apps keep the desktop's frames.** An app run from its AppImage takes the
   rest of the look but keeps the desktop's window frames (Hokku's default frame where the
   compositor draws none).
 - **Themes.** Appearance has a Themes tab, and `hokku-theme` does the same from a shell
-  (`list`, `apply NAME`, `save NAME`, `current`, `shadows on|off`). A theme sets:
+  (`list`, `apply NAME`, `save NAME`, `current`, `shadows on|off`, `corners on|off`). A
+  theme sets:
   - the window decorator (Default, Haiku or Gonx) and the control look;
   - the system colours and the plain, bold, fixed and menu fonts;
   - the desktop colour and a wallpaper;
@@ -152,7 +165,10 @@ by area. The [README](../README.md) has the short version.
   content (`GTK_OVERLAY_SCROLLING=0`). GTK 4/libadwaita apps keep their own look.
 - **Window shadows and BeOS's pointer.** Windows in the Haiku and Gonx frames cast a soft
   shadow (`gonx_frame_paint_shadow()`; Hokku OS's labwc draws the same under other apps'
-  windows). The pointer is BeOS's hand and I-beam, as the Xcursor themes `Hokku` and
+  windows). Frames drawn by decorators cast the shadow Renku's compositor casts, from what
+  the decorator drew, or on a dark desktop (a dark panel colour) a glow round the window in
+  the panel text colour, and have rounded corners where the decorator can round them
+  (Appearance's *Round the corners of windows*, `hokku-theme corners`). The pointer is BeOS's hand and I-beam, as the Xcursor themes `Hokku` and
   `Hokku-Shadow` (`data/linux/cursors/generate.py`). Appearance's *Look and feel* tab turns
   window and pointer shadows on and off together. Hokku apps ask the compositor for their
   standard cursors (cursor-shape protocol), following its cursor theme.

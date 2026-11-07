@@ -103,7 +103,7 @@ The hidden menu effect of the unreleased BeOS 5.1, where a submenu's selection j
 
 **Wayland and touch**
 
-Client-side Haiku and Gonx frames, borderless windows that move themselves, menus the compositor places, and touch screens.
+Client-side window frames drawn by Haiku's own decorators, add-ons included, with rounded corners and a shadow, or a glow on a dark desktop; borderless windows that move themselves, menus the compositor places, and touch screens.
 
 </td>
 <td width="50%" valign="top">

@@ -91,6 +91,7 @@ Deskbar, and a display-manager session entry.
 %{_libdir}/libbe.so
 %{_libdir}/libbnetapi.so*
 %{_libdir}/libcosmoe-*.so
+%{_libdir}/libdecorator.so
 %{_libdir}/libgame.so
 %{_libdir}/libtracker.so
 %{_datadir}/cosmoe/
