@@ -10,10 +10,10 @@
 
 /*!	Query parsing and evaluation. */
 
-// Hokku: from Haiku, unchanged but for two includes that are gone and for
-// QUERY_EXPRESSION_ONLY, which leaves the class Query out: it takes its
-// candidates from a file system's indices and sends the notifications of the
-// kernel. See src/kits/storage/QueryEngine.cpp.
+// Hokku: from Haiku, unchanged but for two includes that are gone, for
+// Equation::Attribute(), and for QUERY_EXPRESSION_ONLY, which leaves the class
+// Query out: it takes its candidates from a file system's indices and sends the
+// notifications of the kernel. See src/kits/storage/QueryEngine.cpp.
 
 
 // The operator precedence is =,!=,>,<,>=,<= .. && .. ||.
@@ -265,6 +265,8 @@ public:
 	virtual	int32		Score() const { return fScore; }
 
 	virtual	bool		NeedsEntry();
+
+			const char*	Attribute() const { return fAttribute; }
 
 #ifdef DEBUG_QUERY
 	virtual	void		PrintToStream();

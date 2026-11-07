@@ -27,7 +27,8 @@ class QueryRun;
 
 /*!	Starts a query of a volume. With \c B_LIVE_QUERY in \a flags, it goes on
 	sending \c B_QUERY_UPDATE messages to \a token on \a port (-1: the preferred
-	handler).
+	handler). With \c B_QUERY_NON_INDEXED it looks at every file, which is exact
+	and slow, even if the list of the files with attributes could answer.
 	\return \c B_OK, \c B_BAD_VALUE for a predicate that cannot be parsed,
 		\c B_NOT_SUPPORTED on systems other than Linux.
 */
@@ -40,6 +41,9 @@ void		close_query(QueryRun* run);
 */
 status_t	next_query_ref(QueryRun* run, entry_ref* ref);
 status_t	rewind_query(QueryRun* run);
+
+/*!	A file was given an attribute: queries are to know of it. */
+void		note_attribute_written(int fd);
 
 
 }	// namespace Storage

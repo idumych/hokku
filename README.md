@@ -513,20 +513,31 @@ to the Haiku project, whose work made both possible.
   gave the same result as BFS on R1/beta6; of the rest, two were attributes without an index
   there, and Hokku refuses an unclosed `(` that beta6 accepted. `BVolume::KnowsQuery()` and
   `KnowsAttr()` are true on a file system with extended attributes.
-- **No indices yet, so a query walks.** On the home folder's volume it reads the settings
-  folder and the home folder (about 2 µs a file: 9 s for 4.5 million), on the root volume
-  nothing, and on any other volume all of it. Hidden entries are left out, links aren't
-  followed, and no file is opened, so nothing watching a file sees it as changed.
-  `fs_stat_index()` still fails, which keeps `BRoster` from walking when it looks for an app.
+- **What a query looks at.** On the home folder's volume, the settings folder and the home
+  folder; on the root volume nothing; on any other volume all of it. Hidden entries are left
+  out, links aren't followed, and no file is opened, so nothing watching a file sees it as
+  changed. `fs_stat_index()` still fails, which keeps `BRoster` from looking when it wants an
+  app.
+- **A list stands in for the indices.** Few files have attributes (70,000 of 4.5 million in the
+  home folder it was measured on), so a predicate that can only match a file with an attribute
+  looks at those files alone: 0.17 s there, instead of 9 s for walking. The list is kept in
+  `~/.cache/cosmoe/query-index`. It has no values, so what a query says of a file is what the
+  file says now. It comes from a walk, and `BNode::WriteAttr()` adds to it in every program.
+  What it can lack is a file that got its attributes elsewhere (`setfattr`, `cp -a`, a restore)
+  or was moved by another program, until the next walk: when a query finds the list old (10
+  minutes, or a hundred times what a walk takes) or an entry gone (1 minute, or thirty times),
+  one is made in the background, by one program at a time. For an exact answer, set
+  `B_QUERY_NON_INDEXED`: it looks at every file. A predicate that can match without an attribute,
+  like `name == "x"` or anything `||` it, always walks: about 2 µs a file.
 - **Live queries.** With `SetTarget()`, a query goes on sending `B_QUERY_UPDATE`, so Tracker's
   Find window follows the files. `Fetch()` doesn't wait: the first walk is on the query's own
   thread. The same changes on BFS and here gave the same messages, but for the rename of a
   folder with a match in it: BFS says nothing, here the path changes and so does the entry.
   A home folder can have more folders than a user has inotify watches, so a query watches
   4096 of them: where it started, where it has a match, then the nearest. A change there
-  comes at once; one anywhere else comes when the query walks again, at a low priority,
-  once a minute or, if walking takes long, about 3% of one CPU (4 minutes for 4.5 million
-  files). `B_QUERY_WATCH_ALL` adds nothing yet: a move is a removal and a creation, and a
+  comes at once; one anywhere else comes when the query looks again, once a minute, at the
+  list if it can use it. If it has to walk, that's at a low priority and about 3% of one CPU
+  (4 minutes for 4.5 million files). `B_QUERY_WATCH_ALL` adds nothing yet: a move is a removal and a creation, and a
   change that doesn't affect the match isn't reported.
 - **Linux only.** `fs_open_query()` and its relatives aren't there yet.
 

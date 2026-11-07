@@ -10,6 +10,8 @@
 
 #include <Node.h>
 
+#include <QueryEngine.h>
+
 #include <errno.h>
 #include <fcntl.h>
 #include <new>
@@ -266,8 +268,11 @@ BNode::WriteAttr(const char* attr, type_code type, off_t offset,
 		return B_BAD_VALUE;
 
 	ssize_t result = fs_write_attr(fFd, attr, type, offset, buffer, length);
+	if (result < 0)
+		return errno;
 
-	return result < 0 ? errno : result;
+	BPrivate::Storage::note_attribute_written(fFd);
+	return result;
 }
 
 

@@ -18,6 +18,7 @@
 #include <FindDirectory.h>
 #include <fs_attr.h>
 #include <fs_info.h>
+#include <fs_query.h>
 #include <Looper.h>
 #include <Message.h>
 #include <Messenger.h>
@@ -38,6 +39,8 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <mutex>
 #include <set>
 #include <string>
@@ -132,6 +135,36 @@ check_query(const char* predicate, const Names& expected)
 		printf(" '%s'", name.c_str());
 	printf("; expected:");
 	for (const std::string& name : expected)
+		printf(" '%s'", name.c_str());
+	printf("\n");
+}
+
+
+/*!	As check_query(), looking at every file. */
+static void
+check_query_exact(const char* predicate, const Names& expected)
+{
+	BVolume volume(sDevice);
+	BQuery query;
+	query.SetVolume(&volume);
+	query.SetFlags(B_QUERY_NON_INDEXED);
+	query.SetPredicate(predicate);
+	Names names;
+	CHECK(query.Fetch() == B_OK);
+	entry_ref ref;
+	while (query.GetNextRef(&ref) == B_OK) {
+		std::string path = BPath(&ref).Path();
+		if (path.rfind(sHome + "/", 0) == 0)
+			path = path.substr(sHome.size() + 1);
+		names.insert(path);
+	}
+	sChecks++;
+	if (names == expected)
+		return;
+
+	sFailures++;
+	printf("FAIL exact %s, found:", predicate);
+	for (const std::string& name : names)
 		printf(" '%s'", name.c_str());
 	printf("\n");
 }
@@ -234,7 +267,7 @@ test_foreign_attribute()
 	const char* value = "from setfattr";
 	CHECK(setxattr((sHome + "/foreign").c_str(), "user.Test:Foreign", value,
 		strlen(value), 0) == 0);
-	check_query("Test:Foreign==\"from setfattr\"", {"foreign"});
+	check_query_exact("Test:Foreign==\"from setfattr\"", {"foreign"});
 }
 
 
@@ -665,6 +698,265 @@ test_live_closed_at_once()
 }
 
 
+/*!	The one file with an index, and what it holds. */
+static std::string
+index_file()
+{
+	std::error_code error;
+	for (const auto& entry : std::filesystem::directory_iterator(
+			sHome + "/.cache/cosmoe/query-index", error)) {
+		const std::string path = entry.path().string();
+		if (path.find('.', path.rfind('/')) == std::string::npos)
+			return path;
+	}
+	return "";
+}
+
+
+static std::string
+read_file(const std::string& path)
+{
+	std::ifstream file(path, std::ios::binary);
+	return std::string(std::istreambuf_iterator<char>(file),
+		std::istreambuf_iterator<char>());
+}
+
+
+static void
+write_file(const std::string& path, const std::string& contents)
+{
+	std::ofstream file(path, std::ios::binary | std::ios::trunc);
+	file << contents;
+}
+
+
+static bool
+index_has(const std::string& relative)
+{
+	const std::string entry = sHome + "/" + relative + std::string(1, '\0');
+	return read_file(index_file()).find(entry) != std::string::npos;
+}
+
+
+/*!	Takes an entry out of the index, as if the file got its attribute behind
+	Hokku's back.
+*/
+static void
+forget(const std::string& relative)
+{
+	const std::string entry = sHome + "/" + relative + std::string(1, '\0');
+	std::string contents = read_file(index_file());
+	const size_t position = contents.find(entry);
+	CHECK(position != std::string::npos);
+	contents.erase(position, entry.size());
+	write_file(index_file(), contents);
+}
+
+
+static bool
+wait_for_index_with(const std::string& relative, int seconds = 20)
+{
+	for (int i = 0; i < seconds * 10; i++) {
+		if (index_has(relative))
+			return true;
+		usleep(100000);
+	}
+	return false;
+}
+
+
+static void
+test_index()
+{
+	namespace fs = std::filesystem;
+	std::error_code ignored;
+	fs::remove_all(sHome + "/.cache", ignored);
+
+	make_file("indexed/one");
+	set_string("indexed/one", "Ix:Tag", "yes");
+	make_file("indexed/plain");
+
+	// no index: a query walks, and walking to the end makes one
+	CHECK(index_file().empty());
+	check_query("Ix:Tag==\"yes\"", {"indexed/one"});
+	CHECK(!index_file().empty());
+	CHECK(index_has("indexed/one"));
+	CHECK(!index_has("indexed/plain"));
+	struct stat status;
+	CHECK(stat(index_file().c_str(), &status) == 0
+		&& (status.st_mode & 0777) == 0600);
+
+	// a query that is not read to the end makes one in the background
+	{
+		fs::remove_all(sHome + "/.cache", ignored);
+		BVolume volume(sDevice);
+		BQuery query;
+		query.SetVolume(&volume);
+		query.SetPredicate("Ix:Tag==\"yes\"");
+		CHECK(query.Fetch() == B_OK);
+		entry_ref ref;
+		CHECK(query.GetNextRef(&ref) == B_OK);
+	}
+	for (int i = 0; i < 100 && index_file().empty(); i++)
+		usleep(100000);
+	CHECK(wait_for_index_with("indexed/one"));
+
+	// it is used: what it lacks is not found...
+	make_file("indexed/behind");
+	CHECK(setxattr((sHome + "/indexed/behind").c_str(), "user.Ix:Tag", "yes",
+		3, 0) == 0);
+	check_query("Ix:Tag==\"yes\"", {"indexed/one"});
+	// ...unless every file is to be looked at
+	check_query_exact("Ix:Tag==\"yes\"", {"indexed/one", "indexed/behind"});
+	// or the predicate can match a file without attributes, and has to walk
+	check_query("(Ix:Tag==\"yes\")||(name==\"plain\")",
+		{"indexed/one", "indexed/behind", "indexed/plain"});
+	check_query("(Ix:Tag==\"yes\")&&(name==\"behind\")", {});
+	check_query("name==\"behind\"", {"indexed/behind"});
+
+	// values are read from the files, not the index
+	CHECK(setxattr((sHome + "/indexed/one").c_str(), "user.Ix:Tag", "no", 2, 0)
+		== 0);
+	check_query("Ix:Tag==\"yes\"", {});
+	check_query("Ix:Tag==\"no\"", {"indexed/one"});
+	CHECK(setxattr((sHome + "/indexed/one").c_str(), "user.Ix:Tag", "yes", 3, 0)
+		== 0);
+
+	// what a program writes through Hokku is known at once, in any program
+	// that reads the index, and only added once
+	make_file("indexed/written");
+	set_string("indexed/written", "Ix:Tag", "yes");
+	CHECK(index_has("indexed/written"));
+	check_query("Ix:Tag==\"yes\"", {"indexed/one", "indexed/written"});
+	const size_t size = read_file(index_file()).size();
+	set_string("indexed/written", "Ix:Tag", "yes");
+	CHECK(read_file(index_file()).size() == size);
+
+	// what a walk wouldn't find isn't added
+	make_file(".hidden folder/file");
+	set_string(".hidden folder/file", "Ix:Tag", "yes");
+	CHECK(!index_has(".hidden folder/file"));
+
+	// a removed file isn't found, and that is no error
+	CHECK(unlink((sHome + "/indexed/written").c_str()) == 0);
+	check_query("Ix:Tag==\"yes\"", {"indexed/one"});
+
+	// a damaged index is as good as none
+	const std::string good = read_file(index_file());
+	for (const std::string& bad : {std::string(""), std::string("nonsense"),
+			std::string("hokku-query-index 1\n"),
+			std::string("hokku-query-index 1 x y\nabc")}) {
+		write_file(index_file(), bad);
+		check_query("Ix:Tag==\"yes\"", {"indexed/one", "indexed/behind"});
+		CHECK(index_has("indexed/one"));
+		CHECK(index_has("indexed/behind"));
+	}
+	write_file(index_file(), good);
+
+	// half an entry, of a program that crashed, is left out
+	write_file(index_file(), good + sHome + "/indexed/ha");
+	check_query("Ix:Tag==\"yes\"", {"indexed/one"});
+	write_file(index_file(), good);
+
+	// a name with a line end in it
+	make_file("indexed/two\nlines");
+	set_string("indexed/two\nlines", "Ix:Tag", "yes");
+	check_query("Ix:Tag==\"yes\"", {"indexed/one", "indexed/two\nlines"});
+	check_query("Ix:Tag==\"yes\"", {"indexed/one", "indexed/two\nlines"});
+	unlink((sHome + "/indexed/two\nlines").c_str());
+
+	// an old index is made anew in the background, and the query doesn't wait
+	setenv("HOKKU_QUERY_INDEX_MAX_AGE", "1", 1);
+	sleep(2);
+	check_query("Ix:Tag==\"yes\"", {"indexed/one"});
+	CHECK(wait_for_index_with("indexed/behind"));
+	check_query("Ix:Tag==\"yes\"", {"indexed/one", "indexed/behind"});
+	unsetenv("HOKKU_QUERY_INDEX_MAX_AGE");
+
+	// a file moved behind Hokku's back: its entry is gone, which brings a walk
+	// on sooner than the age of the index would (a real one waits a minute)
+	setenv("HOKKU_QUERY_INDEX_GONE_MAX_AGE", "1", 1);
+	sleep(2);
+	CHECK(rename((sHome + "/indexed/behind").c_str(),
+		(sHome + "/indexed/moved").c_str()) == 0);
+	check_query("Ix:Tag==\"yes\"", {"indexed/one"});
+	CHECK(wait_for_index_with("indexed/moved"));
+	check_query("Ix:Tag==\"yes\"", {"indexed/one", "indexed/moved"});
+	CHECK(!index_has("indexed/behind"));
+	unsetenv("HOKKU_QUERY_INDEX_GONE_MAX_AGE");
+
+	// what is written during a walk stays in the index the walk makes, though
+	// the walk had passed it
+	setenv("HOKKU_QUERY_INDEX_MAX_AGE", "1", 1);
+	setenv("HOKKU_QUERY_INDEX_COMMIT_DELAY", "2", 1);
+	sleep(2);
+	check_query("Ix:During==\"yes\"", {});
+	sleep(1);
+	make_file("indexed/during");
+	set_string("indexed/during", "Ix:During", "yes");
+	unsetenv("HOKKU_QUERY_INDEX_MAX_AGE");
+	unsetenv("HOKKU_QUERY_INDEX_COMMIT_DELAY");
+	sleep(3);
+	CHECK(index_has("indexed/during"));
+	check_query("Ix:During==\"yes\"", {"indexed/during"});
+
+	// the index in use by a live query, for something outside of its watches
+	{
+		setenv("HOKKU_QUERY_WATCH_LIMIT", "1", 1);
+		setenv("HOKKU_QUERY_WALK_INTERVAL", "1", 1);
+		make_file("indexed/far/away");
+		set_string("indexed/far/away", "Ix:Live", "no");
+		make_file("indexed/unknown to the index");
+		CHECK(setxattr((sHome + "/indexed/unknown to the index").c_str(),
+			"user.Ix:Behind", "yes", 3, 0) == 0);
+
+		Collector* collector = new Collector;
+		collector->Run();
+		{
+			BVolume volume(sDevice);
+			BQuery query;
+			query.SetVolume(&volume);
+			query.SetPredicate("Ix:Live==\"yes\"");
+			CHECK(query.SetTarget(BMessenger(collector)) == B_OK);
+			CHECK(query.Fetch() == B_OK);
+			// (The index is what it goes by: it doesn't know this one.)
+			CHECK(read_all(query).empty());
+
+			{
+				BVolume exactVolume(sDevice);
+				BQuery exact;
+				exact.SetVolume(&exactVolume);
+				exact.SetFlags(B_QUERY_NON_INDEXED);
+				exact.SetPredicate("Ix:Behind==\"yes\"");
+				CHECK(exact.SetTarget(BMessenger(collector)) == B_OK);
+				CHECK(exact.Fetch() == B_OK);
+				CHECK(read_all(exact)
+					== std::vector<std::string>{"unknown to the index"});
+
+				BQuery indexed;
+				indexed.SetVolume(&exactVolume);
+				indexed.SetPredicate("Ix:Behind==\"yes\"");
+				CHECK(indexed.SetTarget(BMessenger(collector)) == B_OK);
+				CHECK(indexed.Fetch() == B_OK);
+				CHECK(read_all(indexed).empty());
+			}
+
+			CHECK(setxattr((sHome + "/indexed/far/away").c_str(),
+				"user.Ix:Live", "yes", 3, 0) == 0);
+			check_updates(collector, "index: started",
+				{"+indexed/far/away"}, 10);
+			CHECK(setxattr((sHome + "/indexed/far/away").c_str(),
+				"user.Ix:Live", "no", 2, 0) == 0);
+			check_updates(collector, "index: stopped",
+				{"-indexed/far/away"}, 10);
+		}
+		collector->PostMessage(B_QUIT_REQUESTED);
+		unsetenv("HOKKU_QUERY_WATCH_LIMIT");
+		unsetenv("HOKKU_QUERY_WALK_INTERVAL");
+	}
+}
+
+
 static void
 test_a_volume_is_not_walked_twice()
 {
@@ -706,6 +998,8 @@ main()
 	stat(sHome.c_str(), &status);
 	sDevice = status.st_dev;
 
+	unsetenv("XDG_CACHE_HOME");
+
 	make_tree();
 	test_equations();
 	test_operators();
@@ -719,6 +1013,7 @@ main()
 	test_live_preferred_handler();
 	test_live_found_by_walking();
 	test_live_closed_at_once();
+	test_index();
 	test_a_volume_is_not_walked_twice();
 
 	std::error_code ignored;

@@ -21,15 +21,28 @@
 	file opened for writing, which is how BNode tries first, looks changed to
 	whoever watches it, and opening a FIFO that can only be read blocks.
 
-	A live query walks on a thread of its own, so that Fetch() does not wait for
+	Most files have no attributes (70,000 of 4.5 million in a home folder that
+	was measured), so a list of those that do makes up for the indices: a
+	predicate that can only match a file with an attribute looks at those files
+	alone. The list has no values, so what it says of a file is read from the
+	file, and is never out of date. It is kept in the cache folder, and is what
+	a walk finds, plus what BNode::WriteAttr() adds in any program. It can only
+	lack what got its attributes from elsewhere (setfattr, cp -a, a restore) or
+	was moved by another program, until the next walk: one is made in the
+	background when a query finds the list old, or an entry of it gone, by one
+	program at a time. B_QUERY_NON_INDEXED looks at every file, for an exact
+	answer. A predicate on "name", "size" or "last_modified" alone must always
+	walk.
+
+	A live query works on a thread of its own, so that Fetch() does not wait for
 	it. BFS tells a live query of every change to an index. Here, watching every
 	folder is out of the question: a home folder can have 400,000 of them, and
 	a user gets about 500,000 inotify watches for all of their programs. So a query
 	watches some folders, those that it is most likely to matter in (the ones it
 	starts from, the ones that have a match, then the ones nearest the start),
 	and hears of a change in those at once. A change anywhere else is found by
-	walking again now and then, at a low priority: every kWalkInterval, or if
-	walking takes long, so that it stays around 3% of one CPU.
+	looking again every kWalkInterval: at the list, or, if a query can't use it,
+	by walking, at a low priority, and so that it stays around 3% of one CPU.
 */
 
 
@@ -84,6 +97,12 @@ rewind_query(QueryRun*)
 }
 
 
+void
+note_attribute_written(int)
+{
+}
+
+
 }	// namespace Storage
 }	// namespace BPrivate
 
@@ -91,9 +110,11 @@ rewind_query(QueryRun*)
 #else	// __linux__
 
 
+#include <fcntl.h>
 #include <mntent.h>
 #include <poll.h>
 #include <sys/eventfd.h>
+#include <sys/file.h>
 #include <sys/inotify.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -105,7 +126,9 @@ rewind_query(QueryRun*)
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -145,6 +168,11 @@ static const size_t kDefaultWatchLimit = 4096;
 static const int kWalkInterval = 60;			// in seconds, at the least
 static const int kWalkCostFactor = 30;			// of what a walk takes
 static const bigtime_t kSendTimeout = 1000000;
+
+static const char* const kIndexHeader = "hokku-query-index 1";
+static const int kIndexMaxAge = 600;			// in seconds, at the least
+static const int kIndexCostFactor = 100;		// of what a walk takes
+static const int kIndexGoneMaxAge = 60;			// with an entry known to be gone
 
 
 /*!	A file as the parser sees it. It stands for both the Entry and the Node of
@@ -455,6 +483,305 @@ set_ref(entry_ref* ref, dev_t device, ino_t directory, const char* path)
 }
 
 
+static int
+environment_value(const char* name, int fallback)
+{
+	const char* value = getenv(name);
+	return value != NULL && atoi(value) > 0 ? atoi(value) : fallback;
+}
+
+
+/*!	Whether only a file with an attribute can match: then the list will do. */
+static bool
+requires_attribute(QueryParser::Term<QueryPolicy>* term)
+{
+	const int8 op = term->Op();
+	if (op == QueryParser::OP_AND || op == QueryParser::OP_OR) {
+		QueryParser::Operator<QueryPolicy>* both
+			= static_cast<QueryParser::Operator<QueryPolicy>*>(term);
+		const bool left = requires_attribute(both->Left());
+		const bool right = requires_attribute(both->Right());
+		return op == QueryParser::OP_AND ? left || right : left && right;
+	}
+
+	const char* attribute
+		= static_cast<QueryParser::Equation<QueryPolicy>*>(term)->Attribute();
+	return strcmp(attribute, "name") != 0 && strcmp(attribute, "size") != 0
+		&& strcmp(attribute, "last_modified") != 0;
+}
+
+
+/*!	Whether an entry has an attribute. The list's attributes are the user's. */
+static bool
+has_user_attribute(const char* path)
+{
+	char names[16 * 1024];
+	const ssize_t size = llistxattr(path, names, sizeof(names));
+	if (size < 0)
+		return errno == ERANGE;
+	for (ssize_t offset = 0; offset < size;
+			offset += strlen(names + offset) + 1) {
+		if (strncmp(names + offset, "user.", kAttributePrefixLength) == 0)
+			return true;
+	}
+	return false;
+}
+
+
+/*!	The file with the list of what has attributes below some folders, which is
+	a header line and then the paths, each ending in a null character (a name
+	can have a line end in it). It holds nothing that can't be found again.
+*/
+static std::string
+index_path(const std::vector<fs::path>& roots)
+{
+	if (roots.empty())
+		return std::string();
+
+	BPath cache;
+	if (find_directory(B_USER_CACHE_DIRECTORY, &cache) != B_OK)
+		return std::string();
+
+	const fs::path folder = fs::path(cache.Path()) / "query-index";
+	std::error_code error;
+	fs::create_directories(folder, error);
+	if (error)
+		return std::string();
+	chmod(folder.c_str(), 0700);
+
+	std::string key;
+	for (const fs::path& root : roots)
+		key += root.native() + ":";
+	char name[32];
+	snprintf(name, sizeof(name), "%016zx", std::hash<std::string>()(key));
+	return (folder / name).native();
+}
+
+
+/*!	A lock on the index, between programs: writers of entries hold it shared,
+	while the one who replaces the file holds it exclusively. The file is
+	replaced, not changed.
+*/
+class IndexLock {
+public:
+	IndexLock(const std::string& index, int operation)
+	{
+		fFD = open((index + ".lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC,
+			0600);
+		if (fFD >= 0)
+			flock(fFD, operation);
+	}
+
+	~IndexLock()
+	{
+		if (fFD >= 0)
+			close(fFD);
+	}
+
+private:
+	int fFD;
+};
+
+
+struct IndexContents {
+	std::vector<std::string> paths;
+	time_t		walked = 0;
+	int			walkSeconds = 0;
+};
+
+
+/*!	Reads an index, whole. If it is damaged, it is as if it wasn't there. */
+static bool
+read_index(const std::string& index, IndexContents* contents,
+	off_t from = 0)
+{
+	if (index.empty())
+		return false;
+
+	const int fd = open(index.c_str(), O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+
+	std::string data;
+	struct stat status;
+	bool isRead = fstat(fd, &status) == 0;
+	if (isRead) {
+		data.resize(status.st_size);
+		size_t done = 0;
+		while (done < data.size()) {
+			const ssize_t bytes = read(fd, &data[done], data.size() - done);
+			if (bytes <= 0)
+				break;
+			done += bytes;
+		}
+		data.resize(done);
+	}
+	close(fd);
+	if (!isRead)
+		return false;
+
+	const size_t lineEnd = data.find('\n');
+	const size_t headerLength = strlen(kIndexHeader);
+	if (lineEnd == std::string::npos
+		|| data.compare(0, headerLength, kIndexHeader) != 0) {
+		return false;
+	}
+	long long walked = 0;
+	int walkSeconds = 0;
+	if (sscanf(data.c_str() + headerLength, " %lld %d", &walked, &walkSeconds)
+			!= 2) {
+		return false;
+	}
+	contents->walked = walked;
+	contents->walkSeconds = walkSeconds;
+
+	// (Those that were added to an index more than once count once.)
+	std::unordered_set<std::string> seen;
+	size_t position = std::max((size_t)from, lineEnd + 1);
+	while (position < data.size()) {
+		const size_t end = data.find('\0', position);
+		if (end == std::string::npos)
+			break;		// half of an entry: being written, or a crash
+		std::string path = data.substr(position, end - position);
+		position = end + 1;
+		if (seen.insert(path).second)
+			contents->paths.push_back(std::move(path));
+	}
+	return true;
+}
+
+
+static bool
+index_is_old(const IndexContents& contents, bool hasGoneEntry)
+{
+	const int age = hasGoneEntry
+		? environment_value("HOKKU_QUERY_INDEX_GONE_MAX_AGE",
+			std::max(kIndexGoneMaxAge, contents.walkSeconds * kWalkCostFactor))
+		: environment_value("HOKKU_QUERY_INDEX_MAX_AGE",
+			std::max(kIndexMaxAge, contents.walkSeconds * kIndexCostFactor));
+	return time(NULL) - contents.walked >= age;
+}
+
+
+/*!	Collects what a walk finds, for a new index. */
+class IndexBuilder {
+public:
+	IndexBuilder(std::string index)
+		:
+		fIndex(std::move(index)),
+		fStart(time(NULL)),
+		fStartNode(0),
+		fStartSize(0)
+	{
+		// What gets added to the index during the walk is to stay.
+		IndexLock lock(fIndex, LOCK_SH);
+		struct stat status;
+		if (stat(fIndex.c_str(), &status) == 0) {
+			fStartNode = status.st_ino;
+			fStartSize = status.st_size;
+		}
+	}
+
+	void Add(const std::string& path)
+	{
+		fPaths.push_back(path);
+	}
+
+	void Commit()
+	{
+		IndexLock lock(fIndex, LOCK_EX);
+
+		IndexContents added;
+		struct stat status;
+		if (stat(fIndex.c_str(), &status) == 0) {
+			read_index(fIndex, &added,
+				status.st_ino == fStartNode ? fStartSize : 0);
+		}
+
+		const std::string temporary = fIndex + ".new";
+		const int fd = open(temporary.c_str(),
+			O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+		if (fd < 0)
+			return;
+
+		char header[128];
+		std::string data(header, snprintf(header, sizeof(header), "%s %lld %d\n",
+			kIndexHeader, (long long)fStart, (int)(time(NULL) - fStart)));
+		for (const std::string& path : fPaths)
+			data.append(path).push_back('\0');
+		for (const std::string& path : added.paths)
+			data.append(path).push_back('\0');
+
+		size_t done = 0;
+		while (done < data.size()) {
+			const ssize_t bytes = write(fd, data.data() + done,
+				data.size() - done);
+			if (bytes <= 0)
+				break;
+			done += bytes;
+		}
+		close(fd);
+		if (done == data.size())
+			rename(temporary.c_str(), fIndex.c_str());
+		else
+			unlink(temporary.c_str());
+	}
+
+private:
+	std::string	fIndex;
+	time_t		fStart;
+	ino_t		fStartNode;
+	off_t		fStartSize;
+	std::vector<std::string> fPaths;
+};
+
+
+/*!	Makes a new index in the background, unless this or another program is at it.
+	The thread is left to itself; if the program ends first, the old index stays.
+*/
+static void
+start_walking_for_index(dev_t device, const std::vector<fs::path>& roots,
+	const std::string& index)
+{
+	if (index.empty())
+		return;
+
+	static std::mutex* sLock = new std::mutex;
+	static std::set<std::string>* sRunning = new std::set<std::string>;
+	{
+		std::lock_guard<std::mutex> lock(*sLock);
+		if (!sRunning->insert(index).second)
+			return;
+	}
+
+	std::thread([device, roots, index] {
+		setpriority(PRIO_PROCESS, gettid(), 10);
+
+		const int walker = open((index + ".walk").c_str(),
+			O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+		if (walker >= 0 && flock(walker, LOCK_EX | LOCK_NB) == 0) {
+			IndexBuilder builder(index);
+			VolumeWalk walk(device, roots);
+			std::string path;
+			std::string name;
+			bool isDirectory;
+			while (walk.Next(&path, &name, &isDirectory)) {
+				if (has_user_attribute(path.c_str()))
+					builder.Add(path);
+			}
+			// (A test's way to write something while a walk is going on.)
+			sleep(environment_value("HOKKU_QUERY_INDEX_COMMIT_DELAY", 0));
+			builder.Commit();
+		}
+		if (walker >= 0)
+			close(walker);
+
+		std::lock_guard<std::mutex> lock(*sLock);
+		sRunning->erase(index);
+	}).detach();
+}
+
+
 class QueryRun {
 public:
 	virtual ~QueryRun() {}
@@ -465,59 +792,138 @@ public:
 };
 
 
-/*!	A query that is over when its entries have been read. It walks only as far
-	as it is read.
+/*!	A query that is over when its entries have been read. It goes only as far as
+	it is read.
 */
 class WalkQueryRun : public QueryRun {
 public:
-	WalkQueryRun(dev_t device, std::vector<fs::path> roots)
+	WalkQueryRun(dev_t device, std::vector<fs::path> roots, uint32 flags)
 		:
 		fDevice(device),
-		fWalk(device, std::move(roots))
+		fRoots(std::move(roots)),
+		fFlags(flags),
+		fWalk(device, fRoots),
+		fRequiresAttribute(false),
+		fUsesIndex(false),
+		fPosition(0),
+		fHasGoneEntry(false)
 	{
+	}
+
+	virtual ~WalkQueryRun()
+	{
+		// It did not get to the end, and there still is no index.
+		if (fBuilder)
+			start_walking_for_index(fDevice, fRoots, fIndex);
 	}
 
 	virtual status_t Init(const char* predicate)
 	{
-		return init_expression(fExpression, predicate);
+		const status_t status = init_expression(fExpression, predicate);
+		if (status != B_OK)
+			return status;
+
+		fRequiresAttribute = requires_attribute(fExpression.Root());
+		fIndex = index_path(fRoots);
+
+		const bool hasIndex = read_index(fIndex, &fContents);
+		fUsesIndex = hasIndex && fRequiresAttribute
+			&& (fFlags & B_QUERY_NON_INDEXED) == 0;
+		if (!hasIndex && !fIndex.empty())
+			fBuilder.reset(new IndexBuilder(fIndex));
+		else if (hasIndex && index_is_old(fContents, false))
+			start_walking_for_index(fDevice, fRoots, fIndex);
+		return B_OK;
 	}
 
 	virtual status_t Next(entry_ref* ref)
+	{
+		return fUsesIndex ? _NextFromIndex(ref) : _NextFromWalk(ref);
+	}
+
+	virtual status_t Rewind()
+	{
+		fPosition = 0;
+		fWalk.Rewind();
+		if (fBuilder)
+			fBuilder.reset(new IndexBuilder(fIndex));
+		return B_OK;
+	}
+
+private:
+	status_t _NextFromIndex(entry_ref* ref)
+	{
+		while (fPosition < fContents.paths.size()) {
+			const std::string& path = fContents.paths[fPosition++];
+			const std::string name = fs::path(path).filename().native();
+			if (matches(fExpression, path.c_str(), name.c_str())) {
+				const status_t status = _SetRef(ref, path);
+				if (status != B_ENTRY_NOT_FOUND)
+					return status;
+			}
+
+			struct stat status;
+			if (lstat(path.c_str(), &status) != 0)
+				fHasGoneEntry = true;
+		}
+
+		if (fHasGoneEntry && index_is_old(fContents, true))
+			start_walking_for_index(fDevice, fRoots, fIndex);
+		return B_ENTRY_NOT_FOUND;
+	}
+
+	status_t _NextFromWalk(entry_ref* ref)
 	{
 		std::string path;
 		std::string name;
 		bool isDirectory;
 		while (fWalk.Next(&path, &name, &isDirectory)) {
+			if (fBuilder) {
+				const bool hasAttribute = has_user_attribute(path.c_str());
+				if (hasAttribute)
+					fBuilder->Add(path);
+				else if (fRequiresAttribute)
+					continue;
+			}
+
 			if (!matches(fExpression, path.c_str(), name.c_str()))
 				continue;
 
-			struct stat parent;
-			if (stat(fs::path(path).parent_path().c_str(), &parent) != 0)
-				continue;
-			return set_ref(ref, fDevice, parent.st_ino, path.c_str());
+			const status_t status = _SetRef(ref, path);
+			if (status != B_ENTRY_NOT_FOUND)
+				return status;
+		}
+
+		if (fBuilder) {
+			fBuilder->Commit();
+			fBuilder.reset();
 		}
 		return B_ENTRY_NOT_FOUND;
 	}
 
-	virtual status_t Rewind()
+	status_t _SetRef(entry_ref* ref, const std::string& path)
 	{
-		fWalk.Rewind();
-		return B_OK;
+		struct stat parent;
+		if (stat(fs::path(path).parent_path().c_str(), &parent) != 0)
+			return B_ENTRY_NOT_FOUND;
+		return set_ref(ref, fDevice, parent.st_ino, path.c_str());
 	}
 
 private:
 	Expression	fExpression;
 	dev_t		fDevice;
+	std::vector<fs::path> fRoots;
+	uint32		fFlags;
 	VolumeWalk	fWalk;
+
+	bool		fRequiresAttribute;
+	std::string	fIndex;
+	IndexContents fContents;
+	bool		fUsesIndex;
+	size_t		fPosition;
+	bool		fHasGoneEntry;
+	std::unique_ptr<IndexBuilder> fBuilder;
 };
-
-
-static int
-environment_value(const char* name, int fallback)
-{
-	const char* value = getenv(name);
-	return value != NULL && atoi(value) > 0 ? atoi(value) : fallback;
-}
 
 
 /*!	A query that goes on telling its target what starts and stops matching.
@@ -527,11 +933,12 @@ environment_value(const char* name, int fallback)
 */
 class LiveQueryRun : public QueryRun {
 public:
-	LiveQueryRun(dev_t device, std::vector<fs::path> roots, port_id port,
-		int32 token)
+	LiveQueryRun(dev_t device, std::vector<fs::path> roots, uint32 flags,
+		port_id port, int32 token)
 		:
 		fDevice(device),
 		fRoots(std::move(roots)),
+		fFlags(flags),
 		fPort(port),
 		fToken(token),
 		fNotifyFD(-1),
@@ -565,6 +972,10 @@ public:
 		status_t status = init_expression(fExpression, predicate);
 		if (status != B_OK)
 			return status;
+
+		fCanUseIndex = requires_attribute(fExpression.Root())
+			&& (fFlags & B_QUERY_NON_INDEXED) == 0;
+		fIndex = index_path(fRoots);
 
 		fNotifyFD = inotify_init1(IN_CLOEXEC | IN_NONBLOCK);
 		fWakeFD = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
@@ -659,41 +1070,41 @@ private:
 	void _FirstWalk()
 	{
 		std::vector<Candidate> candidates;
-		std::vector<std::string> folders;
 		std::unordered_set<std::string> withMatch;
 
-		for (const fs::path& root : fRoots)
-			folders.push_back(root.native());
-
-		VolumeWalk walk(fDevice, fRoots);
-		std::string path;
-		std::string name;
-		bool isDirectory;
-		while (!fStop && walk.Next(&path, &name, &isDirectory)) {
-			if (isDirectory) {
-				// Of the folders only the nearest are kept, so that a home
-				// folder's 400,000 aren't all in memory for a moment.
-				candidates.push_back({_Depth(path), path});
-				if (candidates.size() > 2 * fWatchLimit) {
-					std::nth_element(candidates.begin(),
-						candidates.begin() + fWatchLimit, candidates.end());
-					candidates.resize(fWatchLimit);
-				}
+		IndexContents contents;
+		const bool hasIndex = read_index(fIndex, &contents);
+		if (hasIndex && fCanUseIndex) {
+			for (const std::string& path : contents.paths) {
+				if (fStop)
+					break;
+				const std::string name = fs::path(path).filename().native();
+				if (matches(fExpression, path.c_str(), name.c_str()))
+					_AddFirstResult(path, &withMatch);
 			}
+			_NearestFolders(&candidates);
+		} else {
+			std::unique_ptr<IndexBuilder> builder;
+			if (!hasIndex && !fIndex.empty())
+				builder.reset(new IndexBuilder(fIndex));
 
-			Known known;
-			if (!matches(fExpression, path.c_str(), name.c_str())
-				|| !_GetKnown(path, &known)) {
-				continue;
+			VolumeWalk walk(fDevice, fRoots);
+			std::string path;
+			std::string name;
+			bool isDirectory;
+			while (!fStop && walk.Next(&path, &name, &isDirectory)) {
+				if (isDirectory)
+					_AddCandidate(&candidates, path);
+				if (builder && has_user_attribute(path.c_str()))
+					builder->Add(path);
+				if (matches(fExpression, path.c_str(), name.c_str()))
+					_AddFirstResult(path, &withMatch);
 			}
-
-			fKnown[path] = known;
-			withMatch.insert(fs::path(path).parent_path().native());
-
-			std::lock_guard<std::mutex> lock(fResultsLock);
-			fResults.push_back({path, known.directory});
-			fResultsChanged.notify_one();
+			if (builder && !fStop)
+				builder->Commit();
 		}
+		if (hasIndex && index_is_old(contents, false))
+			start_walking_for_index(fDevice, fRoots, fIndex);
 
 		{
 			std::lock_guard<std::mutex> lock(fResultsLock);
@@ -701,8 +1112,8 @@ private:
 			fResultsChanged.notify_all();
 		}
 
-		for (const std::string& folder : folders)
-			_Watch(folder);
+		for (const fs::path& root : fRoots)
+			_Watch(root.native());
 		for (const std::string& folder : withMatch)
 			_Watch(folder);
 		std::sort(candidates.begin(), candidates.end());
@@ -710,22 +1121,111 @@ private:
 			_Watch(candidate.path);
 	}
 
+	void _AddFirstResult(const std::string& path,
+		std::unordered_set<std::string>* withMatch)
+	{
+		Known known;
+		if (!_GetKnown(path, &known))
+			return;
+
+		fKnown[path] = known;
+		withMatch->insert(fs::path(path).parent_path().native());
+
+		std::lock_guard<std::mutex> lock(fResultsLock);
+		fResults.push_back({path, known.directory});
+		fResultsChanged.notify_one();
+	}
+
+	void _AddCandidate(std::vector<Candidate>* candidates,
+		const std::string& path)
+	{
+		// Of the folders only the nearest are kept, so that a home folder's
+		// 400,000 aren't all in memory for a moment.
+		candidates->push_back({_Depth(path), path});
+		if (candidates->size() > 2 * fWatchLimit) {
+			std::nth_element(candidates->begin(),
+				candidates->begin() + fWatchLimit, candidates->end());
+			candidates->resize(fWatchLimit);
+		}
+	}
+
+	/*!	The folders nearest the start, without a walk of everything. */
+	void _NearestFolders(std::vector<Candidate>* candidates)
+	{
+		std::vector<std::string> level;
+		for (const fs::path& root : fRoots)
+			level.push_back(root.native());
+
+		while (!level.empty() && !fStop && candidates->size() < fWatchLimit) {
+			std::vector<std::string> next;
+			for (const std::string& folder : level) {
+				std::error_code error;
+				fs::directory_iterator entry(folder,
+					fs::directory_options::skip_permission_denied, error);
+				const fs::directory_iterator end;
+				while (!error && entry != end
+					&& candidates->size() < fWatchLimit) {
+					const fs::path path = entry->path();
+					std::error_code ignored;
+					struct stat status;
+					if (path.filename().native()[0] != '.'
+						&& !entry->is_symlink(ignored)
+						&& entry->is_directory(ignored)
+						&& lstat(path.c_str(), &status) == 0
+						&& status.st_dev == fDevice) {
+						candidates->push_back({_Depth(path.native()),
+							path.native()});
+						next.push_back(path.native());
+					}
+					entry.increment(error);
+				}
+			}
+			level.swap(next);
+		}
+	}
+
 	void _WalkAgain()
 	{
 		std::unordered_set<std::string> seen;
-		VolumeWalk walk(fDevice, fRoots);
-		std::string path;
-		std::string name;
-		bool isDirectory;
-		while (!fStop && walk.Next(&path, &name, &isDirectory)) {
-			if (!matches(fExpression, path.c_str(), name.c_str()))
-				continue;
-			seen.insert(path);
-			if (fKnown.find(path) == fKnown.end())
-				_Started(path);
+
+		IndexContents contents;
+		const bool hasIndex = read_index(fIndex, &contents);
+		bool hasGoneEntry = false;
+		if (hasIndex && fCanUseIndex) {
+			for (const std::string& path : contents.paths) {
+				if (fStop)
+					return;
+				const std::string name = fs::path(path).filename().native();
+				if (matches(fExpression, path.c_str(), name.c_str())) {
+					seen.insert(path);
+					if (fKnown.find(path) == fKnown.end())
+						_Started(path);
+				} else {
+					struct stat status;
+					if (lstat(path.c_str(), &status) != 0)
+						hasGoneEntry = true;
+				}
+			}
+		} else {
+			VolumeWalk walk(fDevice, fRoots);
+			std::string path;
+			std::string name;
+			bool isDirectory;
+			while (!fStop && walk.Next(&path, &name, &isDirectory)) {
+				if (!matches(fExpression, path.c_str(), name.c_str()))
+					continue;
+				seen.insert(path);
+				if (fKnown.find(path) == fKnown.end())
+					_Started(path);
+			}
 		}
 		if (fStop)
 			return;
+
+		if (hasIndex && (index_is_old(contents, false)
+				|| (hasGoneEntry && index_is_old(contents, true)))) {
+			start_walking_for_index(fDevice, fRoots, fIndex);
+		}
 
 		std::vector<std::string> gone;
 		for (const auto& known : fKnown) {
@@ -933,8 +1433,11 @@ private:
 	Expression	fExpression;
 	dev_t		fDevice;
 	std::vector<fs::path> fRoots;
+	uint32		fFlags;
 	port_id		fPort;
 	int32		fToken;
+	bool		fCanUseIndex = false;
+	std::string	fIndex;
 
 	std::thread	fThread;
 	int			fNotifyFD;
@@ -966,9 +1469,10 @@ open_query(dev_t device, const char* predicate, uint32 flags, port_id port,
 	QueryRun* run;
 	if ((flags & B_LIVE_QUERY) != 0) {
 		run = new(std::nothrow) LiveQueryRun(device, roots_of_volume(device),
-			port, token);
+			flags, port, token);
 	} else {
-		run = new(std::nothrow) WalkQueryRun(device, roots_of_volume(device));
+		run = new(std::nothrow) WalkQueryRun(device, roots_of_volume(device),
+			flags);
 	}
 	if (run == NULL)
 		return B_NO_MEMORY;
@@ -1001,6 +1505,65 @@ status_t
 rewind_query(QueryRun* run)
 {
 	return run->Rewind();
+}
+
+
+void
+note_attribute_written(int fd)
+{
+	char link[64];
+	char path[B_PATH_NAME_LENGTH];
+	snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
+	const ssize_t length = readlink(link, path, sizeof(path) - 1);
+	if (length <= 0)
+		return;
+	path[length] = '\0';
+
+	// It is enough to say so once in a while: most writes are to files that are
+	// in the list already. It can't be once and for all, since a file can go
+	// and come back.
+	static std::mutex sLock;
+	static std::unordered_set<std::string> sRecent;
+	static time_t sRecentSince = 0;
+	{
+		std::lock_guard<std::mutex> lock(sLock);
+		const time_t now = time(NULL);
+		if (now - sRecentSince >= kWalkInterval) {
+			sRecent.clear();
+			sRecentSince = now;
+		}
+		if (!sRecent.insert(path).second)
+			return;
+	}
+
+	struct stat status;
+	if (fstat(fd, &status) != 0)
+		return;
+
+	// Only what a walk would find.
+	const std::vector<fs::path> roots = roots_of_volume(status.st_dev);
+	bool isBelowRoot = false;
+	for (const fs::path& root : roots) {
+		const std::string prefix = root.native() + "/";
+		if (strncmp(path, prefix.c_str(), prefix.size()) == 0
+			&& strstr(path + prefix.size() - 1, "/.") == NULL) {
+			isBelowRoot = true;
+			break;
+		}
+	}
+	if (!isBelowRoot)
+		return;
+
+	// If there is no index, the next walk is going to make one.
+	const std::string index = index_path(roots);
+	if (index.empty())
+		return;
+	IndexLock lock(index, LOCK_SH);
+	const int file = open(index.c_str(), O_WRONLY | O_APPEND | O_CLOEXEC);
+	if (file < 0)
+		return;
+	(void)!write(file, path, length + 1);
+	close(file);
 }
 
 
