@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!--
+  The Hokku desktop session's labwc settings (cosmoe-desktop.sh puts this folder in
+  XDG_CONFIG_DIRS). A file of the same name in ~/.config/labwc replaces this one.
+  Window decorations follow Haiku: close button on the left, zoom on the right.
+-->
+<labwc_config>
+  <core>
+    <decoration>server</decoration>
+    <gap>0</gap>
+  </core>
+
+  <theme>
+    <name>Hokku</name>
+    <cornerRadius>6</cornerRadius>
+    <titlebar>
+      <layout>close:iconify,max</layout>
+      <showTitle>yes</showTitle>
+    </titlebar>
+    <dropShadows>no</dropShadows>
+    <font place="ActiveWindow"><name>Noto Sans</name><size>10</size><weight>bold</weight></font>
+    <font place="InactiveWindow"><name>Noto Sans</name><size>10</size><weight>bold</weight></font>
+    <font place="MenuItem"><name>Noto Sans</name><size>10</size></font>
+    <font place="OnScreenDisplay"><name>Noto Sans</name><size>10</size></font>
+  </theme>
+
+  <placement>
+    <policy>cascade</policy>
+  </placement>
+
+  <focus>
+    <followMouse>no</followMouse>
+    <raiseOnFocus>no</raiseOnFocus>
+  </focus>
+
+  <keyboard>
+    <default />
+    <keybind key="A-Tab"><action name="NextWindow" /></keybind>
+    <keybind key="A-S-Tab"><action name="PreviousWindow" /></keybind>
+    <keybind key="C-A-t"><action name="Execute" command="Terminal" /></keybind>
+    <keybind key="A-F4"><action name="Close" /></keybind>
+    <keybind key="Print"><action name="Execute" command="sh -c 'grim ~/Desktop/screenshot-$(date +%Y%m%d-%H%M%S).png'" /></keybind>
+    <keybind key="XF86AudioRaiseVolume"><action name="Execute" command="wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+" /></keybind>
+    <keybind key="XF86AudioLowerVolume"><action name="Execute" command="wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" /></keybind>
+    <keybind key="XF86AudioMute"><action name="Execute" command="wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" /></keybind>
+    <keybind key="XF86MonBrightnessUp"><action name="Execute" command="brightnessctl set +5%" /></keybind>
+    <keybind key="XF86MonBrightnessDown"><action name="Execute" command="brightnessctl set 5%-" /></keybind>
+  </keyboard>
+
+  <mouse>
+    <default />
+    <!-- Haiku: double-click a tab to minimize. -->
+    <context name="Title">
+      <mousebind button="Left" action="DoubleClick"><action name="Iconify" /></mousebind>
+    </context>
+  </mouse>
+
+  <libinput>
+    <device category="touchpad">
+      <tap>yes</tap>
+      <naturalScroll>no</naturalScroll>
+    </device>
+  </libinput>
+</labwc_config>

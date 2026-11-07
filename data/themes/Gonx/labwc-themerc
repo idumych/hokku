@@ -1,11 +1,15 @@
 # labwc's frames round other apps (Firefox, GTK, Qt) in Gonx's colours.
 # Be apps draw the Gonx frame themselves (client-side decorations).
 
-# Hokku OS's labwc draws Hokku's own Gonx frame round other apps, in the
-# colours below (title.bg the tab, label.text the title, border the frame);
-# the Themes tab adds the theme's bold font as window.decorator.font. Stock
-# labwc ignores these and draws its titlebar in the same colours.
-window.decorator: Gonx
+# labwc-hokku (Hokku OS's labwc, and the Hokku desktop session's) draws the
+# frame Hokku's own windows have round other apps, following Hokku's settings:
+# the Gonx decorator this theme sets, or any other chosen later, in Hokku's
+# colours. Without Hokku's libdecorator it draws its own copy of the Gonx
+# frame, in the colours below (title.bg the tab, label.text the title, border
+# the frame); the Themes tab adds the theme's bold font as
+# window.decorator.font. Stock labwc ignores these and draws its titlebar in
+# the same colours.
+window.decorator: Hokku
 
 border.width: 2
 padding.width: 6

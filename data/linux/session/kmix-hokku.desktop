@@ -1,0 +1,11 @@
+[Desktop Entry]
+# kmix's own autostart entry is for Plasma only (OnlyShowIn=KDE). Through
+# Xwayland: on Wayland Qt can't open its volume popup without a parent window.
+Type=Application
+Name=KMix
+Comment=Volume applet in the Deskbar tray
+Exec=env QT_QPA_PLATFORM=xcb kmix --keepvisibility
+TryExec=kmix
+Icon=kmix
+OnlyShowIn=cosmoe;
+NoDisplay=true
