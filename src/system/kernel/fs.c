@@ -1177,7 +1177,7 @@ int	fs_stat_dev(dev_t dev, fs_info *info)
 		/* Attributes are stored as user.* xattrs; a file system that accepts
 		   them has what BFS's attributes and queries need. */
 		if (xattr_supported_on_mount(ent->mnt_dir))
-			info->flags |= B_FS_HAS_ATTR | B_FS_HAS_MIME | B_FS_HAS_QUERY;
+			info->flags |= B_FS_HAS_ATTR | B_FS_HAS_QUERY;
 
 		ret = 0;
 		break;
