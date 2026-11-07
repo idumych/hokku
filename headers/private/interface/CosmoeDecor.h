@@ -10,6 +10,7 @@
 #ifndef COSMOE_DECOR_H
 #define COSMOE_DECOR_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -91,6 +92,11 @@ struct cosmoe_decor_ops {
 	/* After the content is drawn: cuts off the rounded corners where
 	 * they lie over it. */
 	void (*paint_overlay)(cosmoe_decor *decor, cairo_t *cr);
+
+	/* The border round the content and the tab, for a compositor that
+	 * lays out its own input areas; the tab is empty without one. */
+	void (*frame_rects)(cosmoe_decor *decor, struct cosmoe_decor_rect *border,
+			    struct cosmoe_decor_rect *tab);
 };
 
 /* in libdecorator: the calls for the decorator called name ("Default" is
@@ -98,6 +104,27 @@ struct cosmoe_decor_ops {
 typedef const struct cosmoe_decor_ops *(*cosmoe_decor_load_func)(
 	const char *name);
 const struct cosmoe_decor_ops *cosmoe_decor_load(const char *name);
+
+/* For a program that isn't a BApplication, such as a compositor drawing
+ * other programs' frames: sets up what libbe needs to draw, from the user's
+ * settings. Call it once, before cosmoe_decor_load(); 0 when it worked. */
+typedef int (*cosmoe_decor_init_func)(void);
+int cosmoe_decor_init_standalone(void);
+
+/* Reads the colours, fonts and window settings (shadows, corners) again,
+ * after another program changed them. Frames take them when they are next
+ * painted. */
+typedef void (*cosmoe_decor_reload_func)(void);
+void cosmoe_decor_reload_settings(void);
+
+/* The decorator the user's settings name, as setdecor and Appearance set
+ * it ("Default" is the desktop's own frames, "Haiku" Haiku's), into name. */
+typedef void (*cosmoe_decor_current_func)(char *name, size_t size);
+void cosmoe_decor_current(char *name, size_t size);
+
+/* The folder those settings are kept in, to watch for changes. */
+typedef void (*cosmoe_decor_settings_folder_func)(char *path, size_t size);
+void cosmoe_decor_settings_folder(char *path, size_t size);
 
 #ifdef __cplusplus
 }

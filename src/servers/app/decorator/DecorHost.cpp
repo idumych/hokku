@@ -32,7 +32,11 @@
 #include <String.h>
 #include <View.h>
 
+#include <Application.h>
+
 #include <BitmapPrivate.h>
+#include <DecoratorPrivate.h>
+#include <InterfacePrivate.h>
 #include <WindowPrivate.h>
 
 #include "DecorManager.h"
@@ -65,6 +69,9 @@ static BLocker sLock("decor host");
 static DecorAddOn* sAddOn = NULL;
 static BString sAddOnName;
 static std::map<BString, DecorAddOn*>* sAddOns = NULL;
+// counts cosmoe_decor_reload_settings(): frames made before the last one
+// take the new colours and fonts when they are next painted
+static int32 sSettingsGeneration = 0;
 
 
 struct cosmoe_decor {
@@ -81,6 +88,7 @@ struct cosmoe_decor {
 	bool				maximized;
 	bool				laidOut;
 	BRect				content;
+	int32				settingsGeneration;
 
 	// the shadow's alpha, kept while the frame's shape and look stay
 	cairo_surface_t*	shadow;
@@ -488,6 +496,7 @@ decor_create(uint32_t look, uint32_t flags, const char* title)
 	decor->focused = false;
 	decor->maximized = false;
 	decor->laidOut = false;
+	decor->settingsGeneration = sSettingsGeneration;
 	decor->content = BRect(0, 0, 199, 99);
 	decor->shadow = NULL;
 	decor->shadowX = decor->shadowY = 0;
@@ -694,6 +703,14 @@ decor_footprint(cosmoe_decor* decor,
 static void
 decor_paint(cosmoe_decor* decor, cairo_t* cr)
 {
+	if (decor->settingsGeneration != sSettingsGeneration) {
+		decor->settingsGeneration = sSettingsGeneration;
+		DesktopSettings settings(Desktop::Default());
+		BRegion dirty;
+		decor->decorator->FontsChanged(settings, &dirty);
+		decor->decorator->ColorsChanged(settings, &dirty);
+	}
+
 	cairo_save(cr);
 	cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
 	cairo_paint(cr);
@@ -801,6 +818,31 @@ decor_paint_overlay(cosmoe_decor* decor, cairo_t* cr)
 }
 
 
+static void
+set_rect(struct cosmoe_decor_rect* rect, BRect frame)
+{
+	if (!frame.IsValid()) {
+		rect->left = rect->top = 0;
+		rect->right = rect->bottom = -1;
+		return;
+	}
+	rect->left = (int)frame.left;
+	rect->top = (int)frame.top;
+	rect->right = (int)frame.right;
+	rect->bottom = (int)frame.bottom;
+}
+
+
+static void
+decor_frame_rects(cosmoe_decor* decor, struct cosmoe_decor_rect* border,
+	struct cosmoe_decor_rect* tab)
+{
+	set_rect(border, decor->decorator->BorderRect());
+	set_rect(tab, decor->decorator->CountTabs() > 0
+		? decor->decorator->TabRect(0) : BRect());
+}
+
+
 static const cosmoe_decor_ops kOps = {
 	decor_create,
 	decor_destroy,
@@ -816,7 +858,8 @@ static const cosmoe_decor_ops kOps = {
 	decor_set_pressed,
 	decor_footprint,
 	decor_paint,
-	decor_paint_overlay
+	decor_paint_overlay,
+	decor_frame_rects
 };
 
 
@@ -830,4 +873,51 @@ cosmoe_decor_load(const char* name)
 	sAddOn = addOn;
 	sAddOnName = name;
 	return &kOps;
+}
+
+
+extern "C" int
+cosmoe_decor_init_standalone(void)
+{
+	static bool sInitialized = false;
+	BAutolock locker(sLock);
+	if (sInitialized || be_app != NULL)
+		return 0;
+	if (_init_interface_kit_() != B_OK)
+		return -1;
+	sInitialized = true;
+	return 0;
+}
+
+
+extern "C" void
+cosmoe_decor_reload_settings(void)
+{
+	BAutolock locker(sLock);
+	BPrivate::reload_appearance();
+	sSettingsGeneration++;
+}
+
+
+extern "C" void
+cosmoe_decor_current(char* name, size_t size)
+{
+	BString current;
+	BPrivate::get_decorator(current);
+	if (current.IsEmpty())
+		current = "Default";
+	snprintf(name, size, "%s", current.String());
+}
+
+
+extern "C" void
+cosmoe_decor_settings_folder(char* path, size_t size)
+{
+	BPath folder;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &folder) != B_OK
+		|| folder.Append("system/app_server") != B_OK) {
+		snprintf(path, size, "%s", "");
+		return;
+	}
+	snprintf(path, size, "%s", folder.Path());
 }

@@ -37,6 +37,10 @@ status_t set_menu_snake(bool snake);
 // Cosmoe: tells the backend which decorator to draw this app's frames with.
 status_t apply_decorator(void* display);
 
+// Hokku: reads the system colours and fonts from the settings again, for a
+// program that isn't told when they change (a compositor drawing frames)
+void reload_appearance();
+
 
 }	// namespace BPrivate
 

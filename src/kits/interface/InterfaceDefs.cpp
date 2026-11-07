@@ -2075,6 +2075,15 @@ set_window_shadows(bool shadows)
 }
 
 
+void
+reload_appearance()
+{
+	LoadSavedColors();
+	UpdateCachedSystemColors();
+	_init_global_fonts_();
+}
+
+
 //!	Hokku: whether window frames round their corners
 bool
 get_window_rounded_corners()
