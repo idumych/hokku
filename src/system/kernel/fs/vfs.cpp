@@ -460,6 +460,21 @@ struct AttrDirState {
 std::mutex sAttrDirLock;
 std::unordered_map<int, AttrDirState> sAttrDirs;
 
+#ifdef __linux__
+extern "C" void _cosmoe_attr_overflow_names(int fd,
+	void (*add)(const char* name, void* cookie), void* cookie);
+
+
+static void
+add_overflow_attr_name(const char* name, void* cookie)
+{
+	std::vector<std::string>& names = *(std::vector<std::string>*)cookie;
+	if (std::find(names.begin(), names.end(), name) == names.end())
+		names.emplace_back(name);
+}
+#endif
+
+
 static status_t
 load_attr_names_for_fd(int fd, std::vector<std::string>& names)
 {
@@ -492,6 +507,7 @@ load_attr_names_for_fd(int fd, std::vector<std::string>& names)
 				std::string stripped(entry + 5);
 				if (stripped != kAttrTypeMapAttr
 					&& stripped.rfind("COSMOE:MORE:", 0) != 0
+					&& stripped != "COSMOE:OVERFLOW"
 					&& std::find(names.begin(), names.end(), stripped)
 					== names.end()) {
 					names.emplace_back(std::move(stripped));
@@ -528,6 +544,9 @@ load_attr_names_for_fd(int fd, std::vector<std::string>& names)
 			});
 		if (error != B_OK)
 			return error;
+#ifdef __linux__
+		_cosmoe_attr_overflow_names(fd, add_overflow_attr_name, &names);
+#endif
 	}
 
 	return B_OK;

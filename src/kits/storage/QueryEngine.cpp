@@ -185,6 +185,18 @@ static const int kIndexCostFactor = 100;		// of what a walk takes
 static const int kIndexGoneMaxAge = 60;			// with an entry known to be gone
 
 
+extern "C" {
+ssize_t _cosmoe_attr_overflow_read(const char* filePath, const char* attribute,
+	void* buffer, size_t size, uint32* _type);
+int _cosmoe_attr_overflow_exists(void);
+}
+
+/*!	Whether this user has attributes in the store at all. Without any, a query
+	saves looking for each attribute that a file doesn't have.
+*/
+static bool sOverflowExists = false;
+
+
 /*!	A file as the parser sees it. It stands for both the Entry and the Node of
 	a file system.
 */
@@ -308,8 +320,20 @@ struct QueryPolicy {
 				return B_ENTRY_NOT_FOUND;
 			length = std::min((size_t)length, capacity);
 			memcpy(buffer, holder.longValue.data(), length);
-		} else if (length < 0)
-			return B_ENTRY_NOT_FOUND;
+		} else if (length < 0) {
+			// It can be in the store of what doesn't fit on the file (fs.c).
+			uint32 storedType;
+			if (errno != ENODATA || !sOverflowExists)
+				return B_ENTRY_NOT_FOUND;
+			length = _cosmoe_attr_overflow_read(node->path, attribute, buffer,
+				capacity, &storedType);
+			if (length < 0)
+				return B_ENTRY_NOT_FOUND;
+			buffer[length] = '\0';
+			*type = (int32)storedType;
+			*size = is_string_type(*type) ? strlen((const char*)buffer) : length;
+			return B_OK;
+		}
 
 		buffer[length] = '\0';
 		*type = attribute_type(node->path, attribute);
@@ -1485,6 +1509,8 @@ open_query(dev_t device, const char* predicate, uint32 flags, port_id port,
 {
 	if (predicate == NULL || _run == NULL)
 		return B_BAD_VALUE;
+
+	sOverflowExists = _cosmoe_attr_overflow_exists() != 0;
 
 	QueryRun* run;
 	if ((flags & B_LIVE_QUERY) != 0) {

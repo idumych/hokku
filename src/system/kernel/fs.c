@@ -23,6 +23,10 @@
 //	Authors:		Bill Hayden (hayden@haydentech.com)
 //----------------------------------------------------------------------------*/
 
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE	// statx()
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -35,6 +39,9 @@
 #ifdef __linux__
 #include <mntent.h>
 #include <sys/statvfs.h>
+#ifdef __linux__
+#include <sys/vfs.h>
+#endif
 #elif defined(__APPLE__)
 #include <sys/param.h>
 #include <sys/ucred.h>
@@ -1383,39 +1390,490 @@ _WriteSplitAttr(int fd, const char* attrName, const char* attribute,
 }
 
 
-/*! Writes a value in one piece if it fits. If it can't be written, the attribute
-	stays what it was, as far as there is room for that.
+/*
+ * Where a file system refuses even split values: ext4 keeps about a block of
+ * attributes for a file, all together, unless it was made with ea_inode. What
+ * doesn't fit goes to a store of the user's, in a file of its own:
+ *
+ *   ~/.local/share/cosmoe/attr-overflow/<fsid>/<inode>-<birth time>/<name>
+ *
+ * It starts with the type of the attribute. Going by the inode, it stays with
+ * the file when that is renamed or moved inside its file system; a copy made by
+ * another program doesn't get it. The birth time tells a file from a later one
+ * that was given the same inode, so a file can't get another's attributes; a file
+ * system without one can't use the store. The largest values go first, so that
+ * small ones, which queries and other programs are likelier to look for, stay on
+ * the file. A file with attributes in the store has COSMOE:OVERFLOW, so that one
+ * without it costs nothing but that one look, and only for an attribute it lacks.
+ */
+#define COSMOE_ATTR_OVERFLOW_MARKER "user.COSMOE:OVERFLOW"
+
+static int
+_OverflowRoot(char* path, size_t size)
+{
+	const char* data = getenv("XDG_DATA_HOME");
+	int length;
+	if (data != NULL && data[0] == '/')
+		length = snprintf(path, size, "%s/cosmoe/attr-overflow", data);
+	else {
+		const char* home = getenv("HOME");
+		if (home == NULL || home[0] != '/')
+			return 0;
+		length = snprintf(path, size, "%s/.local/share/cosmoe/attr-overflow", home);
+	}
+	return length > 0 && (size_t)length < size;
+}
+
+
+/*! The folder of a file's attributes in the store, from what identifies it. */
+static int
+_OverflowFolderFor(const struct statfs* fileSystem, const struct statx* file,
+	char* path, size_t size)
+{
+	if ((file->stx_mask & STATX_BTIME) == 0
+		|| (file->stx_btime.tv_sec == 0 && file->stx_btime.tv_nsec == 0)) {
+		errno = ENOTSUP;
+		return 0;
+	}
+
+	char root[B_PATH_NAME_LENGTH];
+	if (!_OverflowRoot(root, sizeof(root))) {
+		errno = ENOENT;
+		return 0;
+	}
+
+	unsigned long long fsid = 0;
+	memcpy(&fsid, &fileSystem->f_fsid,
+		sizeof(fsid) < sizeof(fileSystem->f_fsid) ? sizeof(fsid)
+			: sizeof(fileSystem->f_fsid));
+	int length = snprintf(path, size, "%s/%llx/%llu-%lld-%u", root, fsid,
+		(unsigned long long)file->stx_ino,
+		(long long)file->stx_btime.tv_sec, (unsigned)file->stx_btime.tv_nsec);
+	if (length <= 0 || (size_t)length >= size) {
+		errno = ENAMETOOLONG;
+		return 0;
+	}
+	return 1;
+}
+
+
+static int
+_OverflowFolder(int fd, char* path, size_t size)
+{
+	struct statfs fileSystem;
+	struct statx file;
+	if (fstatfs(fd, &fileSystem) != 0
+		|| statx(fd, "", AT_EMPTY_PATH, STATX_BTIME | STATX_INO, &file) != 0) {
+		return 0;
+	}
+	return _OverflowFolderFor(&fileSystem, &file, path, size);
+}
+
+
+/*! An attribute's name as a file's: anything goes in one, but '/', and a '.' first. */
+static int
+_OverflowFileName(const char* attribute, char* name, size_t size)
+{
+	size_t length = 0;
+	for (const char* c = attribute; *c != '\0'; c++) {
+		if (length + 4 > size || length + 4 > 255) {
+			errno = ENAMETOOLONG;
+			return 0;
+		}
+		if (*c == '/' || *c == '%' || (*c == '.' && c == attribute)) {
+			length += snprintf(name + length, size - length, "%%%02x",
+				(unsigned char)*c);
+		} else
+			name[length++] = *c;
+	}
+	name[length] = '\0';
+	return 1;
+}
+
+
+static void
+_AttributeFromOverflowFileName(const char* name, char* attribute, size_t size)
+{
+	size_t length = 0;
+	for (const char* c = name; *c != '\0' && length + 1 < size; c++) {
+		unsigned value;
+		if (*c == '%' && sscanf(c + 1, "%2x", &value) == 1) {
+			attribute[length++] = (char)value;
+			c += 2;
+		} else
+			attribute[length++] = *c;
+	}
+	attribute[length] = '\0';
+}
+
+
+static int
+_OverflowFile(int fd, const char* attribute, char* path, size_t size)
+{
+	char folder[B_PATH_NAME_LENGTH];
+	char name[256];
+	if (!_OverflowFolder(fd, folder, sizeof(folder))
+		|| !_OverflowFileName(attribute, name, sizeof(name))) {
+		return 0;
+	}
+	int length = snprintf(path, size, "%s/%s", folder, name);
+	if (length <= 0 || (size_t)length >= size) {
+		errno = ENAMETOOLONG;
+		return 0;
+	}
+	return 1;
+}
+
+
+static int
+_MakeFolders(char* path)
+{
+	for (char* slash = strchr(path + 1, '/'); slash != NULL;
+			slash = strchr(slash + 1, '/')) {
+		*slash = '\0';
+		int result = mkdir(path, 0700);
+		int error = errno;
+		*slash = '/';
+		if (result != 0 && error != EEXIST) {
+			errno = error;
+			return 0;
+		}
+	}
+	return mkdir(path, 0700) == 0 || errno == EEXIST;
+}
+
+
+/*! Reads a whole file of the store, for the caller to free. */
+static ssize_t
+_ReadOverflowFile(const char* path, uint32* _type, char** _data)
+{
+	int file = open(path, O_RDONLY | O_CLOEXEC);
+	if (file < 0)
+		return -1;
+
+	struct stat status;
+	uint32 type = B_RAW_TYPE;
+	ssize_t size = -1;
+	char* data = NULL;
+	if (fstat(file, &status) == 0 && status.st_size >= (off_t)sizeof(type)
+		&& read(file, &type, sizeof(type)) == (ssize_t)sizeof(type)) {
+		size = status.st_size - sizeof(type);
+		data = (char*)malloc(size > 0 ? size : 1);
+		if (data == NULL || read(file, data, size) != size) {
+			free(data);
+			data = NULL;
+			size = -1;
+			errno = EIO;
+		}
+	}
+	close(file);
+	if (size >= 0) {
+		if (_type != NULL)
+			*_type = type;
+		*_data = data;
+	}
+	return size;
+}
+
+
+/*! Whether the value is in the store: then *_data holds it, for the caller to free. */
+static ssize_t
+_ReadOverflowAttr(int fd, const char* attribute, uint32* _type, char** _data)
+{
+	if (fgetxattr(fd, COSMOE_ATTR_OVERFLOW_MARKER, NULL, 0) < 0) {
+		errno = ENODATA;
+		return -1;
+	}
+	char path[B_PATH_NAME_LENGTH * 2];
+	if (!_OverflowFile(fd, attribute, path, sizeof(path))) {
+		errno = ENODATA;
+		return -1;
+	}
+	ssize_t size = _ReadOverflowFile(path, _type, _data);
+	if (size < 0)
+		errno = ENODATA;
+	return size;
+}
+
+
+/*! Puts a value in the store, replacing the file only when it's complete. */
+static int
+_WriteOverflowFile(int fd, const char* attribute, uint32 type, const void* data,
+	size_t size)
+{
+	char folder[B_PATH_NAME_LENGTH];
+	char path[B_PATH_NAME_LENGTH * 2];
+	char temporary[B_PATH_NAME_LENGTH * 2 + 32];
+	if (!_OverflowFolder(fd, folder, sizeof(folder))
+		|| !_OverflowFile(fd, attribute, path, sizeof(path))
+		|| !_MakeFolders(folder)) {
+		return 0;
+	}
+	snprintf(temporary, sizeof(temporary), "%s/.new-%d", folder, (int)getpid());
+
+	int file = open(temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+	if (file < 0)
+		return 0;
+	int done = write(file, &type, sizeof(type)) == (ssize_t)sizeof(type);
+	size_t written = 0;
+	while (done && written < size) {
+		ssize_t bytes = write(file, (const char*)data + written, size - written);
+		if (bytes <= 0)
+			done = 0;
+		else
+			written += bytes;
+	}
+	int error = errno;
+	if (close(file) != 0 && done) {
+		done = 0;
+		error = errno;
+	}
+	if (done && rename(temporary, path) != 0) {
+		done = 0;
+		error = errno;
+	}
+	if (!done) {
+		unlink(temporary);
+		errno = error;
+	}
+	return done;
+}
+
+
+/*! Takes a value out of the store. When the last is gone, so is the mark. */
+static int
+_RemoveOverflowAttr(int fd, const char* attribute)
+{
+	if (fgetxattr(fd, COSMOE_ATTR_OVERFLOW_MARKER, NULL, 0) < 0)
+		return 0;
+
+	char path[B_PATH_NAME_LENGTH * 2];
+	char folder[B_PATH_NAME_LENGTH];
+	if (!_OverflowFile(fd, attribute, path, sizeof(path))
+		|| !_OverflowFolder(fd, folder, sizeof(folder))) {
+		return 0;
+	}
+	int removed = unlink(path) == 0;
+	if (rmdir(folder) == 0 || errno == ENOENT)
+		fremovexattr(fd, COSMOE_ATTR_OVERFLOW_MARKER);
+	return removed;
+}
+
+
+/*! Moves the largest value of a file to the store, if it's larger than \a than,
+	to make room on the file. \return Whether there is more room now.
 */
 static int
-_WriteAttrValue(int fd, const char* attrName, const char* attribute,
+_SpillLargestAttr(int fd, const char* except, ssize_t than)
+{
+	ssize_t listSize = flistxattr(fd, NULL, 0);
+	if (listSize <= 0)
+		return 0;
+	char* list = (char*)malloc(listSize);
+	if (list == NULL)
+		return 0;
+	listSize = flistxattr(fd, list, listSize);
+
+	const char* largest = NULL;
+	ssize_t largestSize = than;
+	for (ssize_t i = 0; i < listSize; i += strlen(list + i) + 1) {
+		const char* name = list + i;
+		if (strncmp(name, "user.", 5) != 0 || strncmp(name, "user.COSMOE:", 12) == 0
+			|| (except != NULL && strcmp(name + 5, except) == 0)) {
+			continue;
+		}
+		ssize_t size = _AttrSize(fd, name, name + 5);
+		if (size > largestSize) {
+			largest = name;
+			largestSize = size;
+		}
+	}
+
+	int spilled = 0;
+	char* data = NULL;
+	if (largest != NULL) {
+		uint32 type;
+		if (!_LookupPersistentAttrTypeForFD(fd, largest + 5, &type))
+			type = B_RAW_TYPE;
+		ssize_t size = _ReadWholeAttr(fd, largest, largest + 5, &data);
+		if (size >= 0 && _WriteOverflowFile(fd, largest + 5, type, data, size)) {
+			fremovexattr(fd, largest);
+			_RemoveMoreAttrs(fd, largest + 5, 1);
+			// (There is room for this now, if there wasn't.)
+			if (fsetxattr(fd, COSMOE_ATTR_OVERFLOW_MARKER, "1", 1, 0) == 0)
+				spilled = 1;
+		}
+		free(data);
+	}
+	free(list);
+	return spilled;
+}
+
+
+/*! Puts a value that won't fit on the file in the store. */
+static int
+_StoreAttrValue(int fd, const char* attrName, const char* attribute, uint32 type,
 	const void* buffer, size_t size)
 {
+	// Nothing changes on the file unless the store has the value; and the store
+	// is no use without the mark, so that comes first.
+	struct statfs fileSystem;
+	struct statx file;
+	char folder[B_PATH_NAME_LENGTH];
+	if (fstatfs(fd, &fileSystem) != 0
+		|| statx(fd, "", AT_EMPTY_PATH, STATX_BTIME | STATX_INO, &file) != 0
+		|| !_OverflowFolderFor(&fileSystem, &file, folder, sizeof(folder))) {
+		errno = ENOSPC;
+		return -1;
+	}
+	const int hadMark = fgetxattr(fd, COSMOE_ATTR_OVERFLOW_MARKER, NULL, 0) >= 0;
+	while (fsetxattr(fd, COSMOE_ATTR_OVERFLOW_MARKER, "1", 1, 0) != 0) {
+		if ((errno != ENOSPC && errno != E2BIG)
+			|| !_SpillLargestAttr(fd, attribute, 0)) {
+			return -1;
+		}
+	}
+	if (!_WriteOverflowFile(fd, attribute, type, buffer, size)) {
+		int error = errno;
+		if (!hadMark)
+			fremovexattr(fd, COSMOE_ATTR_OVERFLOW_MARKER);
+		errno = error;
+		return -1;
+	}
+
+	fremovexattr(fd, attrName);
+	_RemoveMoreAttrs(fd, attribute, 1);
+	return 0;
+}
+
+
+/* For load_attr_names_for_fd(): the names of the attributes in the store. */
+void
+_cosmoe_attr_overflow_names(int fd, void (*add)(const char* name, void* cookie),
+	void* cookie)
+{
+	if (fgetxattr(fd, COSMOE_ATTR_OVERFLOW_MARKER, NULL, 0) < 0)
+		return;
+	char folder[B_PATH_NAME_LENGTH];
+	if (!_OverflowFolder(fd, folder, sizeof(folder)))
+		return;
+	DIR* directory = opendir(folder);
+	if (directory == NULL)
+		return;
+	struct dirent* entry;
+	while ((entry = readdir(directory)) != NULL) {
+		if (entry->d_name[0] == '.')
+			continue;
+		char attribute[B_ATTR_NAME_LENGTH + 1];
+		_AttributeFromOverflowFileName(entry->d_name, attribute, sizeof(attribute));
+		add(attribute, cookie);
+	}
+	closedir(directory);
+}
+
+
+/* For queries, which go by path: the start of a value in the store, like the
+   value that lgetxattr() would give. */
+ssize_t
+_cosmoe_attr_overflow_read(const char* filePath, const char* attribute,
+	void* buffer, size_t size, uint32* _type)
+{
+	if (lgetxattr(filePath, COSMOE_ATTR_OVERFLOW_MARKER, NULL, 0) < 0)
+		return -1;
+
+	struct statfs fileSystem;
+	struct statx file;
+	char folder[B_PATH_NAME_LENGTH];
+	char name[256];
+	char path[B_PATH_NAME_LENGTH * 2];
+	if (statfs(filePath, &fileSystem) != 0
+		|| statx(AT_FDCWD, filePath, AT_SYMLINK_NOFOLLOW,
+			STATX_BTIME | STATX_INO, &file) != 0
+		|| !_OverflowFolderFor(&fileSystem, &file, folder, sizeof(folder))
+		|| !_OverflowFileName(attribute, name, sizeof(name))) {
+		return -1;
+	}
+	snprintf(path, sizeof(path), "%s/%s", folder, name);
+
+	char* data = NULL;
+	ssize_t length = _ReadOverflowFile(path, _type, &data);
+	if (length < 0)
+		return -1;
+	if ((size_t)length > size)
+		length = size;
+	memcpy(buffer, data, length);
+	free(data);
+	return length;
+}
+
+
+/* Whether there is a store at all: if not, a query needn't look. */
+int
+_cosmoe_attr_overflow_exists(void)
+{
+	char root[B_PATH_NAME_LENGTH];
+	struct stat status;
+	return _OverflowRoot(root, sizeof(root)) && stat(root, &status) == 0;
+}
+
+
+/*! Writes a value in one piece if it fits. If not, split over several attributes
+	if that fits, then making room, and in the store as the last resort. If it can't
+	be written at all, the attribute stays what it was, as far as there is room for
+	that. \a _inStore says where it went: the store has the type, too.
+*/
+static int
+_WriteAttrValue(int fd, const char* attrName, const char* attribute, uint32 type,
+	const void* buffer, size_t size, int* _inStore)
+{
+	*_inStore = 0;
 	if (fsetxattr(fd, attrName, buffer, size, 0) == 0) {
 		if (_HasMoreAttr(fd, attribute))
 			_RemoveMoreAttrs(fd, attribute, 1);
+		_RemoveOverflowAttr(fd, attribute);
 		return 0;
 	}
 
-	if ((errno != E2BIG && errno != ENOSPC) || size <= COSMOE_ATTR_SPLIT_SIZE)
+	if (errno != E2BIG && errno != ENOSPC)
 		return -1;
+	int error = errno;
 
-	char* old = NULL;
-	ssize_t oldSize = _ReadWholeAttr(fd, attrName, attribute, &old);
-	if (_WriteSplitAttr(fd, attrName, attribute, (const char*)buffer, size) == 0) {
-		free(old);
-		return 0;
+	if (size > COSMOE_ATTR_SPLIT_SIZE) {
+		char* old = NULL;
+		ssize_t oldSize = _ReadWholeAttr(fd, attrName, attribute, &old);
+		if (_WriteSplitAttr(fd, attrName, attribute, (const char*)buffer, size)
+				== 0) {
+			free(old);
+			_RemoveOverflowAttr(fd, attribute);
+			return 0;
+		}
+		error = errno == ENAMETOOLONG ? ENOSPC : errno;
+		if (oldSize >= 0) {
+			if (oldSize <= COSMOE_ATTR_SPLIT_SIZE) {
+				_RemoveMoreAttrs(fd, attribute, 1);
+				fsetxattr(fd, attrName, old, oldSize, 0);
+			} else
+				_WriteSplitAttr(fd, attrName, attribute, old, oldSize);
+			free(old);
+		} else
+			_RemoveMoreAttrs(fd, attribute, 1);
 	}
 
-	int error = errno;
-	if (oldSize >= 0) {
-		if (oldSize <= COSMOE_ATTR_SPLIT_SIZE) {
-			_RemoveMoreAttrs(fd, attribute, 1);
-			fsetxattr(fd, attrName, old, oldSize, 0);
-		} else
-			_WriteSplitAttr(fd, attrName, attribute, old, oldSize);
-		free(old);
-	} else
-		_RemoveMoreAttrs(fd, attribute, 1);
+	// A value larger than this one can make room for it.
+	while (_SpillLargestAttr(fd, attribute, size)) {
+		if (fsetxattr(fd, attrName, buffer, size, 0) == 0) {
+			if (_HasMoreAttr(fd, attribute))
+				_RemoveMoreAttrs(fd, attribute, 1);
+			_RemoveOverflowAttr(fd, attribute);
+			return 0;
+		}
+	}
+
+	if (_StoreAttrValue(fd, attrName, attribute, type, buffer, size) == 0) {
+		*_inStore = 1;
+		return 0;
+	}
+	// (What is wrong is that it doesn't fit: not whatever the store's trouble is.)
 	errno = error;
 	return -1;
 }
@@ -1467,7 +1925,9 @@ ssize_t	fs_write_attr(int fd, const char *attribute, uint32 type, off_t pos, con
 #ifdef __APPLE__
 	int err = fsetxattr(fd, attrName, buffer, writeBytes, 0, 0);  // macOS: position, options
 #else
-	int err = _WriteAttrValue(fd, attrName, attribute, buffer, writeBytes);
+	int inStore = 0;
+	int err = _WriteAttrValue(fd, attrName, attribute, type, buffer, writeBytes,
+		&inStore);
 #endif
 	if (err != 0) {
 		// Setting errno a B_ value intentionally to match BeBook API
@@ -1478,10 +1938,20 @@ ssize_t	fs_write_attr(int fd, const char *attribute, uint32 type, off_t pos, con
 #endif
 		return (ssize_t)-1;
 	}
+#ifndef __APPLE__
+	// The type takes room, too.
+	while (!inStore && !_WritePersistentAttrTypeForFD(fd, attribute, type)) {
+		if (!_SpillLargestAttr(fd, attribute, 0)) {
+			errno = B_ERROR;
+			return (ssize_t)-1;
+		}
+	}
+#else
 	if (!_WritePersistentAttrTypeForFD(fd, attribute, type)) {
 		errno = B_ERROR;
 		return (ssize_t)-1;
 	}
+#endif
 
 	_SetAttrTypeForFD(fd, attribute, type);
 	
@@ -1560,10 +2030,12 @@ ssize_t	fs_read_attr(int fd, const char *attribute, uint32 type, off_t pos, void
 	// As on Haiku, a read can be of a part of a value. (Most are of all of it,
 	// and that takes one call.)
 	ssize_t err = pos == 0 ? fgetxattr(fd, attrName, buffer, readBytes) : 0;
-	if (pos != 0 || (err < 0 && errno == ERANGE)
+	if (pos != 0 || (err < 0 && (errno == ERANGE || errno == ENODATA))
 		|| (err == COSMOE_ATTR_SPLIT_SIZE && _HasMoreAttr(fd, attribute))) {
 		char* whole = NULL;
 		ssize_t size = _ReadWholeAttr(fd, attrName, attribute, &whole);
+		if (size < 0 && errno == ENODATA)
+			size = _ReadOverflowAttr(fd, attribute, NULL, &whole);
 		if (size >= 0) {
 			err = 0;
 			if (pos >= 0 && pos < size) {
@@ -1647,6 +2119,12 @@ int	fs_remove_attr(int fd, const char *attribute)
 #else
 	int err = fremovexattr(fd, attrName);     // Linux
 #endif
+#ifndef __APPLE__
+	if (err < 0 && _RemoveOverflowAttr(fd, attribute))
+		err = 0;
+	else if (err == 0)
+		_RemoveOverflowAttr(fd, attribute);
+#endif
 	if (err < 0) {
 		// Setting errno a B_ value intentionally to match BeBook API
 		errno = B_ENTRY_NOT_FOUND;
@@ -1708,6 +2186,19 @@ int	fs_stat_attr(int fd, const char *attribute, struct attr_info *attrInfo)
 	int size = fgetxattr(fd, attrName, NULL, 0, 0, 0);  // macOS
 #else
 	ssize_t size = _AttrSize(fd, attrName, attribute);
+	if (size < 0) {
+		uint32 storedType;
+		char* whole = NULL;
+		ssize_t stored = _ReadOverflowAttr(fd, attribute, &storedType, &whole);
+		if (stored >= 0) {
+			free(whole);
+			if (attrInfo != NULL) {
+				attrInfo->size = stored;
+				attrInfo->type = storedType;
+			}
+			return B_OK;
+		}
+	}
 #endif
 
 	if (size < 0)

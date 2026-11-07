@@ -306,17 +306,15 @@ test_failing_keeps_the_old_value()
 		== (ssize_t)small.size());
 	const ssize_t result = node.WriteAttr(name.c_str(), B_RAW_TYPE, 0, big.data(),
 		big.size());
-	if (result == (ssize_t)big.size()) {
-		// (A file system that takes it in one piece: nothing to find out here.)
-		printf("note: this file system takes 50 KB in one value\n");
-		return;
-	}
-	CHECK(result == B_NAME_TOO_LONG);
-	CHECK(read_whole(node, name.c_str()) == small);
+	// (With nothing to split it over, it goes to the store of what doesn't fit, or
+	// if that fails, the old value stays: see AttributeOverflowTest.)
+	CHECK(result == (ssize_t)big.size());
+	CHECK(read_whole(node, name.c_str()) == big);
 	CHECK(continuations(path) == 0);
 
-	// Failing halfway: the name of the tenth part doesn't fit, but those of the
-	// first nine do, and they have replaced what was there.
+	// Failing halfway, with nowhere else to put it: the name of the tenth part
+	// doesn't fit, but those of the first nine do, and they have replaced what was
+	// there.
 	const std::string halfway(236, 'h');
 	const std::string before = test_value(30000, 'e');
 	const std::string after = test_value(60000, 'f');
@@ -324,8 +322,11 @@ test_failing_keeps_the_old_value()
 		before.size()) == (ssize_t)before.size());
 	const int parts = continuations(path);
 	CHECK(parts > 0 && parts < 9);
+	const std::string home = getenv("HOME");
+	setenv("HOME", "/nonexistent/home", 1);
 	CHECK(node.WriteAttr(halfway.c_str(), B_RAW_TYPE, 0, after.data(),
-		after.size()) == B_NAME_TOO_LONG);
+		after.size()) == B_DEVICE_FULL);
+	setenv("HOME", home.c_str(), 1);
 	CHECK(read_whole(node, halfway.c_str()) == before);
 	CHECK(continuations(path) == parts);
 
