@@ -26,6 +26,7 @@ by area. The [README](../README.md) has the short version.
   middle clicks and the wheel on a tile reach the replicant where that tile is, and its menu
   is offered as a `com.canonical.dbusmenu`. Tested on X11 and headless sway, and with a test
   StatusNotifierWatcher driving it as Plasma does; not yet in a real Plasma or GNOME panel.
+  It's built with `-Denable_apps=false` too, so that an app's AppImage can bring it.
 - **The desktop's tray icons.** On Linux the Deskbar starts `TrayBridge`
   (`src/apps/traybridge`), a StatusNotifierItem host that puts each of the desktop's tray
   icons in the tray as a replicant: KDE and Qt apps, GTK apps using libappindicator or

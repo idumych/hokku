@@ -49,6 +49,13 @@ if is_linux
     app_dirs += ['tracker', 'traybridge', 'trayexport', 'notification_server']
 endif
 
+# TrayExport is part of BDeskbar on a desktop without Hokku's Deskbar, whether
+# Hokku's apps are wanted or not.
+glteapot_enabled = false
+if not get_option('enable_apps')
+    app_dirs = is_linux ? ['trayexport'] : []
+endif
+
 foreach app_dir : app_dirs
     app_name = ''
     app_enabled = true

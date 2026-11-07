@@ -1078,8 +1078,9 @@ subdir('src/tools')     # test framework (uses real libbe)
 # Before the apps: their install scripts type each app with mimeset, which
 # needs the system MIME database (the ELF executable sniffer rule) in place.
 subdir('data')
+# (src/apps with enable_apps=false is only TrayExport: see there)
+subdir('src/apps')
 if get_option('enable_apps')
-  subdir('src/apps')
   subdir('src/preferences')
 endif
 subdir('src/add-ons')
