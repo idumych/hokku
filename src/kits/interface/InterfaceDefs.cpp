@@ -76,6 +76,8 @@
 
 #if defined(__linux__)
 #include <dlfcn.h>
+#include <poll.h>
+#include <sys/inotify.h>
 #endif
 #include <CosmoeDecor.h>
 
@@ -607,6 +609,36 @@ UpdateCachedSystemColors()
 }
 
 
+static void
+NotifySystemColorsChanged()
+{
+	if (be_app == NULL)
+		return;
+
+	BMessage message(B_COLORS_UPDATED);
+	for (int32 index = 0; index < kColorWhichCount; index++) {
+		color_which which = index_to_color_which(index);
+		const char* colorName = ui_color_name(which);
+		if (colorName == NULL)
+			continue;
+
+		message.AddColor(colorName, ui_color(which));
+	}
+
+	be_app->PostMessage(&message);
+}
+
+
+static bool
+SameColor(const rgb_color& left, const rgb_color& right)
+{
+	return left.red == right.red
+		&& left.green == right.green
+		&& left.blue == right.blue
+		&& left.alpha == right.alpha;
+}
+
+
 #if 0
 // These will be useful if/when we support live updates of system colors and control looks.
 // They work, but they expose a lot of issues with controls that don't fully support having
@@ -641,36 +673,6 @@ InvalidateApplicationWindows()
 		window->UpdateIfNeeded();
 		window->UnlockLooper();
 	}
-}
-
-
-static void
-NotifySystemColorsChanged()
-{
-	if (be_app == NULL)
-		return;
-
-	BMessage message(B_COLORS_UPDATED);
-	for (int32 index = 0; index < kColorWhichCount; index++) {
-		color_which which = index_to_color_which(index);
-		const char* colorName = ui_color_name(which);
-		if (colorName == NULL)
-			continue;
-
-		message.AddColor(colorName, ui_color(which));
-	}
-
-	be_app->PostMessage(&message);
-}
-
-
-static bool
-SameColor(const rgb_color& left, const rgb_color& right)
-{
-	return left.red == right.red
-		&& left.green == right.green
-		&& left.blue == right.blue
-		&& left.alpha == right.alpha;
 }
 
 
@@ -894,6 +896,45 @@ static const char* kColorNames[kColorWhichCount] = {
 };
 
 static image_id sControlLookAddon = -1;
+// Hokku: the control look setting the loaded one is for ("" Haiku's)
+static BString sControlLookPath;
+
+
+/*!	The control look of the add-on at path, or Haiku's when path is empty or
+	the add-on can't be loaded. image is the add-on's, or -1; dark says
+	whether it is a dark variant, which brings dark system colours.
+*/
+static BControlLook*
+load_control_look(const BString& path, image_id& image, bool& dark)
+{
+	image = B_BAD_IMAGE_ID;
+	dark = false;
+	if (path.Length() > 0) {
+		BControlLook* (*instantiate)(image_id);
+		image = load_add_on(path.String());
+		if (image >= 0
+			&& get_image_symbol(image, "instantiate_control_look",
+				B_SYMBOL_TYPE_TEXT, (void **)&instantiate) == B_OK) {
+			BControlLook* look = instantiate(image);
+			if (look != NULL) {
+				// A bit of a hack to determine if the add-on is a dark
+				// variant, but it allows us to support both light and dark
+				// variants without needing a separate API for it.
+				dark = path.IFindFirst("dark") >= 0;
+				return look;
+			}
+			fprintf(stderr, "Failed to instantiate ControlLook add-on from %s\n",
+				path.String());
+		} else {
+			fprintf(stderr, "Failed to load ControlLook add-on from %s\n",
+				path.String());
+		}
+		if (image >= 0)
+			unload_add_on(image);
+		image = B_BAD_IMAGE_ID;
+	}
+	return new HaikuControlLook();
+}
 
 
 namespace BPrivate {
@@ -1827,35 +1868,10 @@ _init_interface_kit_()
 		be_clipboard = new BClipboard(NULL);
 
 	BString path;
-	if (get_control_look(path) && path.Length() > 0) {
-		BControlLook* (*instantiate)(image_id);
-
-		sControlLookAddon = load_add_on(path.String());
-		if (sControlLookAddon >= 0
-			&& get_image_symbol(sControlLookAddon,
-				"instantiate_control_look",
-				B_SYMBOL_TYPE_TEXT, (void **)&instantiate) == B_OK) {
-			be_control_look = instantiate(sControlLookAddon);
-			if (be_control_look == NULL) {
-				unload_add_on(sControlLookAddon);
-				sControlLookAddon = B_BAD_IMAGE_ID;
-				fprintf(stderr, "Failed to instantiate ControlLook add-on from %s\n", path.String());
-			}
-			BString controlLookName(path.String());
-			// A bit of a hack to determine if the add-on is a dark variant, but it allows us
-			// to support both light and dark variants without needing a separate API for it.
-			if (controlLookName.IFindFirst("dark") >= 0)
-				sUseDarkSystemColors = true;
-		} else {
-			fprintf(stderr, "Failed to load ControlLook add-on from %s\n", path.String());
-		}
-	}
-
-	// Fallback to compiled-in control look if no add-on found
-	if (be_control_look == NULL) {
-		//fprintf(stderr, "No ControlLook add-on is loaded.  Using built-in Haiku ControlLook\n");
-		be_control_look = new HaikuControlLook();
-	}
+	get_control_look(path);
+	be_control_look = load_control_look(path, sControlLookAddon,
+		sUseDarkSystemColors);
+	sControlLookPath = path;
 
 	_init_global_fonts_();
 
@@ -2081,6 +2097,184 @@ reload_appearance()
 	LoadSavedColors();
 	UpdateCachedSystemColors();
 	_init_global_fonts_();
+}
+
+
+static bool
+same_font(const BFont& a, const BFont& b)
+{
+	font_family familyA, familyB;
+	font_style styleA, styleB;
+	a.GetFamilyAndStyle(&familyA, &styleA);
+	b.GetFamilyAndStyle(&familyB, &styleB);
+	return strcmp(familyA, familyB) == 0 && strcmp(styleA, styleB) == 0
+		&& a.Size() == b.Size();
+}
+
+
+/*!	Views in one of the old system fonts take the new one, and every view is
+	laid out and drawn again: a new control look has sizes of its own.
+*/
+static void
+refresh_view(BView* view, const BFont* oldFonts, const BFont* newFonts,
+	bool fontsChanged)
+{
+	if (fontsChanged) {
+		BFont font;
+		view->GetFont(&font);
+		for (int32 i = 0; i < 3; i++) {
+			if (same_font(font, oldFonts[i])) {
+				// keeps what else the view set (rotation, shear, spacing)
+				font.SetFamilyAndStyle(newFonts[i].FamilyAndStyle());
+				font.SetSize(newFonts[i].Size());
+				view->SetFont(&font, B_FONT_FAMILY_AND_STYLE | B_FONT_SIZE);
+				break;
+			}
+		}
+	}
+	view->InvalidateLayout();
+	view->Invalidate();
+	for (int32 i = 0; i < view->CountChildren(); i++)
+		refresh_view(view->ChildAt(i), oldFonts, newFonts, fontsChanged);
+}
+
+
+/*!	Hokku: what Appearance, Power Theme, setdecor and the like change in the
+	settings, taken by this application as it runs: the colours, fonts and
+	control look, and the frames of its windows.
+*/
+void
+refresh_appearance()
+{
+	rgb_color oldColors[kColorWhichCount];
+	for (int32 i = 0; i < kColorWhichCount; i++)
+		oldColors[i] = ui_color(index_to_color_which(i));
+	const BFont oldFonts[3] = { *be_plain_font, *be_bold_font,
+		*be_fixed_font };
+
+	BString path;
+	get_control_look(path);
+	const bool lookChanged = path != sControlLookPath;
+	if (lookChanged) {
+		image_id image;
+		bool dark;
+		BControlLook* look = load_control_look(path, image, dark);
+		// Views may be drawing with the old one on other threads: it is
+		// kept until the application quits, its add-on loaded.
+		if (be_control_look != NULL)
+			sRetiredControlLooks.push_back(be_control_look);
+		be_control_look = look;
+		sControlLookAddon = image;
+		sUseDarkSystemColors = dark;
+		sControlLookPath = path;
+	}
+
+	reload_appearance();
+	_init_menu_info_();
+
+	bool colorsChanged = lookChanged;
+	for (int32 i = 0; i < kColorWhichCount && !colorsChanged; i++) {
+		colorsChanged = !SameColor(oldColors[i],
+			ui_color(index_to_color_which(i)));
+	}
+	const BFont newFonts[3] = { *be_plain_font, *be_bold_font,
+		*be_fixed_font };
+	bool fontsChanged = false;
+	for (int32 i = 0; i < 3 && !fontsChanged; i++)
+		fontsChanged = !same_font(oldFonts[i], newFonts[i]);
+
+	if (be_app == NULL)
+		return;
+
+	// the frames: the decorator, its colours and fonts, shadows and corners
+	apply_decorator(be_app->Display());
+
+	if (colorsChanged)
+		NotifySystemColorsChanged();
+	if (fontsChanged)
+		be_app->PostMessage(B_FONTS_UPDATED);
+	if (!colorsChanged && !fontsChanged && !lookChanged)
+		return;
+
+	std::vector<BWindow*> windows;
+	if (be_app->LockLooper()) {
+		for (int32 i = 0; i < be_app->CountWindows(); i++)
+			windows.push_back(be_app->WindowAt(i));
+		be_app->UnlockLooper();
+	}
+	for (BWindow* window : windows) {
+		if (window == NULL || !window->LockLooper())
+			continue;
+		for (int32 i = 0; i < window->CountChildren(); i++) {
+			refresh_view(window->ChildAt(i), oldFonts, newFonts,
+				fontsChanged);
+		}
+		window->Layout(true);
+		window->UnlockLooper();
+	}
+}
+
+
+#ifdef __linux__
+/*!	Watches the settings folder, and has the application refresh its
+	appearance a moment after they change (a theme writes several files).
+*/
+static status_t
+watch_appearance(void* data)
+{
+	const int fd = (int)(intptr_t)data;
+	char events[4096];
+	while (true) {
+		if (read(fd, events, sizeof(events)) <= 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		// the rest of what is being written
+		struct pollfd pfd = { fd, POLLIN, 0 };
+		while (poll(&pfd, 1, 250) > 0) {
+			if (read(fd, events, sizeof(events)) <= 0)
+				break;
+		}
+		if (be_app != NULL)
+			be_app->PostMessage(kMsgRefreshAppearance);
+	}
+	close(fd);
+	return B_OK;
+}
+#endif
+
+
+void
+watch_appearance_settings()
+{
+#ifdef __linux__
+	static bool sWatching = false;
+	if (sWatching)
+		return;
+	BPath folder;
+	if (find_directory(B_USER_SETTINGS_DIRECTORY, &folder) != B_OK
+		|| folder.Append("system/app_server") != B_OK) {
+		return;
+	}
+	create_directory(folder.Path(), 0755);
+	const int fd = inotify_init1(IN_CLOEXEC);
+	if (fd < 0)
+		return;
+	if (inotify_add_watch(fd, folder.Path(), IN_CLOSE_WRITE | IN_MOVED_TO)
+			< 0) {
+		close(fd);
+		return;
+	}
+	const thread_id thread = spawn_thread(watch_appearance,
+		"appearance watcher", B_LOW_PRIORITY, (void*)(intptr_t)fd);
+	if (thread < 0) {
+		close(fd);
+		return;
+	}
+	resume_thread(thread);
+	sWatching = true;
+#endif
 }
 
 

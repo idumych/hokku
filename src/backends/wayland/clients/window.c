@@ -42,6 +42,7 @@
 #include <sys/timerfd.h>
 #include <sys/eventfd.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 
 #include <xkbcommon/xkbcommon.h>
@@ -173,6 +174,11 @@ struct display {
 	struct theme *theme;
 	/* the Gonx frame, when that decorator is chosen */
 	struct gonx_style *gonx_style;
+	/* a new one from the application's thread, which the display thread
+	 * takes and re-frames the windows with (display_take_gonx_style()) */
+	pthread_mutex_t gonx_lock;
+	struct gonx_style *gonx_next;
+	int gonx_next_set;
 
 	struct wl_cursor_theme *cursor_theme;
 	struct wl_cursor **cursors;
@@ -8884,16 +8890,78 @@ window_get_decorator_size(struct window *window, int *borderWidth, int *tabHeigh
 	(void)window;
 }
 
+/* Called from the application's thread: the display thread takes the
+ * style, and re-frames the windows it has, before it next handles them. */
 void
 display_set_gonx_style(struct display *display,
 		       const struct gonx_style *style)
 {
-	free(display->gonx_style);
-	display->gonx_style = NULL;
+	struct gonx_style *copy = NULL;
 	if (style != NULL) {
-		display->gonx_style = xmalloc(sizeof *style);
-		*display->gonx_style = *style;
+		copy = xmalloc(sizeof *style);
+		*copy = *style;
 	}
+
+	pthread_mutex_lock(&display->gonx_lock);
+	free(display->gonx_next);
+	display->gonx_next = copy;
+	display->gonx_next_set = 1;
+	pthread_mutex_unlock(&display->gonx_lock);
+
+	/* wakes the display thread */
+	display_trigger_redraw(display, NULL, NULL, NULL);
+}
+
+/* Each window as the new style has it: Hokku's frame rebuilt, or the
+ * compositor asked for its own frame, or for none of its own. */
+static void
+display_reframe_windows(struct display *display)
+{
+	struct window *window;
+
+	wl_list_for_each(window, &display->window_list, link) {
+		if (window->frame == NULL || window->custom)
+			continue;
+		const int client_side = window->desktop_mode
+			|| window_uses_gonx(window) || window_is_borderless(window);
+		if (window->xdg_toplevel_decoration != NULL) {
+			zxdg_toplevel_decoration_v1_set_mode(
+				window->xdg_toplevel_decoration,
+				client_side
+					? ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
+					: ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+		}
+		/* a frame of Hokku's own changes now; the compositor's comes
+		 * and goes with its answer (window_apply_decoration_mode()) */
+		if (window->frame->frame != NULL) {
+			window_frame_disable_client_side_decorations(window);
+			if (window->xdg_toplevel_decoration == NULL || client_side)
+				window_frame_enable_client_side_decorations(window);
+		}
+		window_schedule_redraw(window);
+	}
+}
+
+static void
+display_take_gonx_style(struct display *display)
+{
+	pthread_mutex_lock(&display->gonx_lock);
+	if (!display->gonx_next_set) {
+		pthread_mutex_unlock(&display->gonx_lock);
+		return;
+	}
+	struct gonx_style *next = display->gonx_next;
+	display->gonx_next = NULL;
+	display->gonx_next_set = 0;
+	pthread_mutex_unlock(&display->gonx_lock);
+
+	const int same = (next == NULL && display->gonx_style == NULL)
+		|| (next != NULL && display->gonx_style != NULL
+		    && memcmp(next, display->gonx_style, sizeof *next) == 0);
+	free(display->gonx_style);
+	display->gonx_style = next;
+	if (!same)
+		display_reframe_windows(display);
 }
 
 int
@@ -10716,6 +10784,7 @@ display_create(const int *argc, const char *argv[])
 
 	wl_list_init(&d->window_list);
 	wl_list_init(&d->deferred_list);
+	pthread_mutex_init(&d->gonx_lock, NULL);
 	wl_list_init(&d->input_list);
 	wl_list_init(&d->output_list);
 	wl_list_init(&d->global_list);
@@ -11094,6 +11163,9 @@ display_run(struct display *display)
 		 * that deferred tasks will run even if there are no Wayland
 		 * events to dispatch.
 		 */
+		/* a new frame style, before windows are made with the old one */
+		display_take_gonx_style(display);
+
 		run_deferred_tasks(display);
 
 		/* Check for backend messages from BWindow via PortLink */

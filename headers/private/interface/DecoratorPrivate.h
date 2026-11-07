@@ -41,6 +41,14 @@ status_t apply_decorator(void* display);
 // program that isn't told when they change (a compositor drawing frames)
 void reload_appearance();
 
+// Hokku: running applications take a new look as it is chosen. Each one
+// watches the settings (watch_appearance_settings(), started with the
+// application), and on kMsgRefreshAppearance takes the new colours, fonts,
+// control look and window frames (refresh_appearance()).
+enum { kMsgRefreshAppearance = 'hkRA' };
+void watch_appearance_settings();
+void refresh_appearance();
+
 
 }	// namespace BPrivate
 
