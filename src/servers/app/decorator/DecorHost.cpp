@@ -26,6 +26,7 @@
 #include <Autolock.h>
 #include <Bitmap.h>
 #include <Directory.h>
+#include <Entry.h>
 #include <FindDirectory.h>
 #include <Locker.h>
 #include <Path.h>
@@ -447,6 +448,9 @@ find_add_on(const char* name)
 				continue;
 			}
 
+			BEntry entry(path.Path());
+			if (!entry.IsFile())
+				continue;
 			image_id image = load_add_on(path.Path());
 			if (image < 0)
 				continue;
