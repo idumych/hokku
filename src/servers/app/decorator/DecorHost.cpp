@@ -381,6 +381,23 @@ cut_corners(cosmoe_decor* decor, cairo_t* cr)
 // #pragma mark - the frame's bitmap
 
 
+/*!	How many device pixels a unit of cr is, as a percentage for
+	BWindow::SetDisplayScale(): its transformation and its surface's device
+	scale.
+*/
+static int32
+target_scale_percent(cairo_t* cr)
+{
+	cairo_matrix_t matrix;
+	cairo_get_matrix(cr, &matrix);
+	double deviceX = 1, deviceY = 1;
+	cairo_surface_get_device_scale(cairo_get_target(cr), &deviceX, &deviceY);
+	const double scale = fabs(matrix.xx) * deviceX;
+	const int32 percent = (int32)lround(scale * 100);
+	return std::max((int32)100, std::min(percent, (int32)400));
+}
+
+
 static bool
 prepare_bitmap(cosmoe_decor* decor, int32 width, int32 height)
 {
@@ -731,6 +748,13 @@ decor_paint(cosmoe_decor* decor, cairo_t* cr)
 	BBitmap* bitmap = decor->bitmap;
 	if (!bitmap->Lock())
 		return;
+
+	// Drawn at the scale of what it is painted on, a HiDPI screen's, as the
+	// views of a window there are; then laid on it pixel for pixel.
+	const int32 wanted = target_scale_percent(cr);
+	if (decor->view->Window()->DisplayScale() != wanted)
+		decor->view->Window()->SetDisplayScale(wanted);
+
 	cairo_surface_t* surface = BBitmap::Private(bitmap).ViewSurface();
 	if (surface == NULL) {
 		bitmap->Unlock();

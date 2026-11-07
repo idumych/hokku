@@ -4465,8 +4465,10 @@ BWindow::SetDisplayScale(int32 scalePercent)
 	// Recreate backing surface with new scale
 	_CreateBackingSurface();
 	
-	// Tell backend about the new buffer scale (Wayland needs this)
-	if (fWindowToken != B_NULL_TOKEN) {
+	// Tell backend about the new buffer scale (Wayland needs this); an
+	// off-screen bitmap's window has none (libdecorator scales one to draw
+	// a frame at the screen's scale)
+	if (fWindowToken != B_NULL_TOKEN && !fOffscreen) {
 		const char* backend_name = cosmoe_backend_get_current_name();
 		if (backend_name && strcmp(backend_name, "Wayland") == 0) {
 			cosmoe_window_set_buffer_scale(be_app->Display(), fWindowToken,
