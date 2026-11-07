@@ -1289,6 +1289,12 @@ BFont::GetTruncatedStrings(const char* stringArray[], int32 numStrings,
 			resultArray[i] = stringArray[i];
 			int32 numChars = resultArray[i].CountChars();
 
+			// Hokku: the glyphs' escapements leave kerning out, so they can
+			// add up to more than the string's width: a string that fits as
+			// it is drawn stays whole
+			if (StringWidth(stringArray[i]) <= width)
+				continue;
+
 			// get the escapement of each glyph in font units
 			float* escapementArray = new float[numChars];
 			GetEscapements(stringArray[i], numChars, NULL, escapementArray);
