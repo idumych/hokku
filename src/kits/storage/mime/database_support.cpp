@@ -15,6 +15,7 @@
 #endif
 
 #include <new>
+#include <stdlib.h>
 
 #include <Bitmap.h>
 #include <Directory.h>
@@ -108,6 +109,15 @@ init_default_database_location()
 			/ sizeof(kBaseDirectoryConstants[0]); i++) {
 		BString directoryPath;
 		BPath path;
+		// Hokku: the system database somewhere else (COSMOE_SYSTEM_MIME_DB):
+		// an AppImage's can't be read where it's packed, since its runtime
+		// can't serve extended attributes, so it unpacks it and names it here
+		const char* systemDatabase = getenv("COSMOE_SYSTEM_MIME_DB");
+		if (kBaseDirectoryConstants[i] == B_SYSTEM_DATA_DIRECTORY
+			&& systemDatabase != NULL && systemDatabase[0] != '\0') {
+			databaseLocation.AddDirectory(systemDatabase);
+			continue;
+		}
 		if (find_directory(kBaseDirectoryConstants[i], &path) == B_OK)
 			directoryPath = path.Path();
 		else
