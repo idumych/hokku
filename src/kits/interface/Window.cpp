@@ -77,6 +77,8 @@
 #include <util/SplayTree.h>
 #include <input_event_codes_compat.h>
 #include <cairo.h>
+#include <set>
+#include <mutex>
 
 #include <BitmapCairoUtils.h>
 
@@ -308,6 +310,116 @@ private:
 			BMessage*		fMessage;
 			BHandler*		fTarget;
 };
+
+
+// #pragma mark - modal windows
+
+
+/*!	Without an app_server to keep them, the kit keeps the modal windows'
+	subsets and when each window was shown, and a modal window blocks the
+	input of the windows it covers, as Haiku's Desktop does: B_MODAL_SUBSET
+	the windows in its subset, B_MODAL_APP and B_MODAL_ALL the application's
+	windows; a modal window only those shown before it. Menus, tool tips and
+	the like (their private feels) aren't blocked.
+*/
+namespace {
+
+std::mutex sModalLock;
+std::map<const BWindow*, std::set<const BWindow*> > sModalSubsets;
+std::map<const BWindow*, int64> sWindowShownAt;
+int64 sWindowShowCount = 0;
+
+
+bool
+can_be_blocked(window_feel feel)
+{
+	switch (feel) {
+		case B_NORMAL_WINDOW_FEEL:
+		case B_FLOATING_SUBSET_WINDOW_FEEL:
+		case B_FLOATING_APP_WINDOW_FEEL:
+		case B_FLOATING_ALL_WINDOW_FEEL:
+		case B_MODAL_SUBSET_WINDOW_FEEL:
+		case B_MODAL_APP_WINDOW_FEEL:
+		case B_MODAL_ALL_WINDOW_FEEL:
+			return true;
+		default:
+			return false;
+	}
+}
+
+
+// sModalLock held
+bool
+modal_blocks(const BWindow* modal, const BWindow* window)
+{
+	if (modal == window || !modal->IsModal() || modal->IsHidden()
+		|| !can_be_blocked(window->Feel()))
+		return false;
+	if (window->IsModal()) {
+		std::map<const BWindow*, int64>::iterator at
+			= sWindowShownAt.find(window);
+		std::map<const BWindow*, int64>::iterator modalAt
+			= sWindowShownAt.find(modal);
+		if (at == sWindowShownAt.end() || modalAt == sWindowShownAt.end()
+			|| at->second > modalAt->second)
+			return false;
+	}
+	if (modal->Feel() != B_MODAL_SUBSET_WINDOW_FEEL)
+		return true;
+	std::map<const BWindow*, std::set<const BWindow*> >::iterator subset
+		= sModalSubsets.find(modal);
+	return subset != sModalSubsets.end() && subset->second.count(window) > 0;
+}
+
+
+// the modal window that blocks `window`'s input, NULL if none (the newest)
+BWindow*
+modal_blocker(const BWindow* window)
+{
+	if (be_app == NULL)
+		return NULL;
+	std::vector<BWindow*> windows;
+	for (int32 i = 0; BWindow* other = be_app->WindowAt(i); i++) {
+		if (other->IsModal())
+			windows.push_back(other);
+	}
+	if (windows.empty())
+		return NULL;
+	std::lock_guard<std::mutex> lock(sModalLock);
+	BWindow* blocker = NULL;
+	int64 newest = -1;
+	for (size_t i = 0; i < windows.size(); i++) {
+		if (!modal_blocks(windows[i], window))
+			continue;
+		std::map<const BWindow*, int64>::iterator at
+			= sWindowShownAt.find(windows[i]);
+		int64 shown = at != sWindowShownAt.end() ? at->second : 0;
+		if (shown > newest) {
+			newest = shown;
+			blocker = windows[i];
+		}
+	}
+	return blocker;
+}
+
+
+bool
+is_input_message(uint32 what)
+{
+	switch (what) {
+		case B_MOUSE_DOWN:
+		case B_MOUSE_WHEEL_CHANGED:
+		case B_KEY_DOWN:
+		case B_KEY_UP:
+		case B_UNMAPPED_KEY_DOWN:
+		case B_UNMAPPED_KEY_UP:
+			return true;
+		default:
+			return false;
+	}
+}
+
+} // namespace
 
 
 BWindow::Shortcut::Shortcut(uint32 key, uint32 modifiers, BMenuItem* item)
@@ -1997,6 +2109,16 @@ BWindow::BWindow(BRect frame, int32 bitmapToken)
 
 BWindow::~BWindow()
 {
+	{
+		std::lock_guard<std::mutex> lock(sModalLock);
+		sModalSubsets.erase(this);
+		std::map<const BWindow*, std::set<const BWindow*> >::iterator subset;
+		for (subset = sModalSubsets.begin(); subset != sModalSubsets.end();
+				subset++)
+			subset->second.erase(this);
+		sWindowShownAt.erase(this);
+	}
+
 	if (BMenu* menu = dynamic_cast<BMenu*>(fFocus)) {
 		MenuPrivate(menu).QuitTracking();
 	}
@@ -3814,6 +3936,8 @@ BWindow::AddToSubset(BWindow* window)
 			&& fFeel != B_FLOATING_SUBSET_WINDOW_FEEL))
 		return B_BAD_VALUE;
 
+	std::lock_guard<std::mutex> lock(sModalLock);
+	sModalSubsets[this].insert(window);
 	return B_OK;
 }
 
@@ -3826,6 +3950,11 @@ BWindow::RemoveFromSubset(BWindow* window)
 			&& fFeel != B_FLOATING_SUBSET_WINDOW_FEEL))
 		return B_BAD_VALUE;
 
+	std::lock_guard<std::mutex> lock(sModalLock);
+	std::map<const BWindow*, std::set<const BWindow*> >::iterator subset
+		= sModalSubsets.find(this);
+	if (subset != sModalSubsets.end())
+		subset->second.erase(window);
 	return B_OK;
 }
 
@@ -4331,6 +4460,11 @@ BWindow::Show()
 	bool runCalled = true;
 	if (Lock()) {
 		fShowLevel--;
+
+		if (fShowLevel == 0) {
+			std::lock_guard<std::mutex> lock(sModalLock);
+			sWindowShownAt[this] = ++sWindowShowCount;
+		}
 
 		_SendShowOrHideMessage();
 
@@ -5240,6 +5374,22 @@ BWindow::task_looper()
 					continue;
 				}
 				
+				// A modal window over this one takes its input; a click
+				// brings it forward
+				if (is_input_message(fLastMessage->what)) {
+					if (BWindow* blocker = modal_blocker(this)) {
+						if (fLastMessage->what == B_MOUSE_DOWN
+							&& blocker->LockWithTimeout(100000) == B_OK) {
+							blocker->Activate();
+							blocker->Unlock();
+						}
+						delete fLastMessage;
+						fLastMessage = NULL;
+						Unlock();
+						continue;
+					}
+				}
+
 				// Get the target handler
 				BMessage::Private messagePrivate(fLastMessage);
 				bool usePreferred = messagePrivate.UsePreferredTarget();
