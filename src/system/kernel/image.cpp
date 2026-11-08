@@ -41,6 +41,7 @@
 	#include <process.h>  // For getpid() on Windows
 #else
 	#include <unistd.h>   // For getpid() on POSIX systems
+	#include <sys/wait.h>
 #endif
 
 #include <image.h>
@@ -205,21 +206,30 @@ thread_id load_image(int32 argc, const char **argv, const char **envp)
 #else
 		execvpe(argv[0], (char* const*)argv, (char* const*)envp);
 #endif
-		/* If exec fails */
-		return B_ERROR;
+		/* If exec fails: the child must not go on as a copy of the
+		 * parent */
+		_exit(127);
 	}
 	else
 	{
-		/* Parent: wait for main thread registration */
+		/* Parent: wait for main thread registration; a program that
+		 * doesn't use the kits never registers one, and its process id
+		 * stands for its main thread, as a team's id does on Haiku */
 		thread_id main;
 		int tries = 50;
 
 		while (tries > 0 && ((main = _main_thread_for_team(pid)) < 0))
 		{
+			// (gone already: left for whoever waits for it, an exec that
+			// failed an error)
+			siginfo_t info = {};
+			if (waitid(P_PID, pid, &info, WEXITED | WNOHANG | WNOWAIT) == 0
+					&& info.si_pid == pid)
+				return info.si_code == CLD_EXITED && info.si_status == 127 ? B_ERROR : pid;
 			snooze(50000);
 			tries--;
 		}
-		return main;
+		return main >= 0 ? main : pid;
 	}
 #endif
 }
