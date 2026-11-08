@@ -82,6 +82,7 @@
 
 
 extern thread_id _main_thread_for_team(team_id);
+extern void _remove_team_threads(team_id);
 
 
 namespace {
@@ -200,7 +201,10 @@ thread_id load_image(int32 argc, const char **argv, const char **envp)
 	}
 	else if (pid == 0)
 	{
-		/* Child: exec the new process. */
+		/* Child: exec the new process. The main thread the fork
+		 * registered in the table it shares with its parent goes first:
+		 * the program registers its own after the exec */
+		_remove_team_threads(getpid());
 #ifdef __APPLE__
 		execve(argv[0], (char* const*)argv, (char* const*)envp);
 #else
@@ -212,24 +216,18 @@ thread_id load_image(int32 argc, const char **argv, const char **envp)
 	}
 	else
 	{
-		/* Parent: wait for main thread registration; a program that
-		 * doesn't use the kits never registers one, and its process id
-		 * stands for its main thread, as a team's id does on Haiku */
-		thread_id main;
-		int tries = 50;
-
-		while (tries > 0 && ((main = _main_thread_for_team(pid)) < 0))
-		{
-			// (gone already: left for whoever waits for it, an exec that
-			// failed an error)
-			siginfo_t info = {};
-			if (waitid(P_PID, pid, &info, WEXITED | WNOHANG | WNOWAIT) == 0
-					&& info.si_pid == pid)
-				return info.si_code == CLD_EXITED && info.si_status == 127 ? B_ERROR : pid;
-			snooze(50000);
-			tries--;
+		/* Parent: the process id stands for its main thread, as a team's
+		 * id does on Haiku (wait_for_thread waits for it, kill_team
+		 * kills it); an exec that failed straight away is an error */
+		snooze(10000);
+		siginfo_t info = {};
+		if (waitid(P_PID, pid, &info, WEXITED | WNOHANG | WNOWAIT) == 0
+				&& info.si_pid == pid && info.si_code == CLD_EXITED
+				&& info.si_status == 127) {
+			waitpid(pid, NULL, 0);
+			return B_ENTRY_NOT_FOUND;
 		}
-		return main >= 0 ? main : pid;
+		return pid;
 	}
 #endif
 }

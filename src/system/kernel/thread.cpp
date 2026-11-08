@@ -857,9 +857,23 @@ wait_for_thread(thread_id id, status_t *_returnCode)
 	if (id < 0)
 		return B_BAD_THREAD_ID;
 
+	bool locked = true;
 	pthread_mutex_lock(&thread_sync->mutex);
 	for (thread_id i = 0; i < MAX_THREADS; i++)
 	{
+		if (thread_table[i].thread == id && thread_table[i].team != 0
+			&& thread_table[i].team != getpid())
+		{
+			// another process's main thread (a child load_image started
+			// registers it in the table it shares with its parent before
+			// its exec): waiting for it waits for the process
+			pid_t team = (pid_t)thread_table[i].team;
+			pthread_mutex_unlock(&thread_sync->mutex);
+			locked = false;
+			remove_thread_table_entry(id);
+			id = (thread_id)team;
+			break;
+		}
 		if (thread_table[i].thread == id)
 		{
 			void *returnValue = NULL;
@@ -878,7 +892,8 @@ wait_for_thread(thread_id id, status_t *_returnCode)
 			return B_BAD_THREAD_ID;
 		}
 	}
-	pthread_mutex_unlock(&thread_sync->mutex);
+	if (locked)
+		pthread_mutex_unlock(&thread_sync->mutex);
 
 	// a program load_image started that doesn't use the kits: its process
 	// id stands for its main thread; waiting for it waits for the process,
@@ -997,6 +1012,25 @@ team_id	_get_next_team(team_id id)
 	}
 
 	return (nextTeam != INT_MAX) ? nextTeam : B_NO_MORE_TEAMS;
+}
+
+
+// the table's entries of a team (a forked child's, before its exec)
+void _remove_team_threads(team_id team)
+{
+	if (init_thread() != B_OK)
+		return;
+
+	pthread_mutex_lock(&thread_sync->mutex);
+	for (thread_id i = 0; i < MAX_THREADS; i++)
+	{
+		if (thread_table[i].thread != FREE_SLOT && thread_table[i].team == team)
+		{
+			thread_table[i].thread = FREE_SLOT;
+			thread_table[i].team = 0;
+		}
+	}
+	pthread_mutex_unlock(&thread_sync->mutex);
 }
 
 
