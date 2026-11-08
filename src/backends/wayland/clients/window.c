@@ -2568,6 +2568,10 @@ surface_destroy(struct surface *surface)
 	if (surface->viewport)
 		wp_viewport_destroy(surface->viewport);
 
+	/* Its preferred_scale events would reach the freed surface */
+	if (surface->fractional_scale)
+		wp_fractional_scale_v1_destroy(surface->fractional_scale);
+
 	if (surface->cm_surface)
 		xx_color_management_surface_v4_destroy(surface->cm_surface);
 
@@ -3275,8 +3279,10 @@ widget_set_viewport_destination(struct widget *widget, int width, int height)
 		if (!surface->viewport)
 			return -1;
 
-		if (surface->fractional_scale)
+		if (surface->fractional_scale) {
 			wp_fractional_scale_v1_destroy(surface->fractional_scale);
+			surface->fractional_scale = NULL;
+		}
 	}
 
 	widget->viewport_dest_width = width;
