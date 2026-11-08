@@ -46,6 +46,7 @@
 #include <OS.h>
 #ifndef _WIN32
 #include <sys/mman.h>
+#include <sys/wait.h>
 #endif
 
 //#define TRACE_THREAD
@@ -878,6 +879,19 @@ wait_for_thread(thread_id id, status_t *_returnCode)
 		}
 	}
 	pthread_mutex_unlock(&thread_sync->mutex);
+
+	// a program load_image started that doesn't use the kits: its process
+	// id stands for its main thread; waiting for it waits for the process,
+	// its exit status the return code
+	int status;
+	pid_t waited;
+	while ((waited = waitpid((pid_t)id, &status, 0)) < 0 && errno == EINTR)
+		;
+	if (waited == (pid_t)id) {
+		if (_returnCode)
+			*_returnCode = WIFEXITED(status) ? WEXITSTATUS(status) : B_INTERRUPTED;
+		return B_OK;
+	}
 
 	return B_BAD_THREAD_ID;
 }
