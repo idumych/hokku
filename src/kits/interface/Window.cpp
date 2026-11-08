@@ -713,7 +713,6 @@ BWindow::_DrawPointerTrackingOverlayLocked(cairo_t* cr)
 }
 
 static inline double _DisplayScaleFactor(int32 scalePercent);
-static inline int32 _DisplayScaleBufferScale(int32 scalePercent);
 static inline int32 _RefreshWindowDisplayScale(BWindow* window);
 
 
@@ -838,17 +837,6 @@ _DisplayScaleFactor(int32 scalePercent)
 	return (double)scalePercent / 100.0;
 }
 
-
-static inline int32
-_DisplayScaleBufferScale(int32 scalePercent)
-{
-	int32 bufferScale = (scalePercent + 50) / 100;
-	if (bufferScale < 1)
-		return 1;
-	if (bufferScale > 4)
-		return 4;
-	return bufferScale;
-}
 
 static inline int32
 _RefreshWindowDisplayScale(BWindow* window)
@@ -4656,8 +4644,11 @@ BWindow::SetDisplayScale(int32 scalePercent)
 	if (fWindowToken != B_NULL_TOKEN && !fOffscreen) {
 		const char* backend_name = cosmoe_backend_get_current_name();
 		if (backend_name && strcmp(backend_name, "Wayland") == 0) {
+			// The backend takes a percentage: rounding 190% to a whole
+			// buffer scale of 2 clamped it to 100%, and the compositor
+			// stretched a 1x buffer
 			cosmoe_window_set_buffer_scale(be_app->Display(), fWindowToken,
-				_DisplayScaleBufferScale(scalePercent));
+				scalePercent);
 			
 			// Resize window to accommodate scaled content
 			// The frame size stays logical, but backend needs to allocate physical pixels
