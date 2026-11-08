@@ -14,7 +14,8 @@
  *     crashed, by the next team that creates or looks up an area.
  *   - resize_area() grows the backing object for every team, but only the
  *     caller's mapping changes size; clones elsewhere keep their old size.
- *   - _kern_transfer_area() changes the owner; it doesn't remap.
+ *   - _kern_transfer_area() changes the owner and unmaps the area here; the
+ *     new owner maps it when it first looks it up (get_area_info()).
  *   - addr_spec is ignored: the kernel picks the address.
  *   - One user's processes share one registry; other users can't clone.
  */
@@ -361,7 +362,7 @@ add_local(area_id id, void* address, size_t size)
 
 
 static void
-fill_info(const registry_area* entry, area_info* info)
+fill_info(registry_area* entry, area_info* info)
 {
 	memset(info, 0, sizeof(*info));
 	info->area = entry->id;
@@ -379,6 +380,20 @@ fill_info(const registry_area* entry, area_info* info)
 	if (local != NULL)
 		info->address = local->address;
 	pthread_mutex_unlock(&sLocalLock);
+
+	/* An area another team handed this one (_kern_transfer_area()): mapped
+	 * here now */
+	if (local == NULL && entry->team == getpid()) {
+		void* address = map_backing(entry->backing, entry->size,
+			entry->protection, false);
+		if (address != NULL) {
+			if (add_local(entry->id, address, entry->size)) {
+				entry->address = address;
+				info->address = address;
+			} else
+				munmap(address, page_round(entry->size));
+		}
+	}
 }
 
 
@@ -657,8 +672,9 @@ resize_area(area_id id, size_t newSize)
 }
 
 
-/* Private: hands an area to another team. Without a kernel to remap it,
- * only the owner changes; returns the area's ID, which stays the same. */
+/* Private: hands an area to another team: it's unmapped here, and the
+ * target maps it when it looks it up; returns the area's ID, which stays the
+ * same. */
 status_t
 _kern_transfer_area(area_id id, void** _address, uint32 addressSpec,
 	team_id target)
@@ -670,6 +686,16 @@ _kern_transfer_area(area_id id, void** _address, uint32 addressSpec,
 	if (entry == NULL) {
 		unlock_registry();
 		return B_BAD_VALUE;
+	}
+	if (target != getpid() && entry->team == getpid()) {
+		pthread_mutex_lock(&sLocalLock);
+		local_area* local = find_local(id);
+		if (local != NULL) {
+			munmap(local->address, page_round(local->size));
+			memset(local, 0, sizeof(*local));
+		}
+		pthread_mutex_unlock(&sLocalLock);
+		entry->address = NULL;
 	}
 	entry->team = target;
 	if (_address != NULL)

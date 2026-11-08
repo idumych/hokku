@@ -298,7 +298,25 @@ handle_remote_connection(int fd)
 	}
 
 	status_t result = read_exact(fd, buffer, header.size);
-	if (result == B_OK) {
+	if (result == B_OK && header.size > B_PAGE_SIZE * 10) {
+		// too large for a port message: passed by area, as BMessage passes
+		// large messages to a port itself
+		BMessage message;
+		result = message.Unflatten(buffer);
+		BMessage::message_header* areaHeader = NULL;
+		if (result == B_OK)
+			result = BMessage::Private(message).FlattenToArea(&areaHeader);
+		if (result == B_OK) {
+			do {
+				result = write_port_etc(header.port, kPortMessageCode,
+					areaHeader, sizeof(BMessage::message_header),
+					B_RELATIVE_TIMEOUT, B_INFINITE_TIMEOUT);
+			} while (result == B_INTERRUPTED);
+			if (result != B_OK && areaHeader->message_area >= 0)
+				delete_area(areaHeader->message_area);
+			free(areaHeader);
+		}
+	} else if (result == B_OK) {
 		do {
 			result = write_port_etc(header.port, kPortMessageCode, buffer,
 				header.size, B_RELATIVE_TIMEOUT, B_INFINITE_TIMEOUT);
