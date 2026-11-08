@@ -2019,6 +2019,57 @@ window_focus_handler(cosmoe_window_t _window, bool focused, void* user_data)
 	win->PostMessage(&msg, win);
 }
 
+// Files dragged in from another application and dropped on the window: a
+// B_SIMPLE_DATA message with their "refs", dropped on the view under the
+// point, as Tracker's drops arrive on Haiku
+void
+_hokku_window_files_dropped(void* widget, float x, float y,
+	const char* const* paths, int32_t count, void* user_data)
+{
+	intptr_t token = (intptr_t)user_data;
+	BHandler* handler = NULL;
+	if (paths == NULL || count <= 0 || token <= B_NULL_TOKEN
+		|| gDefaultTokens.GetToken((int32)token, B_HANDLER_TOKEN,
+			(void**)&handler) != B_OK) {
+		return;
+	}
+	BWindow* window = dynamic_cast<BWindow*>(handler);
+	if (window == NULL)
+		return;
+
+	// (window coordinates, as the pointer's)
+	rectangle allocation;
+	cosmoe_widget_get_allocation((cosmoe_widget_t)widget, &allocation);
+	x -= allocation.x;
+	y -= allocation.y;
+	double scale = _DisplayScaleFactor(_RefreshWindowDisplayScale(window));
+	if (_PointerCoordsNeedScaleDivide() && scale > 1.0) {
+		x /= scale;
+		y /= scale;
+	}
+
+	BMessage dropped(B_SIMPLE_DATA);
+	for (int32 i = 0; i < count; i++) {
+		entry_ref ref;
+		if (get_ref_for_path(paths[i], &ref) == B_OK)
+			dropped.AddRef("refs", &ref);
+	}
+	if (!dropped.HasRef("refs"))
+		return;
+	BMessage::Private(&dropped).SetWasDropped(true);
+
+	if (!window->Lock())
+		return;
+	BView* target = window->_FindView(window->fTopView, BPoint(x, y));
+	if (target == NULL)
+		target = window->fTopView;
+	dropped.AddPoint("_drop_point_", BPoint(x, y) + window->Frame().LeftTop());
+	dropped.AddPoint("_drop_offset_", B_ORIGIN);
+	window->PostMessage(&dropped, target);
+	window->Unlock();
+}
+
+
 thread_id BWindow::sDisplayThread = -1;
 
 // Cosmoe: fix sticky mode handling in our appserver-less case

@@ -21,6 +21,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+// BWindow (Window.cpp): files from another application dropped on a window
+extern void _hokku_window_files_dropped(void* widget, float x, float y,
+	const char* const* paths, int32_t count, void* user_data);
+
 //#define DEBUG_MSGS
 #ifdef DEBUG_MSGS
 #	define STRACE(x) printf x
@@ -586,6 +590,10 @@ BackendMessageProcessor::ProcessMessages(CosmoeBackend* backend,
 							(move_start_handler_t)move_start_fn, bwindow);
 					if (focus_fn != NULL)
 						backend->WindowSetFocusHandler(win, (focus_handler_t)focus_fn, bwindow);
+					// files dropped from other applications (BWindow)
+					if (widget != NULL)
+						backend->WindowSetFileDropHandler(win, widget,
+							_hokku_window_files_dropped, bwindow);
 
 					// Schedule resize so surface is created at correct dimensions
 					if (!offscreen)

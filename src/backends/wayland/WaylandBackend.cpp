@@ -20,6 +20,9 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <vector>
+#include <cctype>
+#include <pthread.h>
+#include <map>
 
 // Include Wayland window header
 extern "C" {
@@ -246,6 +249,141 @@ set_frame_data_dir()
 			false, path, sizeof(path)) == B_OK)
 		file_set_datadir(path);
 }
+
+// #pragma mark - files dropped from other applications
+
+
+/*!	The compositor's drag from another application (a file manager's
+	"text/uri-list") accepted over a window that asked for files, read when
+	it's dropped, and its local files handed to the window's handler.
+*/
+namespace {
+
+struct FileDropTarget {
+	file_drop_handler_t	handler;
+	backend_widget_t	widget;
+	void*				userData;
+	std::string			received;
+};
+
+pthread_mutex_t sFileDropLock = PTHREAD_MUTEX_INITIALIZER;
+std::map<struct window*, FileDropTarget> sFileDropTargets;
+
+const char* const kURIListType = "text/uri-list";
+
+
+bool
+offers_uri_list(const char** types)
+{
+	for (; types != NULL && *types != NULL; types++) {
+		if (strcmp(*types, kURIListType) == 0)
+			return true;
+	}
+	return false;
+}
+
+
+// "file:///home/x/a%20b.png" (or "file://host/...") as a local path; ""
+// for anything else
+std::string
+path_for_uri(std::string uri)
+{
+	while (!uri.empty() && (uri.back() == '\r' || uri.back() == '\n'))
+		uri.pop_back();
+	if (uri.compare(0, 7, "file://") != 0)
+		return "";
+	std::string rest = uri.substr(7);
+	size_t slash = rest.find('/');
+	if (slash == std::string::npos)
+		return "";
+	rest = rest.substr(slash);
+	std::string path;
+	for (size_t i = 0; i < rest.size(); i++) {
+		if (rest[i] == '%' && i + 2 < rest.size()
+			&& isxdigit((unsigned char)rest[i + 1])
+			&& isxdigit((unsigned char)rest[i + 2])) {
+			path += (char)strtol(rest.substr(i + 1, 2).c_str(), NULL, 16);
+			i += 2;
+		} else
+			path += rest[i];
+	}
+	return path;
+}
+
+
+void
+file_drop_received(void* data, size_t length, int32_t x, int32_t y,
+	void* userData)
+{
+	struct window* window = (struct window*)userData;
+	pthread_mutex_lock(&sFileDropLock);
+	std::map<struct window*, FileDropTarget>::iterator found
+		= sFileDropTargets.find(window);
+	if (found == sFileDropTargets.end()) {
+		pthread_mutex_unlock(&sFileDropLock);
+		return;
+	}
+	if (length > 0 && length != (size_t)-1) {
+		found->second.received.append((const char*)data, length);
+		pthread_mutex_unlock(&sFileDropLock);
+		return;
+	}
+	FileDropTarget target = found->second;
+	found->second.received.clear();
+	pthread_mutex_unlock(&sFileDropLock);
+
+	std::vector<std::string> paths;
+	std::istringstream lines(target.received);
+	std::string line;
+	while (std::getline(lines, line)) {
+		if (line.empty() || line[0] == '#')
+			continue;
+		std::string path = path_for_uri(line);
+		if (!path.empty())
+			paths.push_back(path);
+	}
+	if (paths.empty() || target.handler == NULL)
+		return;
+	std::vector<const char*> list;
+	for (size_t i = 0; i < paths.size(); i++)
+		list.push_back(paths[i].c_str());
+	target.handler(target.widget, (float)x, (float)y, list.data(),
+		(int32_t)list.size(), target.userData);
+}
+
+
+void
+file_drag_motion(struct window* window, struct input* input, float x, float y,
+	const char** types, void* data)
+{
+	(void)window;
+	(void)x;
+	(void)y;
+	(void)data;
+	if (types == NULL)
+		return;
+	input_accept(input, offers_uri_list(types) ? kURIListType : NULL);
+}
+
+
+void
+file_drop(struct window* window, struct input* input, int32_t x, int32_t y,
+	void* data)
+{
+	(void)x;
+	(void)y;
+	(void)data;
+	pthread_mutex_lock(&sFileDropLock);
+	bool wanted = sFileDropTargets.count(window) > 0;
+	if (wanted)
+		sFileDropTargets[window].received.clear();
+	pthread_mutex_unlock(&sFileDropLock);
+	if (wanted)
+		input_receive_drag_data(input, kURIListType, file_drop_received, window);
+}
+
+} // namespace
+
 
 class WaylandBackend : public CosmoeBackend {
 public:
@@ -670,6 +808,9 @@ public:
 
 	virtual void WindowDestroy(backend_window_t window)
 	{
+		pthread_mutex_lock(&sFileDropLock);
+		sFileDropTargets.erase((struct window*)window);
+		pthread_mutex_unlock(&sFileDropLock);
 		struct widget* topviewWidget = window_get_topview_widget((struct window*)window);
 		struct widget* frame_child = window_get_frame_child((struct window*)window);
 		if (topviewWidget && topviewWidget != frame_child)
@@ -915,6 +1056,22 @@ public:
 
 		window_set_move_start_handler(w,
 			(void (*)(struct window*, void*))handler, user_data);
+	}
+
+	virtual void WindowSetFileDropHandler(backend_window_t window, backend_widget_t widget,
+		file_drop_handler_t handler, void* user_data)
+	{
+		struct window* w = (struct window*)window;
+		if (w == NULL)
+			return;
+		pthread_mutex_lock(&sFileDropLock);
+		FileDropTarget& target = sFileDropTargets[w];
+		target.handler = handler;
+		target.widget = widget;
+		target.userData = user_data;
+		pthread_mutex_unlock(&sFileDropLock);
+		window_set_data_handler(w, file_drag_motion);
+		window_set_drop_handler(w, file_drop);
 	}
 
 	virtual void WindowSetFocusHandler(backend_window_t window, focus_handler_t handler, void* user_data)

@@ -64,6 +64,10 @@ typedef void (*windowframe_resize_handler_t)(backend_windowframe_t frame, int32_
 typedef void (*move_handler_t)(backend_window_t window, int32_t x, int32_t y, void* user_data);
 typedef void (*move_start_handler_t)(backend_window_t window, void* user_data);
 typedef void (*focus_handler_t)(backend_window_t window, bool focused, void* user_data);
+// files dropped on a window from another application: their paths, where
+// they were dropped in `widget`'s surface coordinates
+typedef void (*file_drop_handler_t)(backend_widget_t widget, float x, float y,
+				const char* const* paths, int32_t count, void* user_data);
 
 typedef void (*button_handler_t)(backend_widget_t widget, void* input,
 				uint32_t time, uint32_t button,
@@ -339,6 +343,17 @@ public:
 	
 	// Focus callback
 	virtual void WindowSetFocusHandler(backend_window_t window, focus_handler_t handler, void* user_data) = 0;
+
+	// Files dragged in from other applications and dropped on the window
+	// (none by default)
+	virtual void WindowSetFileDropHandler(backend_window_t window, backend_widget_t widget,
+		file_drop_handler_t handler, void* user_data)
+	{
+		(void)window;
+		(void)widget;
+		(void)handler;
+		(void)user_data;
+	}
 
 	// Widget management
 	virtual backend_widget_t WindowAddWidget(backend_window_t window, void* data) = 0;

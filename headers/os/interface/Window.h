@@ -421,6 +421,8 @@ private:
 			friend class BMenu;
             friend void windowframe_resize_handler(struct widget *widget, int32_t width, int32_t height, void *data);
             friend void view_redraw_handler(struct widget *widget, void *data);
+            friend void _hokku_window_files_dropped(void* widget, float x, float y,
+                const char* const* paths, int32_t count, void* user_data);
             friend void view_mouse_idle_handler(struct widget *widget, struct input *input, uint32_t time,
 									int32_t x, int32_t y, void *data);
             friend void view_button_handler(struct widget *widget, struct input *input, uint32_t time,
