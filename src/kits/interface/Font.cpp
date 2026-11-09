@@ -1947,7 +1947,94 @@ void
 BFont::GetGlyphShapes(const char charArray[], int32 numChars,
 	BShape* glyphShapeArray[]) const
 {
-	// TODO
+	// Each character's outline, as Haiku gives it: in the caller's BShapes,
+	// the glyph's origin at 0,0 on the baseline, y down, the font's size
+	// (and its rotation and shear) applied
+	if (!charArray || numChars < 1 || !glyphShapeArray)
+		return;
+
+	PangoFontDescription* desc = (PangoFontDescription*)GetPangoFontDescription();
+	if (desc == NULL)
+		return;
+	cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 0, 0);
+	cairo_t* cr = cairo_create(surface);
+
+	double radians = -fRotation * M_PI / 180.0;
+	double cosR = cos(radians);
+	double sinR = sin(radians);
+	double skew = tan((90.0 - fShear) * M_PI / 180.0);
+	bool needsTransform = (fRotation != 0.0 || fShear != 90.0);
+	auto point = [&](double x, double y) {
+		if (needsTransform) {
+			double xr = x * cosR - y * sinR;
+			double yr = x * sinR + y * cosR;
+			x = xr - skew * yr;
+			y = yr;
+		}
+		return BPoint((float)x, (float)y);
+	};
+
+	const char* ptr = charArray;
+	for (int32 i = 0; i < numChars && *ptr != '\0'; i++) {
+		int32 charLen = UTF8NextCharLen(ptr);
+		if (charLen < 1)
+			break;
+		BShape* shape = glyphShapeArray[i];
+		if (shape == NULL) {
+			ptr += charLen;
+			continue;
+		}
+		shape->Clear();
+
+		PangoLayout* layout = pango_cairo_create_layout(cr);
+		PangoContext* pctx = pango_layout_get_context(layout);
+		pango_cairo_context_set_resolution(pctx, 72.0);
+		pango_layout_set_font_description(layout, desc);
+		pango_layout_set_text(layout, ptr, charLen);
+
+		PangoLayoutIter* iter = pango_layout_get_iter(layout);
+		double baseline = (double)pango_layout_iter_get_baseline(iter) / PANGO_SCALE;
+		pango_layout_iter_free(iter);
+
+		cairo_new_path(cr);
+		cairo_move_to(cr, 0, 0);
+		pango_cairo_layout_path(cr, layout);
+		cairo_path_t* path = cairo_copy_path(cr);
+		for (int j = 0; path != NULL && j < path->num_data;
+				j += path->data[j].header.length) {
+			cairo_path_data_t* data = &path->data[j];
+			switch (data->header.type) {
+				case CAIRO_PATH_MOVE_TO:
+					shape->MoveTo(point(data[1].point.x, data[1].point.y - baseline));
+					break;
+				case CAIRO_PATH_LINE_TO:
+					shape->LineTo(point(data[1].point.x, data[1].point.y - baseline));
+					break;
+				case CAIRO_PATH_CURVE_TO:
+				{
+					BPoint controls[3] = {
+						point(data[1].point.x, data[1].point.y - baseline),
+						point(data[2].point.x, data[2].point.y - baseline),
+						point(data[3].point.x, data[3].point.y - baseline)
+					};
+					shape->BezierTo(controls);
+					break;
+				}
+				case CAIRO_PATH_CLOSE_PATH:
+					shape->Close();
+					break;
+			}
+		}
+		if (path != NULL)
+			cairo_path_destroy(path);
+		cairo_new_path(cr);
+		g_object_unref(layout);
+		ptr += charLen;
+	}
+
+	cairo_destroy(cr);
+	cairo_surface_destroy(surface);
+	pango_font_description_free(desc);
 }
 
 
