@@ -3,6 +3,7 @@ srcs_media = [
     'MediaFile.cpp',
     'MediaTrack.cpp',
     'MediaNode.cpp',
+    'MediaRecorder.cpp',
     'Sound.cpp',
     'SoundPlayer.cpp',
 ]

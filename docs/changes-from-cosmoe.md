@@ -104,6 +104,12 @@ by area. The [README](../README.md) has the short version.
   `.ogg` files before. Opus doesn't play yet.
 - **`COSMOE_AUDIO_BACKEND=null`** plays into miniaudio's null device, paced in real time:
   for tests and headless runs that mustn't reach a sound card.
+- **`BMediaRecorder` records** from the default audio input through miniaudio (Cosmoe had
+  only the header). There are no media nodes: every `Connect()` opens the default capture
+  device in the raw audio format asked for (mono, 16-bit, 44.1 kHz where it's a wildcard),
+  and the record hook gets each 1024-frame period on miniaudio's audio thread. With
+  `COSMOE_AUDIO_BACKEND=null` it records silence; `COSMOE_AUDIO_CAPTURE_FILE=<file>`
+  records that file instead of the input, in real time, for tests.
 - Not yet: `BMediaFile` decodes a whole file when it opens it, so a long file takes a
   moment and the memory of its decoded audio.
 
