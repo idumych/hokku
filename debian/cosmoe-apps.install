@@ -73,3 +73,10 @@ usr/share/icons/hicolor/*/apps/stylededit.png
 usr/share/icons/hicolor/*/apps/sudoku.png
 usr/share/icons/hicolor/*/apps/terminal.png
 usr/share/icons/hicolor/*/apps/time.png
+usr/bin/GLTeapot
+usr/bin/Notifications
+usr/bin/TrayExport
+usr/share/applications/x-vnd.Haiku-GLTeapot.desktop
+usr/share/applications/x-vnd.Haiku-Notifications.desktop
+usr/share/icons/hicolor/*/apps/glteapot.png
+usr/share/icons/hicolor/*/apps/notifications.png

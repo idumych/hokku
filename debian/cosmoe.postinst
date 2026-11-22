@@ -1,0 +1,21 @@
+#!/bin/sh
+# Restore the xattrs that Hokku keeps its MIME database and app signatures in
+# (dumped at build time; .debs can't carry them). Each Hokku package runs
+# this, so it restores every installed package's dump.
+set -e
+
+if [ "$1" = configure ]; then
+    cd /
+    for f in usr/share/hokku/xattrs/*; do
+        [ -s "$f" ] || continue
+        # -P (don't follow symbolic links) came with an attr security update
+        # (Ubuntu's 1:2.5.2-4ubuntu0.1); Linux Lite 8.0's attr lacks it
+        if setfattr -P --help >/dev/null 2>&1; then
+            setfattr -h -P --restore="$f" || echo "warning: some Hokku attributes in $f weren't restored" >&2
+        else
+            setfattr -h --restore="$f" || echo "warning: some Hokku attributes in $f weren't restored" >&2
+        fi
+    done
+fi
+
+#DEBHELPER#

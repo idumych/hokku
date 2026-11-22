@@ -1,3 +1,17 @@
+cosmoe (0.9.0-2) unstable; urgency=medium
+
+  * Restore Hokku's xattrs (types, app signatures, the MIME database) on
+    install: .debs can't carry them.
+  * Package what the install lists missed: GLTeapot, Notifications,
+    TrayExport, TrayBridge, notification_server, the theme tools, cursor,
+    GTK and Kvantum themes; runtime tools (addattr, finddir…) move from
+    cosmoe-dev to cosmoe.
+  * Build labwc-hokku's wlroots and libsfdo where the system's are too old.
+  * Install Hokku's listres as hokku-listres: x11-utils has a listres.
+  * Restore the xattrs without setfattr -P where attr predates it.
+
+ -- idumych <idumych@gmail.com>  Sat, 21 Nov 2026 21:00:00 -0800
+
 cosmoe (0.9.0-1) unstable; urgency=medium
 
   * Initial Debian package.

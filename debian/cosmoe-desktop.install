@@ -16,3 +16,6 @@ usr/share/xdg-desktop-portal/cosmoe-portals.conf
 usr/share/cosmoe-desktop/
 usr/lib/systemd/user/hokku-session.target
 etc/xdg/autostart/kmix-hokku.desktop
+usr/bin/TrayBridge
+usr/bin/notification_server
+usr/share/icons/hicolor/*/apps/notification_server.png

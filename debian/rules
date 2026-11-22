@@ -4,7 +4,7 @@
 	dh $@
 
 override_dh_auto_clean:
-	rm -rf builddir-deb debian/tmp
+	rm -rf builddir-deb debian/tmp debian/xattrs.dump
 
 override_dh_auto_configure:
 	@:
@@ -23,3 +23,18 @@ override_dh_install:
 		install -D -m 755 debian/tmp/usr/bin/labwc-hokku \
 			debian/cosmoe-desktop/usr/bin/labwc-hokku; \
 	fi
+	# x11-utils has a listres of its own (X11 widget resources)
+	mv debian/cosmoe-dev/usr/bin/listres debian/cosmoe-dev/usr/bin/hokku-listres
+	# Hokku keeps types, app signatures and the MIME database (icons
+	# included) in xattrs, which .debs can't carry: dump each package's,
+	# for its postinst to restore.
+	(cd debian/tmp && getfattr -R -P -h -d -m '^user\.' -e base64 usr) \
+		>debian/xattrs.dump
+	grep -q BEOS: debian/xattrs.dump
+	for pkg in cosmoe cosmoe-apps cosmoe-desktop; do \
+		mkdir -p debian/$$pkg/usr/share/hokku/xattrs; \
+		awk -v root=debian/$$pkg 'BEGIN { RS = ""; ORS = "\n\n" } \
+			{ f = substr($$0, 9, index($$0, "\n") - 9) } \
+			system("test -e \"" root "/" f "\" -o -L \"" root "/" f "\"") == 0' \
+			debian/xattrs.dump >debian/$$pkg/usr/share/hokku/xattrs/$$pkg; \
+	done

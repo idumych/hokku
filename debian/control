@@ -43,14 +43,28 @@ Build-Depends:
  libgles-dev,
  hwdata,
  wayland-protocols,
- git
+ git,
+ xwayland,
+ libsfdo-dev,
+ libxcb1-dev,
+ libxcb-composite0-dev,
+ libxcb-ewmh-dev,
+ libxcb-icccm4-dev,
+ libxcb-render0-dev,
+ libxcb-res0-dev,
+ libxcb-xfixes0-dev,
+ attr
 Standards-Version: 4.6.2
 Homepage: https://cosmoe.org
 Rules-Requires-Root: no
 
 Package: cosmoe
 Architecture: any
+Provides: hokku
+Replaces: cosmoe-dev (<< 0.9.0-2)
+Breaks: cosmoe-dev (<< 0.9.0-2)
 Depends:
+ attr,
  adwaita-icon-theme,
  xcursor-themes,
  ${shlibs:Depends},
@@ -76,6 +90,7 @@ Description: development files for the Cosmoe framework
 Package: cosmoe-apps
 Section: x11
 Architecture: any
+Provides: hokku-apps
 Depends:
  cosmoe (= ${binary:Version}),
  ${shlibs:Depends},
@@ -87,17 +102,22 @@ Description: applications bundled with the Cosmoe framework
 Package: cosmoe-desktop
 Section: x11
 Architecture: any
+Provides: hokku-desktop
 Depends:
  cosmoe (= ${binary:Version}),
  cosmoe-apps (= ${binary:Version}),
  labwc,
- mako-notifier,
  dbus-daemon,
  policykit-1-gnome,
  xdg-desktop-portal,
  xdg-desktop-portal-wlr,
+ ${shlibs:Depends},
  ${misc:Depends}
 Recommends:
+ pipewire,
+ wireplumber,
+ xwayland,
+ xdg-desktop-portal-gtk,
  kanshi,
  grim,
  wdisplays,
@@ -106,6 +126,10 @@ Recommends:
  network-manager-gnome,
  qt-style-kvantum,
  fonts-noto-core
+Suggests:
+ mako-notifier,
+ blueman,
+ kmix
 Description: Cosmoe Wayland desktop session
  This package provides the Cosmoe Wayland desktop session, including Tracker,
  Deskbar, and a display-manager session entry.
