@@ -1,7 +1,10 @@
-# labwc's, for systems whose wlroots or libsfdo is older than labwc-hokku needs
+# labwc's, for systems whose wlroots or libsfdo is older than labwc-hokku needs.
+# The patch lets it build with libxcb 1.14 (Ubuntu 22.04, for labwc-hokku/).
 [wrap-git]
 url = https://gitlab.freedesktop.org/wlroots/wlroots.git
-revision = 0.20
+revision = 0.20.2
+depth = 1
+diff_files = wlroots-xcb-1.14.patch
 
 [provide]
 dependency_names = wlroots-0.20

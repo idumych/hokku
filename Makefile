@@ -71,14 +71,29 @@ distclean: clean
 endif
 
 ifeq ($(COSMOE_DEBIAN_RULES),1)
+# Where the system's libraries are too old for labwc 0.20 (its libinput 1.26:
+# Ubuntu 22.04 and 24.04), labwc-hokku is built on its own (labwc-hokku/),
+# with what it needs newer linked statically, and Hokku without it
+DEB_STATIC_LABWC := $(shell pkg-config --atleast-version=1.26 libinput || echo 1)
 deb:
-	rm -rf $(DEB_BUILDDIR) $(DEB_DESTDIR)
+	rm -rf $(DEB_BUILDDIR) $(DEB_DESTDIR) $(DEB_BUILDDIR)-labwc
 	meson setup $(DEB_BUILDDIR) --prefix=/usr --libdir=lib/$(DEB_MULTIARCH) \
-		-Denable_unit_test_compile=false
+		-Denable_unit_test_compile=false \
+		$(if $(DEB_STATIC_LABWC),-Dlabwc_hokku=disabled)
 	ninja -C $(DEB_BUILDDIR)
 	# labwc-hokku links the wlroots and libsfdo it may fetch statically
 	DESTDIR=$(DEB_DESTDIR) meson install -C $(DEB_BUILDDIR) --no-rebuild \
 		--skip-subprojects libsfdo,wlroots
+ifneq ($(DEB_STATIC_LABWC),)
+	PKG_CONFIG_PATH=$(CURDIR)/labwc-hokku/pkgconfig meson setup \
+		$(DEB_BUILDDIR)-labwc labwc-hokku --prefix=/usr \
+		-Ddefault_library=static --force-fallback-for=libinput \
+		-Dlibinput:libwacom=false -Dlibinput:debug-gui=false \
+		-Dlibinput:tests=false -Dlibinput:documentation=false
+	ninja -C $(DEB_BUILDDIR)-labwc
+	install -D -m 755 $(DEB_BUILDDIR)-labwc/subprojects/labwc/labwc-hokku \
+		$(DEB_DESTDIR)/usr/bin/labwc-hokku
+endif
 else
 deb:
 	rm -rf debian/packages

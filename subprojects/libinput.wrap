@@ -1,0 +1,10 @@
+# labwc's libinput, for systems whose libinput is older than it needs
+# (Ubuntu 22.04), linked statically into labwc-hokku (labwc-hokku/)
+[wrap-git]
+url = https://gitlab.freedesktop.org/libinput/libinput.git
+revision = 1.31.3
+depth = 1
+diff_files = libinput-static.patch
+
+[provide]
+dependency_names = libinput

@@ -1,0 +1,32 @@
+diff --git a/xwayland/meson.build b/xwayland/meson.build
+index 3d29dc6c..426a941f 100644
+--- a/xwayland/meson.build
++++ b/xwayland/meson.build
+@@ -6,7 +6,7 @@ xwayland_required = {
+ 	'xcb-icccm': [],
+ 	'xcb-render': [],
+ 	'xcb-res': [],
+-	'xcb-xfixes': '>=1.15',
++	'xcb-xfixes': '>=1.14', # Hokku: 1.15 only for terminate_delay
+ }
+ xwayland_optional = {
+ 	'xcb-errors': 'Required for printing X11 errors.',
+diff --git a/xwayland/xwm.c b/xwayland/xwm.c
+index f31163d9..6a2e56fe 100644
+--- a/xwayland/xwm.c
++++ b/xwayland/xwm.c
+@@ -2669,11 +2669,14 @@ struct wlr_xwm *xwm_create(struct wlr_xwayland *xwayland, int wm_fd) {
+ 		sizeof(supported)/sizeof(*supported),
+ 		supported);
+ 
++	// Hokku: libxcb 1.14 (Ubuntu 22.04) has XFixes 5, without it
++#if XCB_XFIXES_MAJOR_VERSION >= 6
+ 	if (xwm->xwayland->server->options.terminate_delay > 0 &&
+ 			xwm->xfixes_major_version >= 6) {
+ 		xcb_xfixes_set_client_disconnect_mode(xwm->xcb_conn,
+ 			XCB_XFIXES_CLIENT_DISCONNECT_FLAGS_TERMINATE);
+ 	}
++#endif
+ 
+ 	xcb_flush(xwm->xcb_conn);
+ 

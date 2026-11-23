@@ -1,0 +1,6 @@
+# wlroots', pinned, for systems whose libwayland is older than it needs
+# (Ubuntu 22.04: labwc-hokku/ links it statically)
+[wrap-git]
+url = https://gitlab.freedesktop.org/wayland/wayland.git
+revision = 1.26.0
+depth = 1
