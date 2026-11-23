@@ -25,6 +25,10 @@ override_dh_install:
 		install -D -m 755 debian/tmp/usr/bin/labwc-hokku \
 			debian/cosmoe-desktop/usr/bin/labwc-hokku; \
 	fi
+	if [ -d debian/tmp/usr/share/labwc-hokku ]; then \
+		mkdir -p debian/cosmoe-desktop/usr/share; \
+		cp -a debian/tmp/usr/share/labwc-hokku debian/cosmoe-desktop/usr/share/; \
+	fi
 	# x11-utils has a listres of its own (X11 widget resources)
 	mv debian/cosmoe-dev/usr/bin/listres debian/cosmoe-dev/usr/bin/hokku-listres
 	# Hokku keeps types, app signatures and the MIME database (icons

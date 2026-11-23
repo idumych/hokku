@@ -93,6 +93,10 @@ ifneq ($(DEB_STATIC_LABWC),)
 	ninja -C $(DEB_BUILDDIR)-labwc
 	install -D -m 755 $(DEB_BUILDDIR)-labwc/subprojects/labwc/labwc-hokku \
 		$(DEB_DESTDIR)/usr/bin/labwc-hokku
+	# its libinput's own device quirks (the system's may be too old for it)
+	install -d $(DEB_DESTDIR)/usr/share/labwc-hokku/libinput
+	install -m 644 subprojects/libinput/quirks/*.quirks \
+		$(DEB_DESTDIR)/usr/share/labwc-hokku/libinput/
 endif
 else
 deb:

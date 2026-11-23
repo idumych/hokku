@@ -1,8 +1,21 @@
+ meson.build | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
 diff --git a/meson.build b/meson.build
-index 8549342..7a4c375 100644
+index 8549342..0fbfa5d 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -483,18 +483,18 @@ libinput_version_h = configure_file(
+@@ -6,7 +6,9 @@ project('libinput', 'c',
+ 
+ libinput_version = meson.project_version().split('.')
+ 
+-dir_data        = get_option('prefix') / get_option('datadir') / 'libinput'
++# Hokku: its own quirks, as the system's older libinput may have ones it
++# can't read (labwc-hokku installs them there)
++dir_data        = get_option('prefix') / get_option('datadir') / 'labwc-hokku' / 'libinput'
+ dir_etc         = get_option('prefix') / get_option('sysconfdir')
+ dir_overrides   = get_option('prefix') / get_option('sysconfdir') / 'libinput'
+ dir_libexec     = get_option('prefix') / get_option('libexecdir') / 'libinput'
+@@ -483,18 +485,18 @@ libinput_version_h = configure_file(
  
  mapfile = dir_src / 'libinput.sym'
  version_flag = '-Wl,--version-script,@0@'.format(mapfile)

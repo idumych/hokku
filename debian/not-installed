@@ -20,3 +20,4 @@ usr/local/share/icons/hicolor/icon-theme.cache
 etc/macos-bundle.sh
 # installed by debian/rules where it could be built
 usr/bin/labwc-hokku
+usr/share/labwc-hokku
