@@ -12,6 +12,7 @@
 #include <config.h>
 
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <Directory.h>
@@ -141,6 +142,15 @@ get_system_lib_directory(BPath &path)
 			// Get the directory containing the library
 			BPath parentPath;
 			if (libPath.GetParent(&parentPath) == B_OK) {
+				// The loader may have found it through a symbolic link: on a
+				// merged /usr (Ubuntu 22.04), /lib/x86_64-linux-gnu, where
+				// the prefix would come out as / instead of /usr
+				char* real = realpath(parentPath.Path(), NULL);
+				if (real != NULL) {
+					status_t status = path.SetTo(real);
+					free(real);
+					return status;
+				}
 				return path.SetTo(parentPath.Path());
 			}
 		}
