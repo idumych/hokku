@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <AutoDeleter.h>
+#include <OS.h>
 
 
 // Linux's sockaddr has no sa_len: the length follows from the family.

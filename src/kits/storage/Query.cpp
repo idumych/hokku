@@ -12,6 +12,7 @@
 #include <Query.h>
 
 #include <new>
+#include <stddef.h>
 #include <string.h>
 #include <time.h>
 

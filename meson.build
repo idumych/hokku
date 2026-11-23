@@ -365,7 +365,7 @@ if is_linux
 		config_h.set('HAVE_XKBCOMMON_COMPOSE', '1')
 	endif
 	
-	dep_wayland_client = dependency('wayland-client', version: '>= 1.22.0', required: wayland_enabled)
+	dep_wayland_client = dependency('wayland-client', version: '>= 1.20.0', required: wayland_enabled)
 else
 	# macOS - xkbcommon not needed, use disabler to make dependencies happy
 	dep_xkbcommon = disabler()
@@ -433,8 +433,8 @@ if is_darwin
 else
 	# Linux typically has newer ICU in standard locations
 	dep_icu = [
-	  dependency('icu-i18n', version: '>= 72.0'),
-	  dependency('icu-uc', version: '>= 72.0'),
+	  dependency('icu-i18n', version: '>= 70.0'),
+	  dependency('icu-uc', version: '>= 70.0'),
 	]
 endif
 

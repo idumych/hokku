@@ -35,7 +35,12 @@ static const uint32 kDecodeBufferCount = 2048;
 #define T fRaw->imgdata.thumbnail
 #define P2 fRaw->imgdata.other
 #define OUT fRaw->imgdata.params
+#if LIBRAW_COMPILE_CHECK_VERSION_NOTLESS(0, 21)
 #define RAWPARAMS fRaw->imgdata.rawparams
+#else
+// LibRAW 0.20 (Ubuntu 22.04) has them in params
+#define RAWPARAMS fRaw->imgdata.params
+#endif
 
 
 //	#pragma mark -
