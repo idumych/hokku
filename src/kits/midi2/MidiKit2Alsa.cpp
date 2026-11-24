@@ -27,6 +27,7 @@
 #include <mutex>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <vector>
 
 
@@ -53,6 +54,10 @@ open_sequencer()
 	if (s.tried)
 		return s.seq != NULL;
 	s.tried = true;
+	// no sequencer (a container, a server without snd-seq): no MIDI, and
+	// no "ALSA lib ... failed" line on stderr from trying
+	if (access("/dev/snd/seq", R_OK | W_OK) != 0)
+		return false;
 	if (snd_seq_open(&s.seq, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) {
 		s.seq = NULL;
 		return false;
