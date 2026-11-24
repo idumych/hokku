@@ -23,6 +23,8 @@ Build-Depends:
  libraw-dev,
  libtiff-dev,
  libwayland-dev,
+ libpulse-dev,
+ libasound2-dev,
  libwebp-dev,
  libx11-xcb-dev,
  libxkbcommon-dev,

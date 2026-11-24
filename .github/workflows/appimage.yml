@@ -38,7 +38,7 @@ jobs:
             zlib1g-dev libicu-dev libpango1.0-dev libicns-dev libraw-dev \
             libpixman-1-dev libfontconfig1-dev libglib2.0-dev libssl-dev \
             libx11-dev libx11-xcb-dev libxcursor-dev libxrandr-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libpulse-dev libasound2-dev \
             wayland-protocols libegl-dev libgl-dev libfuse3-dev
 
       - name: Build AppImage

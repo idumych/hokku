@@ -4,10 +4,12 @@
  */
 
 // BMediaRecorder records from the default audio input through miniaudio,
-// as SoundPlayer.cpp plays through it. There are no media nodes here: every
-// Connect() opens the default capture device in the format asked for (raw
-// audio; miniaudio converts), and the record hook gets each period's frames
-// on miniaudio's audio thread, as Haiku's hook is called on its node's.
+// as SoundPlayer.cpp plays through it, or from a program's output that
+// BMediaRoster lists (one stream it plays, through PulseStreams.h). There is
+// no node graph: Connect() opens the capture in the format asked for (raw
+// audio; miniaudio or the sound server converts), and the record hook gets
+// each period's frames on the capture's thread, as Haiku's hook is called on
+// its node's.
 //
 // COSMOE_AUDIO_BACKEND=null records silence, paced in real time, and
 // COSMOE_AUDIO_CAPTURE_FILE=<sound file> records that file instead of the
@@ -18,6 +20,8 @@
 #include <MediaRecorder.h>
 
 #include <OS.h>
+
+#include "PulseStreams.h"
 
 #include <atomic>
 #include <cstdarg>
@@ -37,6 +41,7 @@ public:
 		contextOpen(false),
 		decoderOpen(false),
 		feeder(-1),
+		programOpen(false),
 		feeding(false),
 		recorder(NULL)
 	{
@@ -53,6 +58,8 @@ public:
 	bool			contextOpen;
 	bool			decoderOpen;
 	thread_id		feeder;		// plays the capture file in real time
+	PulseCapture	program;	// a program's stream, when recording one
+	bool			programOpen;
 	std::atomic<bool> feeding;
 	std::atomic<bool> running;
 	BMediaRecorder*	recorder;
@@ -77,6 +84,15 @@ public:
 }	// namespace BPrivate
 
 using BPrivate::media::BMediaRecorderNode;
+using BPrivate::media::PulseCapture;
+
+
+static void
+program_data(void* cookie, const void* data, size_t bytes)
+{
+	BMediaRecorderNode* node = (BMediaRecorderNode*)cookie;
+	node->Deliver(const_cast<void*>(data), ma_uint32(bytes / node->frameSize));
+}
 
 
 static void
@@ -195,7 +211,12 @@ BMediaRecorder::Start(bool force)
 	if (fNotifyHook != NULL)
 		(*fNotifyHook)(fBufferCookie, B_WILL_START, system_time());
 	fNode->running = true;
-	if (fNode->deviceOpen) {
+	if (fNode->programOpen) {
+		if (fNode->program.Start() != B_OK) {
+			fNode->running = false;
+			return B_ERROR;
+		}
+	} else if (fNode->deviceOpen) {
 		if (ma_device_start(&fNode->device) != MA_SUCCESS) {
 			fNode->running = false;
 			return B_ERROR;
@@ -223,6 +244,8 @@ BMediaRecorder::Stop(bool force)
 	if (fNotifyHook != NULL)
 		(*fNotifyHook)(fBufferCookie, B_WILL_STOP, system_time(), true);
 	fNode->running = false;
+	if (fNode->programOpen)
+		fNode->program.Stop();
 	if (fNode->deviceOpen)
 		ma_device_stop(&fNode->device);
 	if (fNode->feeder >= 0) {
@@ -237,19 +260,16 @@ BMediaRecorder::Stop(bool force)
 
 
 // The format: what the caller asks for, with the accepted format's and the
-// defaults' values where it leaves a wildcard (mono, 16-bit, 44.1 kHz)
-status_t
-BMediaRecorder::Connect(const media_format& requested)
+// defaults' values where it leaves a wildcard (mono, 16-bit, 44.1 kHz). Sets
+// the node's format, frame size and period.
+static status_t
+resolve_format(BMediaRecorderNode* node, const media_format& requested,
+	ma_format& sampleFormat, uint32& sampleSize)
 {
-	if (fInitErr != B_OK)
-		return fInitErr;
-	if (fConnected)
-		return B_MEDIA_ALREADY_CONNECTED;
 	if (requested.type != B_MEDIA_RAW_AUDIO && requested.type != B_MEDIA_UNKNOWN_TYPE)
 		return B_MEDIA_BAD_FORMAT;
-
 	media_multi_audio_format raw = requested.u.raw_audio;
-	const media_multi_audio_format& accepted = fNode->accepted.u.raw_audio;
+	const media_multi_audio_format& accepted = node->accepted.u.raw_audio;
 	const media_multi_audio_format& wild = media_multi_audio_format::wildcard;
 	if (raw.frame_rate == wild.frame_rate)
 		raw.frame_rate = accepted.frame_rate != wild.frame_rate ? accepted.frame_rate : 44100;
@@ -259,8 +279,6 @@ BMediaRecorder::Connect(const media_format& requested)
 	if (raw.format == wild.format)
 		raw.format = accepted.format != wild.format ? accepted.format
 			: media_raw_audio_format::B_AUDIO_SHORT;
-	ma_format sampleFormat;
-	uint32 sampleSize;
 	switch (raw.format) {
 		case media_raw_audio_format::B_AUDIO_SHORT:
 			sampleFormat = ma_format_s16;
@@ -281,13 +299,30 @@ BMediaRecorder::Connect(const media_format& requested)
 		default:
 			return B_MEDIA_BAD_FORMAT;
 	}
-	fNode->period = 1024;
+	node->period = 1024;
 	raw.byte_order = B_MEDIA_HOST_ENDIAN;
-	raw.buffer_size = fNode->period * sampleSize * raw.channel_count;
-	fNode->frameSize = sampleSize * raw.channel_count;
-	fNode->format.Clear();
-	fNode->format.type = B_MEDIA_RAW_AUDIO;
-	fNode->format.u.raw_audio = raw;
+	raw.buffer_size = node->period * sampleSize * raw.channel_count;
+	node->frameSize = sampleSize * raw.channel_count;
+	node->format.Clear();
+	node->format.type = B_MEDIA_RAW_AUDIO;
+	node->format.u.raw_audio = raw;
+	return B_OK;
+}
+
+
+status_t
+BMediaRecorder::Connect(const media_format& requested)
+{
+	if (fInitErr != B_OK)
+		return fInitErr;
+	if (fConnected)
+		return B_MEDIA_ALREADY_CONNECTED;
+	ma_format sampleFormat;
+	uint32 sampleSize;
+	status_t status = resolve_format(fNode, requested, sampleFormat, sampleSize);
+	if (status != B_OK)
+		return status;
+	const media_multi_audio_format& raw = fNode->format.u.raw_audio;
 
 	const char* file = getenv("COSMOE_AUDIO_CAPTURE_FILE");
 	if (file != NULL && file[0] != '\0') {
@@ -338,13 +373,44 @@ BMediaRecorder::Connect(const dormant_node_info& dormantInfo, const media_format
 }
 
 
+// A program's output (BMediaRoster's nodes from kFirstProgramNode on; the
+// output's source ID is the stream): that stream, in the format asked for,
+// with the output's where it leaves a wildcard. Anything else: the input.
 status_t
 BMediaRecorder::Connect(const media_node& node, const media_output* output,
 	const media_format* format)
 {
-	(void)node;
-	(void)output;
-	return Connect(format != NULL ? *format : fNode->accepted);
+	media_format requested = format != NULL ? *format : fNode->accepted;
+	if (node.node < BPrivate::media::kFirstProgramNode || output == NULL)
+		return Connect(requested);
+	if (fInitErr != B_OK)
+		return fInitErr;
+	if (fConnected)
+		return B_MEDIA_ALREADY_CONNECTED;
+
+	media_multi_audio_format& raw = requested.u.raw_audio;
+	const media_multi_audio_format& offered = output->format.u.raw_audio;
+	const media_multi_audio_format& wild = media_multi_audio_format::wildcard;
+	if (raw.frame_rate == wild.frame_rate)
+		raw.frame_rate = offered.frame_rate;
+	if (raw.channel_count == wild.channel_count)
+		raw.channel_count = offered.channel_count;
+	if (raw.format == wild.format)
+		raw.format = offered.format;
+	ma_format sampleFormat;
+	uint32 sampleSize;
+	status_t status = resolve_format(fNode, requested, sampleFormat, sampleSize);
+	if (status != B_OK)
+		return status;
+	const media_multi_audio_format& resolved = fNode->format.u.raw_audio;
+	status = fNode->program.Open(uint32(output->source.id), sampleSize,
+		resolved.format == media_raw_audio_format::B_AUDIO_FLOAT, resolved.channel_count,
+		uint32(resolved.frame_rate), program_data, fNode);
+	if (status != B_OK)
+		return status;
+	fNode->programOpen = true;
+	fConnected = true;
+	return B_OK;
 }
 
 
@@ -354,6 +420,10 @@ BMediaRecorder::Disconnect()
 	if (fNode == NULL || !fConnected)
 		return B_OK;
 	Stop();
+	if (fNode->programOpen) {
+		fNode->program.Close();
+		fNode->programOpen = false;
+	}
 	if (fNode->deviceOpen) {
 		ma_device_uninit(&fNode->device);
 		fNode->deviceOpen = false;

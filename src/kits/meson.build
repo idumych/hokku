@@ -51,6 +51,19 @@ elif is_windows
     deps_libbe_private += [iconv_dep]
 endif
 
+# Other programs' sound for BMediaRoster and BMediaRecorder (PulseAudio's
+# client library; PipeWire answers it too). Without it only the audio input
+# can be recorded.
+if is_linux
+    dep_libpulse = dependency('libpulse', required: false)
+    if dep_libpulse.found()
+        deps_libbe_private += [dep_libpulse,
+            declare_dependency(compile_args: '-DHOKKU_HAVE_LIBPULSE')]
+    else
+        warning('libpulse not found - programs\' sound can\'t be recorded. Install libpulse-dev (Debian/Ubuntu) or pulseaudio-libs-devel (Fedora)')
+    endif
+endif
+
 # Add optional Wayland dependencies to libbe only if Wayland backend is enabled
 if wayland_enabled
     deps_libbe += [

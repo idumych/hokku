@@ -110,6 +110,20 @@ by area. The [README](../README.md) has the short version.
   and the record hook gets each 1024-frame period on miniaudio's audio thread. With
   `COSMOE_AUDIO_BACKEND=null` it records silence; `COSMOE_AUDIO_CAPTURE_FILE=<file>`
   records that file instead of the input, in real time, for tests.
+- **`BMediaRoster` finds things to record.** Without a media server or a node graph, it
+  shows what can be recorded as Haiku's shows producer nodes: the default audio input
+  (`GetAudioInput()`), and each program playing sound, with one free output per stream it
+  plays (`GetLiveNodes()`, `GetFreeOutputsFor()`, `GetNodeFor()`, `ReleaseNode()`).
+  `BMediaRecorder::Connect(node, output, format)` on a program's output records that
+  stream alone, through PulseAudio's client library (PipeWire answers it too), while the
+  program goes on playing. Calls that build node chains aren't there yet. Built when
+  libpulse is found.
+- **Midi Kit 2 (`libmidi2`) on the ALSA sequencer**, producers only: each
+  `BMidiLocalProducer` is a port of the program's sequencer client, open to subscribers
+  (Linux programs, aconnect, qpwgraph) once registered. `Spray*()` with a time sends the
+  event at that `system_time()` through a sequencer queue. There are no consumers or
+  `BMidiRoster` yet (their headers aren't installed), and `SprayTempoChange()` sends
+  nothing, since its meta event has no form on a MIDI wire. Built when ALSA is found.
 - Not yet: `BMediaFile` decodes a whole file when it opens it, so a long file takes a
   moment and the memory of its decoded audio.
 

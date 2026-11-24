@@ -34,7 +34,7 @@ jobs:
             pixman-devel fontconfig-devel glib2-devel \
             libX11-devel libX11-xcb libXcursor-devel libXrandr-devel \
             libxkbcommon-devel libxkbcommon-x11-devel \
-            wayland-devel
+            wayland-devel pulseaudio-libs-devel alsa-lib-devel
 
       - name: Configure
         run: meson setup builddir
@@ -75,7 +75,7 @@ jobs:
             pixman-devel fontconfig-devel glib2-devel \
             libX11-devel libX11-xcb libXcursor-devel libXrandr-devel \
             libxkbcommon-devel libxkbcommon-x11-devel \
-            wayland-devel
+            wayland-devel pulseaudio-libs-devel alsa-lib-devel
 
       - name: Download build
         uses: actions/download-artifact@v5
@@ -115,7 +115,7 @@ jobs:
             pixman-devel fontconfig-devel glib2-devel \
             libX11-devel libX11-xcb libXcursor-devel libXrandr-devel \
             libxkbcommon-devel libxkbcommon-x11-devel \
-            wayland-devel
+            wayland-devel pulseaudio-libs-devel alsa-lib-devel
 
       - name: Download build
         uses: actions/download-artifact@v5

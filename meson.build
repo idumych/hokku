@@ -193,6 +193,7 @@ public_inc_entries = [
 	'headers/os/drivers',
 	'headers/os/game',
 	'headers/os/media',
+	'headers/os/midi2',
 	'headers/os/package',
 	'headers/os/add-ons/file_system',
 	'headers/os/mail',
@@ -666,6 +667,22 @@ libbe_rsrc = custom_target('libbe_rsrc',
 			link_with: [lib_libgame],
 			dependencies: [dep_libbe],
 		)
+	endif
+
+	# Midi Kit 2 (libmidi2) on the ALSA sequencer: Haiku programs' MIDI
+	# reaches Linux programs and ports
+	dep_alsa = dependency('alsa', required: false)
+	if is_linux and dep_alsa.found()
+		shared_library(
+			'midi2',
+			'src/kits/midi2/MidiKit2Alsa.cpp',
+			include_directories: [common_inc],
+			dependencies: [dep_libbe, dep_alsa],
+			install_dir: dir_lib,
+			install: true,
+		)
+	elif is_linux
+		warning('ALSA not found - libmidi2 will NOT be built. Install libasound2-dev (Debian/Ubuntu) or alsa-lib-devel (Fedora)')
 	endif
 
 # Now build everything else with the real libbe

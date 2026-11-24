@@ -25,6 +25,8 @@ BuildRequires:  libpng-devel
 BuildRequires:  LibRaw-devel
 BuildRequires:  libtiff-devel
 BuildRequires:  wayland-devel
+BuildRequires:  pulseaudio-libs-devel
+BuildRequires:  alsa-lib-devel
 BuildRequires:  libwebp-devel
 BuildRequires:  libX11-devel
 BuildRequires:  libXcursor-devel
